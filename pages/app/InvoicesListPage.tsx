@@ -29,11 +29,21 @@ const formatCurrency = (amount: number, currencyCode: string = "USD") => {
 const InvoicesListPage: React.FC = () => {
   const { user, userProfile } = useAuth()
   const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [customers, setCustomers] = useState<any[]>([])
+  const [bankAccounts, setBankAccounts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
     invoiceId: string | null
   }>({ isOpen: false, invoiceId: null })
+  const [filterType, setFilterType] = useState<string>("all")
+  const [customDateRange, setCustomDateRange] = useState<{
+    start: string
+    end: string
+  }>({ start: "", end: "" })
+  const [selectedBankAccount, setSelectedBankAccount] = useState<string>("")
+  const [selectedStatus, setSelectedStatus] = useState<string>("")
+  const [selectedCustomer, setSelectedCustomer] = useState<string>("")
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -54,6 +64,29 @@ const InvoicesListPage: React.FC = () => {
           setLoading(false)
         },
       )
+    // Fetch customers
+    db.collection(`users/${user.uid}/customers`)
+      .get()
+      .then((snapshot) => {
+        const fetchedCustomers = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        setCustomers(fetchedCustomers)
+      })
+      .catch((err) => console.error(err))
+    // Fetch bank accounts
+    db.collection("bankAccounts")
+      .where("userId", "==", user.uid)
+      .get()
+      .then((snapshot) => {
+        const fetchedBankAccounts = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        setBankAccounts(fetchedBankAccounts)
+      })
+      .catch((err) => console.error(err))
     return () => unsubscribe()
   }, [user])
 
@@ -130,10 +163,70 @@ const InvoicesListPage: React.FC = () => {
     )
   }
 
+  const filterInvoices = (invoices: Invoice[]) => {
+    const now = new Date()
+    let filtered = invoices
+    switch (filterType) {
+      case "weekly": {
+        const weekAgo = new Date()
+        weekAgo.setDate(now.getDate() - 7)
+        filtered = filtered.filter((inv) => {
+          const issueDate = inv.issueDate.toDate()
+          return issueDate >= weekAgo && issueDate <= now
+        })
+        break
+      }
+      case "monthly": {
+        const monthAgo = new Date()
+        monthAgo.setMonth(now.getMonth() - 1)
+        filtered = filtered.filter((inv) => {
+          const issueDate = inv.issueDate.toDate()
+          return issueDate >= monthAgo && issueDate <= now
+        })
+        break
+      }
+      case "yearly": {
+        const yearAgo = new Date()
+        yearAgo.setFullYear(now.getFullYear() - 1)
+        filtered = filtered.filter((inv) => {
+          const issueDate = inv.issueDate.toDate()
+          return issueDate >= yearAgo && issueDate <= now
+        })
+        break
+      }
+      case "custom": {
+        if (!customDateRange.start || !customDateRange.end) break
+        const startDate = new Date(customDateRange.start)
+        const endDate = new Date(customDateRange.end)
+        filtered = filtered.filter((inv) => {
+          const issueDate = inv.issueDate.toDate()
+          return issueDate >= startDate && issueDate <= endDate
+        })
+        break
+      }
+    }
+
+    if (selectedBankAccount) {
+      filtered = filtered.filter(
+        (inv) => inv.bankAccountId === selectedBankAccount,
+      )
+    }
+    if (selectedStatus) {
+      filtered = filtered.filter((inv) => inv.status === selectedStatus)
+    }
+    if (selectedCustomer) {
+      filtered = filtered.filter((inv) => inv.customerName === selectedCustomer)
+    }
+
+    return filtered
+  }
+
+  const filteredInvoices = filterInvoices(invoices)
+
   return (
     <div>
-      <div className='flex justify-between items-center mb-6'>
-        <h1 className='text-3xl font-bold text-gray-800 dark:text-white'>
+      <div className='mb-6 flex justify-between items-center'>
+        <h1 className='text-3xl font-bold text-gray-800 dark:text-white mb-4'>
           Invoices
         </h1>
         <Link
@@ -142,6 +235,80 @@ const InvoicesListPage: React.FC = () => {
         >
           Create Invoice
         </Link>
+      </div>
+      <div className='bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 flex flex-wrap gap-4 items-center'>
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[120px]'
+        >
+          <option value='all'>All</option>
+          <option value='weekly'>Weekly</option>
+          <option value='monthly'>Monthly</option>
+          <option value='yearly'>Yearly</option>
+          <option value='custom'>Custom Range</option>
+        </select>
+        {filterType === "custom" && (
+          <div className='flex space-x-2'>
+            <input
+              type='date'
+              value={customDateRange.start}
+              onChange={(e) =>
+                setCustomDateRange({
+                  ...customDateRange,
+                  start: e.target.value,
+                })
+              }
+              className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[140px]'
+            />
+            <input
+              type='date'
+              value={customDateRange.end}
+              onChange={(e) =>
+                setCustomDateRange({
+                  ...customDateRange,
+                  end: e.target.value,
+                })
+              }
+              className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[140px]'
+            />
+          </div>
+        )}
+        <select
+          value={selectedBankAccount}
+          onChange={(e) => setSelectedBankAccount(e.target.value)}
+          className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[180px]'
+        >
+          <option value=''>All Bank Accounts</option>
+          {bankAccounts.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.accountName} - {b.bankName}
+            </option>
+          ))}
+        </select>
+        <select
+          value={selectedStatus}
+          onChange={(e) => setSelectedStatus(e.target.value)}
+          className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[140px]'
+        >
+          <option value=''>All Statuses</option>
+          <option value='draft'>Draft</option>
+          <option value='sent'>Sent</option>
+          <option value='paid'>Paid</option>
+          <option value='overdue'>Overdue</option>
+        </select>
+        <select
+          value={selectedCustomer}
+          onChange={(e) => setSelectedCustomer(e.target.value)}
+          className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[160px]'
+        >
+          <option value=''>All Customers</option>
+          {customers.map((c) => (
+            <option key={c.id} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
       </div>
       <div className='bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden'>
         <div className='overflow-x-auto'>
@@ -169,8 +336,8 @@ const InvoicesListPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {invoices.length > 0 ? (
-                invoices.map((invoice) => (
+              {filteredInvoices.length > 0 ? (
+                filteredInvoices.map((invoice) => (
                   <tr
                     key={invoice.id}
                     className='bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'
