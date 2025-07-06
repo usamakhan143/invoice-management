@@ -1,24 +1,24 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useAuth } from "../../hooks/useAuth";
-import { db, FieldValue, Timestamp } from "../../services/firebase";
+import React, { useState, useEffect, useCallback } from "react"
+import { useNavigate, useParams } from "react-router-dom"
+import { useAuth } from "../../hooks/useAuth"
+import { db, FieldValue, Timestamp } from "../../services/firebase"
 import type {
   Invoice,
   InvoiceItem,
   Customer,
   Product,
   BankAccount,
-} from "../../types";
-import Spinner from "../../components/Spinner";
+} from "../../types"
+import Spinner from "../../components/Spinner"
 
 const InvoiceFormPage: React.FC = () => {
-  const { user, userProfile } = useAuth();
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const { user, userProfile } = useAuth()
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [invoiceData, setInvoiceData] = useState<Partial<Invoice>>({
     customerId: "",
     status: "draft",
@@ -28,141 +28,195 @@ const InvoiceFormPage: React.FC = () => {
       new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     ), // Default 30 days due
     bankAccountId: "",
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  })
+  const currencySymbols: { [key: string]: string } = {
+    USD: "$",
+    EUR: "€",
+    GBP: "£",
+    PKR: "₨",
+    INR: "₹",
+    JPY: "¥",
+    CNY: "¥",
+    AUD: "A$",
+    CAD: "C$",
+    CHF: "CHF",
+    // Add more as needed
+  }
+  const [bankAccountCurrency, setBankAccountCurrency] = useState<string>("")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({})
 
   const calculateTotal = (items: InvoiceItem[]) => {
-    return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  };
+    return items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  }
 
   const fetchInitialData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
+    if (!user) return
+    setLoading(true)
     try {
       const customersSnap = await db
         .collection(`users/${user.uid}/customers`)
-        .get();
+        .get()
       setCustomers(
         customersSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Customer,
+          (doc) => ({ id: doc.id, ...doc.data() } as Customer),
         ),
-      );
+      )
 
       const productsSnap = await db
         .collection(`users/${user.uid}/products`)
-        .get();
+        .get()
       setProducts(
         productsSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Product,
+          (doc) => ({ id: doc.id, ...doc.data() } as Product),
         ),
-      );
+      )
 
       const bankAccountsSnap = await db
         .collection("bankAccounts")
         .where("userId", "==", user.uid)
-        .get();
+        .get()
       setBankAccounts(
         bankAccountsSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
+          (doc) => ({ id: doc.id, ...doc.data() } as BankAccount),
         ),
-      );
+      )
 
       if (id) {
         const invoiceDoc = await db
           .collection(`users/${user.uid}/invoices`)
           .doc(id)
-          .get();
+          .get()
         if (invoiceDoc.exists) {
-          setInvoiceData(invoiceDoc.data() as Invoice);
+          setInvoiceData(invoiceDoc.data() as Invoice)
         } else {
-          setError("Invoice not found.");
+          setError("Invoice not found.")
         }
       }
     } catch (err) {
-      console.error(err);
-      setError("Failed to load data.");
+      console.error(err)
+      setError("Failed to load data.")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [user, id]);
+  }, [user, id])
 
   useEffect(() => {
-    fetchInitialData();
-  }, [fetchInitialData]);
+    fetchInitialData()
+  }, [fetchInitialData])
+
+  useEffect(() => {
+    if (invoiceData.bankAccountId) {
+      const selectedBankAccount = bankAccounts.find(
+        (b) => b.id === invoiceData.bankAccountId,
+      )
+      const currencyCode = selectedBankAccount
+        ? selectedBankAccount.currency
+        : ""
+      setBankAccountCurrency(currencySymbols[currencyCode] || currencyCode)
+    } else {
+      setBankAccountCurrency("")
+    }
+  }, [invoiceData.bankAccountId, bankAccounts])
 
   const handleItemChange = (
     index: number,
     field: keyof InvoiceItem,
     value: any,
   ) => {
-    const newItems = [...(invoiceData.items || [])];
-    (newItems[index] as any)[field] = value;
+    const newItems = [...(invoiceData.items || [])]
+    ;(newItems[index] as any)[field] = value
 
     if (field === "productId") {
-      const product = products.find((p) => p.id === value);
+      const product = products.find((p) => p.id === value)
       if (product) {
-        newItems[index].name = product.name;
-        newItems[index].price = product.price;
+        newItems[index].name = product.name
+        newItems[index].price = product.price
       }
     }
 
-    const total = calculateTotal(newItems);
-    setInvoiceData({ ...invoiceData, items: newItems, total });
-  };
+    const total = calculateTotal(newItems)
+    setInvoiceData({ ...invoiceData, items: newItems, total })
+  }
 
   const addItem = () => {
     const newItems = [
       ...(invoiceData.items || []),
       { productId: "", name: "", quantity: 1, price: 0 },
-    ];
-    setInvoiceData({ ...invoiceData, items: newItems });
-  };
+    ]
+    setInvoiceData({ ...invoiceData, items: newItems })
+  }
 
   const removeItem = (index: number) => {
-    const newItems = (invoiceData.items || []).filter((_, i) => i !== index);
-    const total = calculateTotal(newItems);
-    setInvoiceData({ ...invoiceData, items: newItems, total });
-  };
+    const newItems = (invoiceData.items || []).filter((_, i) => i !== index)
+    const total = calculateTotal(newItems)
+    setInvoiceData({ ...invoiceData, items: newItems, total })
+  }
+
+  const validateForm = () => {
+    const errors: { [key: string]: string } = {}
+    if (!invoiceData.customerId) {
+      errors.customerId = "Customer is required."
+    }
+    if (!invoiceData.bankAccountId) {
+      errors.bankAccountId = "Bank account is required."
+    }
+    if (!invoiceData.items || invoiceData.items.length === 0) {
+      errors.items = "At least one item is required."
+    } else {
+      invoiceData.items.forEach((item, index) => {
+        if (!item.productId) {
+          errors[`itemProductId_${index}`] = "Product is required."
+        }
+        if (!item.quantity || item.quantity <= 0) {
+          errors[`itemQuantity_${index}`] =
+            "Quantity must be greater than zero."
+        }
+        if (!item.price || item.price <= 0) {
+          errors[`itemPrice_${index}`] = "Price must be greater than zero."
+        }
+      })
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (
-      !user ||
-      !userProfile ||
-      !invoiceData.customerId ||
-      !invoiceData.items ||
-      invoiceData.items.length === 0
-    ) {
-      setError("Please fill all required fields and add at least one item.");
-      return;
+    e.preventDefault()
+    setError("")
+    if (!validateForm()) {
+      return
     }
-    setLoading(true);
-    setError("");
+    if (!user || !userProfile) {
+      setError("User not authenticated.")
+      return
+    }
+    setLoading(true)
 
     const selectedCustomer = customers.find(
       (c) => c.id === invoiceData.customerId,
-    );
+    )
     if (!selectedCustomer) {
-      setError("Invalid customer selected.");
-      setLoading(false);
-      return;
+      setError("Invalid customer selected.")
+      setLoading(false)
+      return
     }
 
     const finalInvoiceData = {
       ...invoiceData,
       customerName: selectedCustomer.name,
-      total: calculateTotal(invoiceData.items),
-      bankAccountId: invoiceData.bankAccountId || null,
+      total: calculateTotal(invoiceData.items || []),
+      bankAccountId: invoiceData.bankAccountId || undefined,
       bankAccountCurrency: "",
-    };
+    }
 
     if (invoiceData.bankAccountId) {
       const selectedBankAccount = bankAccounts.find(
         (b) => b.id === invoiceData.bankAccountId,
-      );
+      )
       if (selectedBankAccount) {
-        finalInvoiceData.bankAccountCurrency = selectedBankAccount.currency;
+        finalInvoiceData.bankAccountCurrency = selectedBankAccount.currency
       }
     }
 
@@ -172,11 +226,11 @@ const InvoiceFormPage: React.FC = () => {
         const existingInvoiceDoc = await db
           .collection(`users/${user.uid}/invoices`)
           .doc(id)
-          .get();
+          .get()
 
-        const existingInvoice = existingInvoiceDoc.data() as Invoice;
-        const wasNotPaid = existingInvoice.status !== "paid";
-        const nowPaid = finalInvoiceData.status === "paid";
+        const existingInvoice = existingInvoiceDoc.data() as Invoice
+        const wasNotPaid = existingInvoice.status !== "paid"
+        const nowPaid = finalInvoiceData.status === "paid"
 
         if (wasNotPaid && nowPaid && finalInvoiceData.bankAccountId) {
           // Update both invoice and bank balance
@@ -184,116 +238,116 @@ const InvoiceFormPage: React.FC = () => {
             // READS FIRST: Get bank account data
             const bankAccountRef = db
               .collection("bankAccounts")
-              .doc(finalInvoiceData.bankAccountId);
-            const bankAccountDoc = await transaction.get(bankAccountRef);
+              .doc(finalInvoiceData.bankAccountId)
+            const bankAccountDoc = await transaction.get(bankAccountRef)
 
             // WRITES SECOND: Update invoice
             const invoiceRef = db
               .collection(`users/${user.uid}/invoices`)
-              .doc(id);
-            transaction.update(invoiceRef, finalInvoiceData);
+              .doc(id)
+            transaction.update(invoiceRef, finalInvoiceData)
 
             // Update bank account balance
             if (bankAccountDoc.exists) {
               const currentBalance =
                 bankAccountDoc.data()?.currentBalance ||
                 bankAccountDoc.data()?.initialBalance ||
-                0;
+                0
               transaction.update(bankAccountRef, {
                 currentBalance: currentBalance + (finalInvoiceData.total || 0),
-              });
+              })
             }
-          });
+          })
         } else {
           // Just update the invoice
           await db
             .collection(`users/${user.uid}/invoices`)
             .doc(id)
-            .update(finalInvoiceData);
+            .update(finalInvoiceData)
         }
       } else {
         // Create new invoice
-        const userDocRef = db.collection("users").doc(user.uid);
+        const userDocRef = db.collection("users").doc(user.uid)
 
         await db.runTransaction(async (transaction) => {
           // READS FIRST: Get all required documents
-          const userDoc = await transaction.get(userDocRef);
+          const userDoc = await transaction.get(userDocRef)
           if (!userDoc.exists) {
-            throw "User document does not exist!";
+            throw "User document does not exist!"
           }
 
-          let bankAccountDoc = null;
+          let bankAccountDoc = null
           if (
             finalInvoiceData.status === "paid" &&
             finalInvoiceData.bankAccountId
           ) {
             const bankAccountRef = db
               .collection("bankAccounts")
-              .doc(finalInvoiceData.bankAccountId);
-            bankAccountDoc = await transaction.get(bankAccountRef);
+              .doc(finalInvoiceData.bankAccountId)
+            bankAccountDoc = await transaction.get(bankAccountRef)
           }
 
           // WRITES SECOND: Process all updates
-          const newInvoiceCounter = (userDoc.data()?.invoiceCounter || 0) + 1;
+          const newInvoiceCounter = (userDoc.data()?.invoiceCounter || 0) + 1
           const invoiceNumber = `INV-${String(newInvoiceCounter).padStart(
             4,
             "0",
-          )}`;
+          )}`
 
           const newInvoiceRef = db
             .collection(`users/${user.uid}/invoices`)
-            .doc();
+            .doc()
           transaction.set(newInvoiceRef, {
             ...finalInvoiceData,
             invoiceNumber,
-          });
-          transaction.update(userDocRef, { invoiceCounter: newInvoiceCounter });
+          })
+          transaction.update(userDocRef, { invoiceCounter: newInvoiceCounter })
 
           // Update bank account balance if invoice is paid
           if (bankAccountDoc && bankAccountDoc.exists) {
             const currentBalance =
               bankAccountDoc.data()?.currentBalance ||
               bankAccountDoc.data()?.initialBalance ||
-              0;
+              0
             const bankAccountRef = db
               .collection("bankAccounts")
-              .doc(finalInvoiceData.bankAccountId);
+              .doc(finalInvoiceData.bankAccountId)
             transaction.update(bankAccountRef, {
               currentBalance: currentBalance + (finalInvoiceData.total || 0),
-            });
+            })
           }
-        });
+        })
       }
-      navigate("/invoices");
+      navigate("/invoices")
     } catch (err: any) {
-      console.error(err);
-      setError(`Failed to save invoice: ${err.message}`);
+      console.error(err)
+      setError(`Failed to save invoice: ${err.message}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   if (loading)
     return (
-      <div className="flex justify-center items-center h-full">
+      <div className='flex justify-center items-center h-full'>
         <Spinner />
       </div>
-    );
-  if (error) return <p className="text-red-500">{error}</p>;
+    )
+  if (error) return <p className='text-red-500'>{error}</p>
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-8 bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md"
+      className='space-y-8 bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md'
     >
-      <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+      <h1 className='text-3xl font-bold text-gray-800 dark:text-white'>
         {id ? "Edit Invoice" : "New Invoice"}
       </h1>
 
       {/* Customer & Dates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
             Customer
           </label>
           <select
@@ -301,19 +355,28 @@ const InvoiceFormPage: React.FC = () => {
             onChange={(e) =>
               setInvoiceData({ ...invoiceData, customerId: e.target.value })
             }
-            className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            className={`mt-1 block w-full p-2 border rounded-md shadow-sm dark:bg-gray-700 dark:text-white ${
+              fieldErrors.customerId
+                ? "border-red-500 dark:border-red-400"
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             required
           >
-            <option value="">Select a customer</option>
+            <option value=''>Select a customer</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
           </select>
+          {fieldErrors.customerId && (
+            <p className='mt-1 text-xs text-red-600 dark:text-red-400'>
+              {fieldErrors.customerId}
+            </p>
+          )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
             Status
           </label>
           <select
@@ -324,20 +387,20 @@ const InvoiceFormPage: React.FC = () => {
                 status: e.target.value as Invoice["status"],
               })
             }
-            className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            className='mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white'
           >
-            <option value="draft">Draft</option>
-            <option value="sent">Sent</option>
-            <option value="paid">Paid</option>
-            <option value="overdue">Overdue</option>
+            <option value='draft'>Draft</option>
+            <option value='sent'>Sent</option>
+            <option value='paid'>Paid</option>
+            <option value='overdue'>Overdue</option>
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
             Issue Date
           </label>
           <input
-            type="date"
+            type='date'
             value={
               invoiceData.issueDate instanceof Date
                 ? invoiceData.issueDate.toISOString().split("T")[0]
@@ -349,15 +412,15 @@ const InvoiceFormPage: React.FC = () => {
                 issueDate: Timestamp.fromDate(new Date(e.target.value)),
               })
             }
-            className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            className='mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white'
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
             Due Date
           </label>
           <input
-            type="date"
+            type='date'
             value={
               invoiceData.dueDate instanceof Date
                 ? invoiceData.dueDate.toISOString().split("T")[0]
@@ -369,105 +432,168 @@ const InvoiceFormPage: React.FC = () => {
                 dueDate: Timestamp.fromDate(new Date(e.target.value)),
               })
             }
-            className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            className='mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white'
           />
         </div>
       </div>
 
       {/* Bank Account */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
           Bank Account
         </label>
         <select
           value={invoiceData.bankAccountId || ""}
-          onChange={(e) =>
-            setInvoiceData({ ...invoiceData, bankAccountId: e.target.value })
-          }
-          className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          onChange={(e) => {
+            const selectedBankAccountId = e.target.value
+            setInvoiceData({
+              ...invoiceData,
+              bankAccountId: selectedBankAccountId,
+            })
+            const selectedBankAccount = bankAccounts.find(
+              (b) => b.id === selectedBankAccountId,
+            )
+            setBankAccountCurrency(
+              selectedBankAccount ? selectedBankAccount.currency : "",
+            )
+          }}
+          className={`mt-1 block w-full p-2 border rounded-md shadow-sm dark:bg-gray-700 dark:text-white ${
+            fieldErrors.bankAccountId
+              ? "border-red-500 dark:border-red-400"
+              : "border-gray-300 dark:border-gray-600"
+          }`}
+          required
         >
-          <option value="">Select a bank account</option>
+          <option value=''>Select a bank account</option>
           {bankAccounts.map((b) => (
             <option key={b.id} value={b.id}>
               {b.accountName} - {b.bankName} ({b.currency})
             </option>
           ))}
         </select>
+        {fieldErrors.bankAccountId && (
+          <p className='mt-1 text-xs text-red-600 dark:text-red-400'>
+            {fieldErrors.bankAccountId}
+          </p>
+        )}
       </div>
 
       {/* Items */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+      <div className='space-y-4'>
+        <h2 className='text-xl font-semibold text-gray-800 dark:text-white'>
           Items
         </h2>
         {invoiceData.items?.map((item, index) => (
           <div
             key={index}
-            className="grid grid-cols-12 gap-4 items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-md"
+            className='grid grid-cols-12 gap-4 items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-md'
           >
-            <div className="col-span-12 md:col-span-5">
-              <label className="text-xs text-gray-500">Product</label>
+            <div className='col-span-12 md:col-span-5'>
+              <label className='text-xs text-gray-500'>Product</label>
               <select
                 value={item.productId}
                 onChange={(e) =>
                   handleItemChange(index, "productId", e.target.value)
                 }
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-600 dark:border-gray-500 dark:text-white"
+                className={`mt-1 block w-full p-2 border rounded-md shadow-sm dark:bg-gray-600 dark:text-white ${
+                  fieldErrors[`itemProductId_${index}`]
+                    ? "border-red-500 dark:border-red-400"
+                    : "border-gray-300 dark:border-gray-500"
+                }`}
               >
-                <option value="">Select a product</option>
+                <option value=''>Select a product</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </select>
+              {fieldErrors[`itemProductId_${index}`] && (
+                <p className='mt-1 text-xs text-red-600 dark:text-red-400'>
+                  {fieldErrors[`itemProductId_${index}`]}
+                </p>
+              )}
             </div>
-            <div className="col-span-6 md:col-span-2">
-              <label className="text-xs text-gray-500">Quantity</label>
+            <div className='col-span-6 md:col-span-2'>
+              <label className='text-xs text-gray-500'>Quantity</label>
               <input
-                type="number"
+                type='number'
                 value={item.quantity}
                 onChange={(e) =>
                   handleItemChange(index, "quantity", parseInt(e.target.value))
                 }
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-600 dark:border-gray-500 dark:text-white"
-                min="1"
+                className={`mt-1 block w-full p-2 border rounded-md shadow-sm dark:bg-gray-600 dark:text-white ${
+                  fieldErrors[`itemQuantity_${index}`]
+                    ? "border-red-500 dark:border-red-400"
+                    : "border-gray-300 dark:border-gray-500"
+                }`}
+                min='1'
               />
+              {fieldErrors[`itemQuantity_${index}`] && (
+                <p className='mt-1 text-xs text-red-600 dark:text-red-400'>
+                  {fieldErrors[`itemQuantity_${index}`]}
+                </p>
+              )}
             </div>
-            <div className="col-span-6 md:col-span-2">
-              <label className="text-xs text-gray-500">Price</label>
-              <input
-                type="number"
-                step="0.01"
-                value={item.price}
-                onChange={(e) =>
-                  handleItemChange(index, "price", parseFloat(e.target.value))
-                }
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-600 dark:border-gray-500 dark:text-white"
-              />
+            <div className='col-span-6 md:col-span-2'>
+              <label className='text-xs text-gray-500'>Price</label>
+              <div className='relative'>
+                <span className='absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 dark:text-gray-300'>
+                  {bankAccountCurrency}
+                </span>
+                <div className='relative'>
+                  <span className='absolute inset-y-0 left-0 flex items-center pl-2 text-gray-500 dark:text-gray-300'>
+                    {bankAccountCurrency}
+                  </span>
+                  <input
+                    type='number'
+                    step='0.01'
+                    value={item.price}
+                    placeholder='0.00'
+                    onChange={(e) =>
+                      handleItemChange(
+                        index,
+                        "price",
+                        parseFloat(e.target.value),
+                      )
+                    }
+                    className={`mt-1 block w-full pl-7 p-2 border rounded-md shadow-sm dark:bg-gray-600 dark:text-white ${
+                      fieldErrors[`itemPrice_${index}`]
+                        ? "border-red-500 dark:border-red-400"
+                        : "border-gray-300 dark:border-gray-500"
+                    }`}
+                  />
+                </div>
+              </div>
+              {fieldErrors[`itemPrice_${index}`] && (
+                <p className='mt-1 text-xs text-red-600 dark:text-red-400'>
+                  {fieldErrors[`itemPrice_${index}`]}
+                </p>
+              )}
             </div>
-            <div className="col-span-10 md:col-span-2">
-              <label className="text-xs text-gray-500">Total</label>
-              <p className="mt-1 p-2 text-gray-800 dark:text-white font-semibold">
-                ${(item.quantity * item.price).toFixed(2)}
+            <div className='col-span-10 md:col-span-2'>
+              <label className='text-xs text-gray-500'>Total</label>
+              <p className='mt-1 p-2 text-gray-800 dark:text-white font-semibold'>
+                {bankAccountCurrency}
+                {(item.quantity * item.price).toFixed(2)}
               </p>
             </div>
-            <div className="col-span-2 md:col-span-1 flex items-end">
+            <div className='col-span-2 md:col-span-1 flex items-end'>
               <button
-                type="button"
+                type='button'
                 onClick={() => removeItem(index)}
-                className="text-red-500 hover:text-red-700 p-2"
+                className='text-red-500 hover:text-red-700 p-2'
               >
                 <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
+                  xmlns='http://www.w3.org/2000/svg'
+                  className='h-5 w-5'
+                  viewBox='0 0 20 20'
+                  fill='currentColor'
                 >
                   <path
-                    fillRule="evenodd"
-                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z"
-                    clipRule="evenodd"
+                    fillRule='evenodd'
+                    d='M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z'
+                    clipRule='evenodd'
                   />
                 </svg>
               </button>
@@ -475,43 +601,44 @@ const InvoiceFormPage: React.FC = () => {
           </div>
         ))}
         <button
-          type="button"
+          type='button'
           onClick={addItem}
-          className="px-4 py-2 text-sm border border-dashed border-gray-400 text-gray-600 dark:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+          className='px-4 py-2 text-sm border border-dashed border-gray-400 text-gray-600 dark:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700'
         >
           Add Item
         </button>
       </div>
 
       {/* Total and Actions */}
-      <div className="flex justify-between items-center pt-6 border-t border-gray-200 dark:border-gray-700">
+      <div className='flex justify-between items-center pt-6 border-t border-gray-200 dark:border-gray-700'>
         <div>
-          <span className="text-lg font-medium text-gray-600 dark:text-gray-300">
+          <span className='text-lg font-medium text-gray-600 dark:text-gray-300'>
             Total:
           </span>
-          <span className="ml-2 text-2xl font-bold text-gray-800 dark:text-white">
-            ${calculateTotal(invoiceData.items || []).toFixed(2)}
+          <span className='ml-2 text-2xl font-bold text-gray-800 dark:text-white'>
+            {bankAccountCurrency}
+            {calculateTotal(invoiceData.items || []).toFixed(2)}
           </span>
         </div>
-        <div className="flex space-x-4">
+        <div className='flex space-x-4'>
           <button
-            type="button"
+            type='button'
             onClick={() => navigate("/invoices")}
-            className="px-6 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+            className='px-6 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'
           >
             Cancel
           </button>
           <button
-            type="submit"
+            type='submit'
             disabled={loading}
-            className="px-6 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+            className='px-6 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50'
           >
             {loading ? "Saving..." : id ? "Save Changes" : "Create Invoice"}
           </button>
         </div>
       </div>
     </form>
-  );
-};
+  )
+}
 
-export default InvoiceFormPage;
+export default InvoiceFormPage
