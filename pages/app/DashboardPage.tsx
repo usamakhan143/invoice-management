@@ -13,6 +13,7 @@ const DashboardPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({})
 
   useEffect(() => {
     if (!user) return
@@ -49,6 +50,13 @@ const DashboardPage: React.FC = () => {
         )
         setBankAccounts(bankAccountsData)
 
+        // Fetch exchange rates to USD
+        const response = await fetch("https://open.er-api.com/v6/latest/USD")
+        const data = await response.json()
+        if (data && data.rates) {
+          setExchangeRates(data.rates)
+        }
+
         setLoading(false)
       } catch (error) {
         console.error("Error loading dashboard data:", error)
@@ -78,7 +86,11 @@ const DashboardPage: React.FC = () => {
 
   const totalRevenue = invoices
     .filter((inv) => inv.status === "paid")
-    .reduce((sum, inv) => sum + inv.total, 0)
+    .reduce((sum, inv) => {
+      const rate = exchangeRates[inv.bankAccountCurrency || "USD"] || 1
+      const convertedTotal = inv.total / rate
+      return sum + convertedTotal
+    }, 0)
 
   const outstandingRevenue = invoices
     .filter((inv) => inv.status === "sent" || inv.status === "overdue")
