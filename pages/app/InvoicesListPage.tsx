@@ -44,6 +44,8 @@ const InvoicesListPage: React.FC = () => {
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("")
   const [selectedStatus, setSelectedStatus] = useState<string>("")
   const [selectedCustomer, setSelectedCustomer] = useState<string>("")
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const invoicesPerPage = 20
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -222,6 +224,11 @@ const InvoicesListPage: React.FC = () => {
   }
 
   const filteredInvoices = filterInvoices(invoices)
+  const totalPages = Math.ceil(filteredInvoices.length / invoicesPerPage)
+  const currentInvoices = filteredInvoices.slice(
+    (currentPage - 1) * invoicesPerPage,
+    currentPage * invoicesPerPage,
+  )
 
   return (
     <div>
@@ -239,7 +246,10 @@ const InvoicesListPage: React.FC = () => {
       <div className='bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 flex flex-wrap gap-4 items-center'>
         <select
           value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
+          onChange={(e) => {
+            setFilterType(e.target.value)
+            setCurrentPage(1)
+          }}
           className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[120px]'
         >
           <option value='all'>All</option>
@@ -253,30 +263,35 @@ const InvoicesListPage: React.FC = () => {
             <input
               type='date'
               value={customDateRange.start}
-              onChange={(e) =>
+              onChange={(e) => {
                 setCustomDateRange({
                   ...customDateRange,
                   start: e.target.value,
                 })
-              }
+                setCurrentPage(1)
+              }}
               className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[140px]'
             />
             <input
               type='date'
               value={customDateRange.end}
-              onChange={(e) =>
+              onChange={(e) => {
                 setCustomDateRange({
                   ...customDateRange,
                   end: e.target.value,
                 })
-              }
+                setCurrentPage(1)
+              }}
               className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[140px]'
             />
           </div>
         )}
         <select
           value={selectedBankAccount}
-          onChange={(e) => setSelectedBankAccount(e.target.value)}
+          onChange={(e) => {
+            setSelectedBankAccount(e.target.value)
+            setCurrentPage(1)
+          }}
           className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[180px]'
         >
           <option value=''>All Bank Accounts</option>
@@ -288,7 +303,10 @@ const InvoicesListPage: React.FC = () => {
         </select>
         <select
           value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value)}
+          onChange={(e) => {
+            setSelectedStatus(e.target.value)
+            setCurrentPage(1)
+          }}
           className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[140px]'
         >
           <option value=''>All Statuses</option>
@@ -299,7 +317,10 @@ const InvoicesListPage: React.FC = () => {
         </select>
         <select
           value={selectedCustomer}
-          onChange={(e) => setSelectedCustomer(e.target.value)}
+          onChange={(e) => {
+            setSelectedCustomer(e.target.value)
+            setCurrentPage(1)
+          }}
           className='p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[160px]'
         >
           <option value=''>All Customers</option>
@@ -336,8 +357,8 @@ const InvoicesListPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInvoices.length > 0 ? (
-                filteredInvoices.map((invoice) => (
+              {currentInvoices.length > 0 ? (
+                currentInvoices.map((invoice) => (
                   <tr
                     key={invoice.id}
                     className='bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'
@@ -431,34 +452,37 @@ const InvoicesListPage: React.FC = () => {
           </table>
         </div>
       </div>
-
-      {deleteModal.isOpen && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
-          <div className='bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md'>
-            <h3 className='text-lg font-bold text-gray-900 dark:text-white'>
-              Delete Invoice
-            </h3>
-            <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
-              Are you sure you want to delete this invoice? This action cannot
-              be undone.
-            </p>
-            <div className='mt-6 flex justify-end space-x-3'>
+      {totalPages > 1 && (
+        <div className='flex justify-center items-center space-x-2 mt-4'>
+          <button
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className='px-3 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50'
+          >
+            Previous
+          </button>
+          {[...Array(totalPages)].map((_, index) => {
+            return (
               <button
-                onClick={() =>
-                  setDeleteModal({ isOpen: false, invoiceId: null })
-                }
-                className='px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'
+                key={index}
+                onClick={() => setCurrentPage(index + 1)}
+                className={`px-3 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 ${
+                  currentPage === index + 1 ? "font-bold underline" : ""
+                }`}
               >
-                Cancel
+                {index + 1}
               </button>
-              <button
-                onClick={handleDelete}
-                className='px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700'
-              >
-                Delete
-              </button>
-            </div>
-          </div>
+            )
+          })}
+          <button
+            onClick={() =>
+              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+            }
+            disabled={currentPage === totalPages}
+            className='px-3 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50'
+          >
+            Next
+          </button>
         </div>
       )}
     </div>
