@@ -7,6 +7,7 @@ import {
   CustomerIcon,
   ProductIcon,
   BankIcon,
+  ExpenseIcon,
   LogoutIcon,
   MenuIcon,
   CloseIcon,
@@ -32,6 +33,7 @@ const Sidebar: React.FC = () => {
     { to: "/customers", icon: <CustomerIcon />, label: "Customers" },
     { to: "/products", icon: <ProductIcon />, label: "Products" },
     { to: "/bank-accounts", icon: <BankIcon />, label: "Bank Accounts" },
+    { to: "/expenses", icon: <ExpenseIcon />, label: "Expenses" },
   ];
 
   const sidebarContent = (

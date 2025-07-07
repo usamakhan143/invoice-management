@@ -37,18 +37,7 @@ const InvoiceFormPage: React.FC = () => {
     payments: [],
   });
 
-  const currencySymbols: { [key: string]: string } = {
-    USD: "$",
-    EUR: "€",
-    GBP: "£",
-    PKR: "₨",
-    INR: "₹",
-    JPY: "¥",
-    CNY: "¥",
-    AUD: "A$",
-    CAD: "C$",
-    CHF: "CHF",
-  };
+  // Currency symbols are now managed through bank accounts
 
   const [bankAccountCurrency, setBankAccountCurrency] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -135,10 +124,7 @@ const InvoiceFormPage: React.FC = () => {
       const selectedBankAccount = bankAccounts.find(
         (b) => b.id === invoiceData.bankAccountId,
       );
-      const currencyCode = selectedBankAccount
-        ? selectedBankAccount.currency
-        : "";
-      setBankAccountCurrency(currencySymbols[currencyCode] || currencyCode);
+      setBankAccountCurrency(selectedBankAccount?.currencySymbol || "$");
     } else {
       setBankAccountCurrency("");
     }
@@ -675,7 +661,7 @@ const InvoiceFormPage: React.FC = () => {
               (b) => b.id === selectedBankAccountId,
             );
             setBankAccountCurrency(
-              selectedBankAccount ? selectedBankAccount.currency : "",
+              selectedBankAccount ? selectedBankAccount.currencySymbol : "$",
             );
           }}
           className={`mt-1 block w-full p-2 border rounded-md shadow-sm dark:bg-gray-700 dark:text-white ${
@@ -688,7 +674,7 @@ const InvoiceFormPage: React.FC = () => {
           <option value="">Select a bank account</option>
           {bankAccounts.map((b) => (
             <option key={b.id} value={b.id}>
-              {b.accountName} - {b.bankName} ({b.currency})
+              {b.accountName} - {b.bankName} ({b.currency} - {b.currencySymbol})
             </option>
           ))}
         </select>

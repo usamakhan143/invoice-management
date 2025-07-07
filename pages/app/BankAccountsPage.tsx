@@ -15,6 +15,7 @@ const BankAccountsPage: React.FC = () => {
     bankName: "",
     accountNumber: "",
     currency: "USD",
+    currencySymbol: "$",
     initialBalance: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -50,6 +51,7 @@ const BankAccountsPage: React.FC = () => {
       bankName: "",
       accountNumber: "",
       currency: "USD",
+      currencySymbol: "$",
       initialBalance: "",
     });
     setEditingId(null);
@@ -69,7 +71,8 @@ const BankAccountsPage: React.FC = () => {
       !form.accountName ||
       !form.bankName ||
       !form.accountNumber ||
-      !form.currency
+      !form.currency ||
+      !form.currencySymbol
     ) {
       setError("Please fill all required fields.");
       return;
@@ -86,6 +89,7 @@ const BankAccountsPage: React.FC = () => {
         bankName: form.bankName,
         accountNumber: form.accountNumber,
         currency: form.currency,
+        currencySymbol: form.currencySymbol,
         initialBalance: initialBalance,
         currentBalance: initialBalance,
         createdAt: Timestamp.now(),
@@ -118,6 +122,7 @@ const BankAccountsPage: React.FC = () => {
       bankName: account.bankName,
       accountNumber: account.accountNumber,
       currency: account.currency,
+      currencySymbol: account.currencySymbol || "$",
       initialBalance: "",
     });
     setEditingId(account.id);
@@ -212,6 +217,21 @@ const BankAccountsPage: React.FC = () => {
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Currency Symbol
+            </label>
+            <input
+              type="text"
+              name="currencySymbol"
+              value={form.currencySymbol}
+              onChange={handleInputChange}
+              placeholder="e.g., $, €, ₨, ₹"
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              required
+              maxLength={5}
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -249,61 +269,90 @@ const BankAccountsPage: React.FC = () => {
         Your Bank Accounts
       </h2>
       {bankAccounts.length === 0 ? (
-        <p className="text-gray-600 dark:text-gray-300">
-          No bank accounts found.
-        </p>
+        <div className="text-center py-8">
+          <p className="text-gray-600 dark:text-gray-300 mb-4">
+            No bank accounts found.
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Add your first bank account to start managing finances.
+          </p>
+        </div>
       ) : (
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-gray-300 dark:border-gray-600">
-              <th className="px-4 py-2">Account Name</th>
-              <th className="px-4 py-2">Bank Name</th>
-              <th className="px-4 py-2">Account Number</th>
-              <th className="px-4 py-2">Currency</th>
-              <th className="px-4 py-2">Initial Balance</th>
-              <th className="px-4 py-2">Current Balance</th>
-              <th className="px-4 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {bankAccounts.map((account) => (
-              <tr
-                key={account.id}
-                className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <td className="px-4 py-2">{account.accountName}</td>
-                <td className="px-4 py-2">{account.bankName}</td>
-                <td className="px-4 py-2">{account.accountNumber}</td>
-                <td className="px-4 py-2">{account.currency}</td>
-                <td className="px-4 py-2">{account.initialBalance || 0}</td>
-                <td className="px-4 py-2 font-semibold text-green-600">
-                  {new Intl.NumberFormat("en-US", {
-                    style: "currency",
-                    currency: account.currency,
-                  }).format(
-                    (account as any).currentBalance ||
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {bankAccounts.map((account) => (
+            <div
+              key={account.id}
+              className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-700 dark:to-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-600 hover:shadow-lg transition-shadow"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                    {account.accountName}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {account.bankName}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {account.accountNumber}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100">
+                    {account.currency}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    Symbol:
+                  </span>
+                  <span className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                    {account.currencySymbol || "$"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    Initial:
+                  </span>
+                  <span className="text-sm font-medium">
+                    {account.currencySymbol || "$"}
+                    {(account.initialBalance || 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    Current:
+                  </span>
+                  <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                    {account.currencySymbol || "$"}
+                    {(
+                      account.currentBalance ||
                       account.initialBalance ||
-                      0,
-                  )}
-                </td>
-                <td className="px-4 py-2 space-x-2">
-                  <button
-                    onClick={() => handleEdit(account)}
-                    className="px-2 py-1 bg-yellow-400 rounded hover:bg-yellow-500 text-white"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(account.id)}
-                    className="px-2 py-1 bg-red-500 rounded hover:bg-red-600 text-white"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      0
+                    ).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleEdit(account)}
+                  className="flex-1 px-3 py-2 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-600 transition-colors"
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(account.id)}
+                  className="flex-1 px-3 py-2 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors"
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

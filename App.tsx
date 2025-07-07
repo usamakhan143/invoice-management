@@ -12,6 +12,7 @@ const InvoiceFormPage = lazy(() => import("./pages/app/InvoiceFormPage"));
 const CustomersPage = lazy(() => import("./pages/app/CustomersPage"));
 const ProductsPage = lazy(() => import("./pages/app/ProductsPage"));
 const BankAccountsPage = lazy(() => import("./pages/app/BankAccountsPage"));
+const ExpensesPage = lazy(() => import("./pages/app/ExpensesPage"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const SignUpPage = lazy(() => import("./pages/auth/SignUpPage"));
 
@@ -47,6 +48,7 @@ const App: React.FC = () => {
               <Route path="/customers" element={<CustomersPage />} />
               <Route path="/products" element={<ProductsPage />} />
               <Route path="/bank-accounts" element={<BankAccountsPage />} />
+              <Route path="/expenses" element={<ExpensesPage />} />
             </Route>
           </Route>
           <Route element={<AuthLayout />}>

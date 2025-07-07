@@ -73,7 +73,23 @@ export interface BankAccount {
   bankName: string;
   accountNumber: string;
   currency: string;
+  currencySymbol: string;
   createdAt: firebase.firestore.Timestamp;
   initialBalance?: number;
   currentBalance?: number;
+}
+
+export interface Expense {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  amount: number;
+  category: string;
+  bankAccountId: string;
+  bankAccountName: string; // denormalized
+  currency: string;
+  currencySymbol: string;
+  date: firebase.firestore.Timestamp;
+  createdAt: firebase.firestore.Timestamp;
 }
