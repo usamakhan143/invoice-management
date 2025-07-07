@@ -28,9 +28,19 @@ export interface InvoiceItem {
   name: string;
   quantity: number;
   price: number;
+  isCustom?: boolean; // for custom products/services
 }
 
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue";
+
+export type PaymentType = "full" | "milestone" | "upfront";
+
+export interface PaymentRecord {
+  id: string;
+  amount: number;
+  date: firebase.firestore.Timestamp;
+  description: string;
+}
 
 export interface Invoice {
   id: string;
@@ -44,6 +54,16 @@ export interface Invoice {
   dueDate: firebase.firestore.Timestamp;
   bankAccountId?: string;
   bankAccountCurrency?: string;
+  // Payment tracking fields
+  paymentType: PaymentType;
+  totalAmountDue: number;
+  amountPaid: number;
+  remainingAmount: number;
+  payments: PaymentRecord[];
+  // For milestone and upfront payments
+  milestoneDescription?: string;
+  upfrontAmount?: number;
+  upfrontPaid?: boolean;
 }
 
 export interface BankAccount {
