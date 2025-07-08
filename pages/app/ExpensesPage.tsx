@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { usePageTitle } from "../../hooks/usePageTitle";
 import { db, Timestamp } from "../../services/firebase";
 import type { Expense, BankAccount } from "../../types";
 import Spinner from "../../components/Spinner";
 
 const ExpensesPage: React.FC = () => {
+  usePageTitle("Expenses");
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -12,6 +14,9 @@ const ExpensesPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentExpense, setCurrentExpense] = useState<Partial<Expense> | null>(
     null,
+  );
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(
+    {},
   );
   const [filter, setFilter] = useState({
     period: "month", // month, week, year, all
@@ -37,6 +42,25 @@ const ExpensesPage: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
+
+    const loadData = async () => {
+      // Load exchange rates
+      try {
+        const response = await fetch(
+          "https://api.exchangerate-api.com/v4/latest/USD",
+        );
+        const data = await response.json();
+        if (data && data.rates) {
+          setExchangeRates(data.rates);
+        }
+      } catch (error) {
+        console.error("Failed to load exchange rates:", error);
+        // Use default rates if API fails
+        setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+      }
+    };
+
+    loadData();
 
     // Load bank accounts with real-time updates
     const bankAccountsUnsubscribe = db
@@ -137,14 +161,17 @@ const ExpensesPage: React.FC = () => {
   const getExpenseStats = () => {
     const filteredExpenses = getFilteredExpenses();
 
-    const totalAmount = filteredExpenses.reduce(
-      (sum, expense) => sum + expense.amount,
-      0,
-    );
+    const totalAmount = filteredExpenses.reduce((sum, expense) => {
+      const rate = exchangeRates[expense.currency || "USD"] || 1;
+      const convertedAmount = expense.amount / rate;
+      return sum + convertedAmount;
+    }, 0);
 
     const categoryTotals = filteredExpenses.reduce(
       (acc, expense) => {
-        acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
+        const rate = exchangeRates[expense.currency || "USD"] || 1;
+        const convertedAmount = expense.amount / rate;
+        acc[expense.category] = (acc[expense.category] || 0) + convertedAmount;
         return acc;
       },
       {} as Record<string, number>,
@@ -152,8 +179,10 @@ const ExpensesPage: React.FC = () => {
 
     const bankTotals = filteredExpenses.reduce(
       (acc, expense) => {
+        const rate = exchangeRates[expense.currency || "USD"] || 1;
+        const convertedAmount = expense.amount / rate;
         const key = expense.bankAccountName;
-        acc[key] = (acc[key] || 0) + expense.amount;
+        acc[key] = (acc[key] || 0) + convertedAmount;
         return acc;
       },
       {} as Record<string, number>,
@@ -374,11 +403,8 @@ const ExpensesPage: React.FC = () => {
           <p className="text-2xl font-bold">{stats.totalCount}</p>
         </div>
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-lg text-white">
-          <h3 className="text-sm font-medium">Total Amount</h3>
-          <p className="text-2xl font-bold">
-            {bankAccounts[0]?.currencySymbol || "$"}
-            {stats.totalAmount.toFixed(2)}
-          </p>
+          <h3 className="text-sm font-medium">Total Amount (USD)</h3>
+          <p className="text-2xl font-bold">${stats.totalAmount.toFixed(2)}</p>
         </div>
         <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Top Category</h3>

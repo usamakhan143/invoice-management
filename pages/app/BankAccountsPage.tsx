@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { usePageTitle } from "../../hooks/usePageTitle";
 import { db, Timestamp } from "../../services/firebase";
 import type { BankAccount } from "../../types";
 import Spinner from "../../components/Spinner";
@@ -7,6 +8,7 @@ import Spinner from "../../components/Spinner";
 const currencies = ["USD", "PKR", "EUR"];
 
 const BankAccountsPage: React.FC = () => {
+  usePageTitle("Bank Accounts");
   const { user } = useAuth();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);

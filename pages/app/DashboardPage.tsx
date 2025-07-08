@@ -115,7 +115,11 @@ const DashboardPage: React.FC = () => {
         expenseDate.getFullYear() === now.getFullYear()
       );
     })
-    .reduce((sum, exp) => sum + exp.amount, 0);
+    .reduce((sum, exp) => {
+      const rate = exchangeRates[exp.currency || "USD"] || 1;
+      const convertedAmount = exp.amount / rate;
+      return sum + convertedAmount;
+    }, 0);
 
   if (loading) {
     return (
@@ -131,7 +135,13 @@ const DashboardPage: React.FC = () => {
         (inv) => inv.status === "paid" && inv.bankAccountId === account.id,
       )
       .reduce((sum, inv) => sum + inv.total, 0);
-    const currentBalance = (account.initialBalance || 0) + paidInvoicesTotal;
+
+    const expensesTotal = expenses
+      .filter((exp) => exp.bankAccountId === account.id)
+      .reduce((sum, exp) => sum + exp.amount, 0);
+
+    const currentBalance =
+      (account.initialBalance || 0) + paidInvoicesTotal - expensesTotal;
     return {
       ...account,
       currentBalance,
