@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
+import { usePageTitle } from "./hooks/usePageTitle";
 import Spinner from "./components/Spinner";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
@@ -29,6 +30,8 @@ const ProtectedRoute: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  usePageTitle();
+
   return (
     <HashRouter>
       <Suspense

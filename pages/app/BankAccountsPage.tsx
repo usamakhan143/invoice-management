@@ -316,9 +316,12 @@ const BankAccountsPage: React.FC = () => {
                   <span className="text-sm text-gray-600 dark:text-gray-300">
                     Initial:
                   </span>
-                  <span className="text-sm font-medium">
+                  <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
                     {account.currencySymbol || "$"}
-                    {(account.initialBalance || 0).toFixed(2)}
+                    {(account.initialBalance || 0).toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -331,7 +334,10 @@ const BankAccountsPage: React.FC = () => {
                       account.currentBalance ||
                       account.initialBalance ||
                       0
-                    ).toFixed(2)}
+                    ).toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </span>
                 </div>
               </div>

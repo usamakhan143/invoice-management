@@ -38,21 +38,21 @@ const ExpensesPage: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    // Load bank accounts
-    const loadBankAccounts = async () => {
-      try {
-        const bankAccountsSnapshot = await db
-          .collection("bankAccounts")
-          .where("userId", "==", user.uid)
-          .get();
-        const bankAccountsData = bankAccountsSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-        );
-        setBankAccounts(bankAccountsData);
-      } catch (error) {
-        console.error("Error loading bank accounts:", error);
-      }
-    };
+    // Load bank accounts with real-time updates
+    const bankAccountsUnsubscribe = db
+      .collection("bankAccounts")
+      .where("userId", "==", user.uid)
+      .onSnapshot(
+        (snapshot) => {
+          const bankAccountsData = snapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
+          );
+          setBankAccounts(bankAccountsData);
+        },
+        (error) => {
+          console.error("Error loading bank accounts:", error);
+        },
+      );
 
     // Load expenses with real-time updates
     const unsubscribe = db
@@ -73,8 +73,10 @@ const ExpensesPage: React.FC = () => {
         },
       );
 
-    loadBankAccounts();
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      bankAccountsUnsubscribe();
+    };
   }, [user]);
 
   const getFilteredExpenses = () => {

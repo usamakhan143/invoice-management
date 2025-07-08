@@ -40,7 +40,7 @@ const Sidebar: React.FC = () => {
     <div className="flex h-full flex-col bg-white dark:bg-gray-800 shadow-lg">
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <h1 className="text-xl font-bold text-primary-600 dark:text-primary-400">
-          Invoicer
+          {userProfile?.companyName || "Invoicer"}
         </h1>
         <button
           onClick={() => setIsOpen(false)}
@@ -89,6 +89,19 @@ const Sidebar: React.FC = () => {
             <LogoutIcon />
             <span className="ml-2">Logout</span>
           </button>
+          <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+              © 2024{" "}
+              <a
+                href="https://itveins.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary-600 dark:text-primary-400 hover:underline"
+              >
+                IT Veins LLC
+              </a>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -96,10 +109,10 @@ const Sidebar: React.FC = () => {
 
   return (
     <>
-      <div className="lg:hidden fixed top-4 left-4 z-20">
+      <div className="lg:hidden fixed bottom-4 left-4 z-20">
         <button
           onClick={() => setIsOpen(true)}
-          className="p-2 bg-white dark:bg-gray-800 rounded-md shadow-md"
+          className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg transition-colors"
         >
           <MenuIcon />
         </button>

@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import DashboardCard from "../../components/DashboardCard";
 import { CustomerIcon, InvoiceIcon, RevenueIcon } from "../../constants";
 import { useAuth } from "../../hooks/useAuth";
+import { usePageTitle } from "../../hooks/usePageTitle";
 import { db } from "../../services/firebase";
 import type { Invoice, Customer, BankAccount, Expense } from "../../types";
 import Spinner from "../../components/Spinner";
 
 const DashboardPage: React.FC = () => {
+  usePageTitle("Dashboard");
   const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -85,10 +87,10 @@ const DashboardPage: React.FC = () => {
     currency: string = "USD",
     symbol: string = "$",
   ) => {
-    const formattedAmount = new Intl.NumberFormat("en-US", {
+    const formattedAmount = amount.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    });
     return symbol + formattedAmount;
   };
 
