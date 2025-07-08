@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
+import { PAGES } from "../config/permissions";
 import {
   DashboardIcon,
   InvoiceIcon,
@@ -15,6 +17,7 @@ import {
 
 const Sidebar: React.FC = () => {
   const { logout, userProfile } = useAuth();
+  const { hasPageAccess, isOwner, isAdmin } = usePermissions();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -27,14 +30,75 @@ const Sidebar: React.FC = () => {
     }
   };
 
-  const navItems = [
-    { to: "/", icon: <DashboardIcon />, label: "Dashboard" },
-    { to: "/invoices", icon: <InvoiceIcon />, label: "Invoices" },
-    { to: "/customers", icon: <CustomerIcon />, label: "Customers" },
-    { to: "/products", icon: <ProductIcon />, label: "Products" },
-    { to: "/bank-accounts", icon: <BankIcon />, label: "Bank Accounts" },
-    { to: "/expenses", icon: <ExpenseIcon />, label: "Expenses" },
+  const allNavItems = [
+    {
+      to: "/",
+      icon: <DashboardIcon />,
+      label: "Dashboard",
+      page: PAGES.DASHBOARD,
+    },
+    {
+      to: "/invoices",
+      icon: <InvoiceIcon />,
+      label: "Invoices",
+      page: PAGES.INVOICES,
+    },
+    {
+      to: "/customers",
+      icon: <CustomerIcon />,
+      label: "Customers",
+      page: PAGES.CUSTOMERS,
+    },
+    {
+      to: "/products",
+      icon: <ProductIcon />,
+      label: "Products",
+      page: PAGES.PRODUCTS,
+    },
+    {
+      to: "/bank-accounts",
+      icon: <BankIcon />,
+      label: "Bank Accounts",
+      page: PAGES.BANK_ACCOUNTS,
+    },
+    {
+      to: "/expenses",
+      icon: <ExpenseIcon />,
+      label: "Expenses",
+      page: PAGES.EXPENSES,
+    },
+    {
+      to: "/users",
+      icon: (
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
+          />
+        </svg>
+      ),
+      label: "User Management",
+      page: PAGES.USER_MANAGEMENT,
+      adminOnly: true,
+    },
   ];
+
+  // Filter navigation items based on permissions
+  const navItems = allNavItems.filter((item) => {
+    // Show user management only to owners and admins
+    if (item.adminOnly && !isOwner && !isAdmin) {
+      return false;
+    }
+    // Check page access permission
+    return hasPageAccess(item.page);
+  });
 
   const sidebarContent = (
     <div className="flex h-full flex-col bg-white dark:bg-gray-800 shadow-lg">

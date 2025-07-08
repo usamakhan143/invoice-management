@@ -24,57 +24,100 @@ const DashboardPage: React.FC = () => {
     if (!user) return;
 
     const loadData = async () => {
+      setLoading(true);
+
       try {
-        setLoading(true);
+        // Load all data in parallel for better performance
+        const [
+          invoicesSnapshot,
+          customersSnapshot,
+          bankAccountsSnapshot,
+          expensesSnapshot,
+          exchangeRatesResponse,
+        ] = await Promise.allSettled([
+          db.collection(`users/${user.uid}/invoices`).get(),
+          db.collection(`users/${user.uid}/customers`).get(),
+          db.collection("bankAccounts").where("userId", "==", user.uid).get(),
+          db.collection("expenses").where("userId", "==", user.uid).get(),
+          fetch("https://open.er-api.com/v6/latest/USD").catch(() => null),
+        ]);
 
-        // Load invoices
-        const invoicesSnapshot = await db
-          .collection(`users/${user.uid}/invoices`)
-          .get();
-        const invoicesData = invoicesSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Invoice,
-        );
-        setInvoices(invoicesData);
-
-        // Load customers
-        const customersSnapshot = await db
-          .collection(`users/${user.uid}/customers`)
-          .get();
-        const customersData = customersSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Customer,
-        );
-        setCustomers(customersData);
-
-        // Load bank accounts
-        const bankAccountsSnapshot = await db
-          .collection("bankAccounts")
-          .where("userId", "==", user.uid)
-          .get();
-        const bankAccountsData = bankAccountsSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-        );
-        setBankAccounts(bankAccountsData);
-
-        // Load expenses
-        const expensesSnapshot = await db
-          .collection("expenses")
-          .where("userId", "==", user.uid)
-          .get();
-        const expensesData = expensesSnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
-        );
-        setExpenses(expensesData);
-
-        // Fetch exchange rates to USD
-        const response = await fetch("https://open.er-api.com/v6/latest/USD");
-        const data = await response.json();
-        if (data && data.rates) {
-          setExchangeRates(data.rates);
+        // Process invoices
+        if (invoicesSnapshot.status === "fulfilled") {
+          const invoicesData = invoicesSnapshot.value.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Invoice,
+          );
+          setInvoices(invoicesData);
+        } else {
+          console.error("Error loading invoices:", invoicesSnapshot.reason);
+          setInvoices([]);
         }
 
-        setLoading(false);
+        // Process customers
+        if (customersSnapshot.status === "fulfilled") {
+          const customersData = customersSnapshot.value.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Customer,
+          );
+          setCustomers(customersData);
+        } else {
+          console.error("Error loading customers:", customersSnapshot.reason);
+          setCustomers([]);
+        }
+
+        // Process bank accounts
+        if (bankAccountsSnapshot.status === "fulfilled") {
+          const bankAccountsData = bankAccountsSnapshot.value.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
+          );
+          setBankAccounts(bankAccountsData);
+        } else {
+          console.error(
+            "Error loading bank accounts:",
+            bankAccountsSnapshot.reason,
+          );
+          setBankAccounts([]);
+        }
+
+        // Process expenses
+        if (expensesSnapshot.status === "fulfilled") {
+          const expensesData = expensesSnapshot.value.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
+          );
+          setExpenses(expensesData);
+        } else {
+          console.error("Error loading expenses:", expensesSnapshot.reason);
+          setExpenses([]);
+        }
+
+        // Process exchange rates
+        if (
+          exchangeRatesResponse.status === "fulfilled" &&
+          exchangeRatesResponse.value
+        ) {
+          try {
+            const data = await exchangeRatesResponse.value.json();
+            if (data && data.rates) {
+              setExchangeRates(data.rates);
+            } else {
+              // Use default rates
+              setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+            }
+          } catch {
+            setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+          }
+        } else {
+          // Use default rates if fetch failed
+          setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+        }
       } catch (error) {
         console.error("Error loading dashboard data:", error);
+        // Set empty arrays to prevent UI issues
+        setInvoices([]);
+        setCustomers([]);
+        setBankAccounts([]);
+        setExpenses([]);
+        setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+      } finally {
         setLoading(false);
       }
     };

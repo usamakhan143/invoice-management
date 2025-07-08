@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { usePermissions } from "../../hooks/usePermissions";
+import { PAGES } from "../../config/permissions";
 import { db, Timestamp } from "../../services/firebase";
 import type { BankAccount } from "../../types";
 import Spinner from "../../components/Spinner";
+import ProtectedComponent from "../../components/ProtectedComponent";
 
 const currencies = ["USD", "PKR", "EUR"];
 
 const BankAccountsPage: React.FC = () => {
   usePageTitle("Bank Accounts");
   const { user } = useAuth();
+  const { canCreate, canEdit, canDelete, hasPageAccess } = usePermissions();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
@@ -25,26 +29,38 @@ const BankAccountsPage: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
+
     setLoading(true);
-    const unsubscribe = db
-      .collection("bankAccounts")
-      .where("userId", "==", user.uid)
-      .orderBy("createdAt", "desc")
-      .onSnapshot(
-        (snapshot) => {
-          const accounts = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as BankAccount[];
-          setBankAccounts(accounts);
-          setLoading(false);
-        },
-        (err) => {
-          console.error("Failed to fetch bank accounts:", err);
-          setLoading(false);
-        },
-      );
-    return () => unsubscribe();
+    let unsubscribe: (() => void) | null = null;
+
+    try {
+      unsubscribe = db
+        .collection("bankAccounts")
+        .where("userId", "==", user.uid)
+        .orderBy("createdAt", "desc")
+        .onSnapshot(
+          (snapshot) => {
+            const accounts = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            })) as BankAccount[];
+            setBankAccounts(accounts);
+            setLoading(false);
+          },
+          (err) => {
+            console.error("Failed to fetch bank accounts:", err);
+            setBankAccounts([]);
+            setLoading(false);
+          },
+        );
+    } catch (error) {
+      console.error("Error setting up bank accounts listener:", error);
+      setLoading(false);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [user]);
 
   const resetForm = () => {
@@ -144,6 +160,22 @@ const BankAccountsPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  if (!hasPageAccess(PAGES.BANK_ACCOUNTS)) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="text-6xl mb-4">🔒</div>
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Access Denied
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400">
+            You don't have permission to access Bank Accounts.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -250,20 +282,24 @@ const BankAccountsPage: React.FC = () => {
           />
         </div>
         <div className="flex space-x-4">
-          <button
-            type="button"
-            onClick={resetForm}
-            className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
-          >
-            {editingId ? "Save Changes" : "Add Bank Account"}
-          </button>
+          {(canCreate(PAGES.BANK_ACCOUNTS) || canEdit(PAGES.BANK_ACCOUNTS)) && (
+            <>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+              >
+                {editingId ? "Save Changes" : "Add Bank Account"}
+              </button>
+            </>
+          )}
         </div>
       </form>
 
@@ -345,18 +381,22 @@ const BankAccountsPage: React.FC = () => {
               </div>
 
               <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(account)}
-                  className="flex-1 px-3 py-2 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-600 transition-colors"
-                >
-                  ✏️ Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(account.id)}
-                  className="flex-1 px-3 py-2 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors"
-                >
-                  🗑️ Delete
-                </button>
+                <ProtectedComponent page={PAGES.BANK_ACCOUNTS} action="edit">
+                  <button
+                    onClick={() => handleEdit(account)}
+                    className="flex-1 px-3 py-2 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-600 transition-colors"
+                  >
+                    ✏️ Edit
+                  </button>
+                </ProtectedComponent>
+                <ProtectedComponent page={PAGES.BANK_ACCOUNTS} action="delete">
+                  <button
+                    onClick={() => handleDelete(account.id)}
+                    className="flex-1 px-3 py-2 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors"
+                  >
+                    🗑️ Delete
+                  </button>
+                </ProtectedComponent>
               </div>
             </div>
           ))}

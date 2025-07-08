@@ -22,14 +22,32 @@ const SignUpPage: React.FC = () => {
         password,
       );
       if (user) {
-        // Create a user document in Firestore
+        // Create a user document in Firestore as company owner
         await db.collection("users").doc(user.uid).set({
           uid: user.uid,
           email: user.email,
           companyName: companyName,
           createdAt: new Date(),
           invoiceCounter: 0,
+          role: "owner",
+          isOwner: true,
+          companyId: user.uid, // Owner's company ID is their own UID
+          isActive: true,
         });
+
+        // Also create company owner entry in companyUsers collection for consistency
+        await db.collection("companyUsers").add({
+          uid: user.uid,
+          email: user.email,
+          displayName: companyName + " Owner",
+          role: "owner",
+          permissions: [], // Will use default owner permissions
+          isActive: true,
+          companyId: user.uid,
+          invitedBy: user.uid,
+          createdAt: new Date(),
+        });
+
         navigate("/");
       }
     } catch (err: any) {

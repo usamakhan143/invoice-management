@@ -1,11 +1,45 @@
 import firebase from "firebase/compat/app";
 
+export type UserRole = "owner" | "admin" | "manager" | "editor" | "viewer";
+
+export interface Permission {
+  page: string;
+  actions: {
+    view?: boolean;
+    create?: boolean;
+    edit?: boolean;
+    delete?: boolean;
+    export?: boolean;
+  };
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
   companyName: string;
   createdAt: firebase.firestore.Timestamp;
   invoiceCounter: number;
+  // Role-based fields
+  role?: UserRole;
+  isOwner?: boolean;
+  companyId?: string; // Links to the company owner
+  permissions?: Permission[];
+  isActive?: boolean;
+  invitedBy?: string;
+  invitedAt?: firebase.firestore.Timestamp;
+}
+
+export interface CompanyUser {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  permissions: Permission[];
+  isActive: boolean;
+  createdAt: firebase.firestore.Timestamp;
+  invitedBy: string;
+  companyId: string;
 }
 
 export interface Customer {

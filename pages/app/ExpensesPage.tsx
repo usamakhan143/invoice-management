@@ -43,63 +43,76 @@ const ExpensesPage: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
+    let bankAccountsUnsubscribe: (() => void) | null = null;
+    let expensesUnsubscribe: (() => void) | null = null;
+
     const loadData = async () => {
-      // Load exchange rates
+      setLoading(true);
+
       try {
-        const response = await fetch(
-          "https://api.exchangerate-api.com/v4/latest/USD",
-        );
-        const data = await response.json();
-        if (data && data.rates) {
-          setExchangeRates(data.rates);
+        // Load exchange rates first
+        try {
+          const response = await fetch(
+            "https://open.er-api.com/v6/latest/USD",
+            { signal: AbortSignal.timeout(5000) },
+          );
+          const data = await response.json();
+          if (data && data.rates) {
+            setExchangeRates(data.rates);
+          } else {
+            throw new Error("Invalid exchange rate data");
+          }
+        } catch (error) {
+          console.error("Failed to load exchange rates:", error);
+          setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
         }
+
+        // Set up real-time listeners
+        bankAccountsUnsubscribe = db
+          .collection("bankAccounts")
+          .where("userId", "==", user.uid)
+          .onSnapshot(
+            (snapshot) => {
+              const bankAccountsData = snapshot.docs.map(
+                (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
+              );
+              setBankAccounts(bankAccountsData);
+            },
+            (error) => {
+              console.error("Error loading bank accounts:", error);
+              setBankAccounts([]);
+            },
+          );
+
+        expensesUnsubscribe = db
+          .collection("expenses")
+          .where("userId", "==", user.uid)
+          .orderBy("date", "desc")
+          .onSnapshot(
+            (snapshot) => {
+              const expensesData = snapshot.docs.map(
+                (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
+              );
+              setExpenses(expensesData);
+              setLoading(false);
+            },
+            (error) => {
+              console.error("Error loading expenses:", error);
+              setExpenses([]);
+              setLoading(false);
+            },
+          );
       } catch (error) {
-        console.error("Failed to load exchange rates:", error);
-        // Use default rates if API fails
-        setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+        console.error("Error setting up expenses page:", error);
+        setLoading(false);
       }
     };
 
     loadData();
 
-    // Load bank accounts with real-time updates
-    const bankAccountsUnsubscribe = db
-      .collection("bankAccounts")
-      .where("userId", "==", user.uid)
-      .onSnapshot(
-        (snapshot) => {
-          const bankAccountsData = snapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-          );
-          setBankAccounts(bankAccountsData);
-        },
-        (error) => {
-          console.error("Error loading bank accounts:", error);
-        },
-      );
-
-    // Load expenses with real-time updates
-    const unsubscribe = db
-      .collection("expenses")
-      .where("userId", "==", user.uid)
-      .orderBy("date", "desc")
-      .onSnapshot(
-        (snapshot) => {
-          const expensesData = snapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
-          );
-          setExpenses(expensesData);
-          setLoading(false);
-        },
-        (error) => {
-          console.error("Error loading expenses:", error);
-          setLoading(false);
-        },
-      );
-
     return () => {
-      unsubscribe();
-      bankAccountsUnsubscribe();
+      if (bankAccountsUnsubscribe) bankAccountsUnsubscribe();
+      if (expensesUnsubscribe) expensesUnsubscribe();
     };
   }, [user]);
 
