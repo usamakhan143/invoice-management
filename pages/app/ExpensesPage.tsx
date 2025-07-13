@@ -40,80 +40,74 @@ const ExpensesPage: React.FC = () => {
     "Other",
   ];
 
-  useEffect(() => {
+  const loadData = async () => {
     if (!user) return;
+    
+    setLoading(true);
 
-    let bankAccountsUnsubscribe: (() => void) | null = null;
-    let expensesUnsubscribe: (() => void) | null = null;
-
-    const loadData = async () => {
-      setLoading(true);
-
+    try {
+      // Load exchange rates first
       try {
-        // Load exchange rates first
-        try {
-          const response = await fetch(
-            "https://open.er-api.com/v6/latest/USD",
-            { signal: AbortSignal.timeout(5000) },
-          );
-          const data = await response.json();
-          if (data && data.rates) {
-            setExchangeRates(data.rates);
-          } else {
-            throw new Error("Invalid exchange rate data");
-          }
-        } catch (error) {
-          console.error("Failed to load exchange rates:", error);
-          setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
+        const response = await fetch(
+          "https://open.er-api.com/v6/latest/USD",
+          { signal: AbortSignal.timeout(5000) },
+        );
+        const data = await response.json();
+        if (data && data.rates) {
+          setExchangeRates(data.rates);
+        } else {
+          throw new Error("Invalid exchange rate data");
         }
-
-        // Set up real-time listeners
-        bankAccountsUnsubscribe = db
-          .collection("bankAccounts")
-          .where("userId", "==", user.uid)
-          .onSnapshot(
-            (snapshot) => {
-              const bankAccountsData = snapshot.docs.map(
-                (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-              );
-              setBankAccounts(bankAccountsData);
-            },
-            (error) => {
-              console.error("Error loading bank accounts:", error);
-              setBankAccounts([]);
-            },
-          );
-
-        expensesUnsubscribe = db
-          .collection("expenses")
-          .where("userId", "==", user.uid)
-          .orderBy("date", "desc")
-          .onSnapshot(
-            (snapshot) => {
-              const expensesData = snapshot.docs.map(
-                (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
-              );
-              setExpenses(expensesData);
-              setLoading(false);
-            },
-            (error) => {
-              console.error("Error loading expenses:", error);
-              setExpenses([]);
-              setLoading(false);
-            },
-          );
       } catch (error) {
-        console.error("Error setting up expenses page:", error);
-        setLoading(false);
+        console.error("Failed to load exchange rates:", error);
+        setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
       }
-    };
 
+      // Load bank accounts and expenses in parallel using get() instead of onSnapshot
+      const [bankAccountsSnapshot, expensesSnapshot] = await Promise.allSettled([
+        db.collection("bankAccounts").where("userId", "==", user.uid).get(),
+        db.collection("expenses").where("userId", "==", user.uid).get(), // Removed .orderBy("date", "desc")
+      ]);
+
+      // Process bank accounts
+      if (bankAccountsSnapshot.status === "fulfilled") {
+        const bankAccountsData = bankAccountsSnapshot.value.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
+        );
+        setBankAccounts(bankAccountsData);
+      } else {
+        console.error("Error loading bank accounts:", bankAccountsSnapshot.reason);
+        setBankAccounts([]);
+      }
+
+      // Process expenses
+      if (expensesSnapshot.status === "fulfilled") {
+        const expensesData = expensesSnapshot.value.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
+        );
+        
+        // Sort manually to avoid Firestore index requirement
+        expensesData.sort((a, b) => {
+          const aTime = a.date?.toDate?.() || new Date();
+          const bTime = b.date?.toDate?.() || new Date();
+          return bTime.getTime() - aTime.getTime();
+        });
+        
+        setExpenses(expensesData);
+      } else {
+        console.error("Error loading expenses:", expensesSnapshot.reason);
+        setExpenses([]);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error("Error loading data:", error);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadData();
-
-    return () => {
-      if (bankAccountsUnsubscribe) bankAccountsUnsubscribe();
-      if (expensesUnsubscribe) expensesUnsubscribe();
-    };
   }, [user]);
 
   const getFilteredExpenses = () => {
@@ -324,12 +318,24 @@ const ExpensesPage: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
           Expenses Management
         </h1>
-        <button
-          onClick={() => openModal()}
-          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-        >
-          Add Expense
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => loadData()}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+          <button
+            onClick={() => openModal()}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+          >
+            Add Expense
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
