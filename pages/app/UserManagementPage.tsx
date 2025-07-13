@@ -31,12 +31,11 @@ const UserManagementPage: React.FC = () => {
   );
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadUsers = async () => {
     if (!user || !userProfile) return;
-
+    
     setLoading(true);
-    let unsubscribe: (() => void) | null = null;
-
+    
     try {
       const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
 
@@ -46,34 +45,35 @@ const UserManagementPage: React.FC = () => {
         return;
       }
 
-      unsubscribe = db
+      // Change from onSnapshot to get() to avoid index issues
+      const snapshot = await db
         .collection("companyUsers")
         .where("companyId", "==", companyId)
-        .orderBy("createdAt", "desc")
-        .onSnapshot(
-          (snapshot) => {
-            const usersData = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            })) as CompanyUser[];
+        .get(); // Removed .orderBy("createdAt", "desc") to avoid index requirement
 
-            setUsers(usersData);
-            setLoading(false);
-          },
-          (error) => {
-            console.error("Error loading users:", error);
-            setUsers([]);
-            setLoading(false);
-          },
-        );
+      const usersData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as CompanyUser[];
+
+      // Sort manually to avoid Firestore index requirement
+      usersData.sort((a, b) => {
+        const aTime = a.createdAt?.toDate?.() || new Date();
+        const bTime = b.createdAt?.toDate?.() || new Date();
+        return bTime.getTime() - aTime.getTime();
+      });
+
+      setUsers(usersData);
+      setLoading(false);
     } catch (error) {
-      console.error("Error setting up users listener:", error);
+      console.error("Error loading users:", error);
+      setUsers([]);
       setLoading(false);
     }
+  };
 
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+  useEffect(() => {
+    loadUsers();
   }, [user, userProfile]);
 
   const handleCreateUser = async () => {
@@ -256,14 +256,26 @@ const UserManagementPage: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
           User Management
         </h1>
-        {canCreate(PAGES.USER_MANAGEMENT) && (
+        <div className="flex gap-3">
           <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={() => loadUsers()}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            Create User
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {loading ? "Loading..." : "Refresh"}
           </button>
-        )}
+          {canCreate(PAGES.USER_MANAGEMENT) && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              Create User
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats */}

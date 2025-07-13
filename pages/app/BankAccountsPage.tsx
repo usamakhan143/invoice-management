@@ -27,40 +27,40 @@ const BankAccountsPage: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadBankAccounts = async () => {
     if (!user) return;
-
+    
     setLoading(true);
-    let unsubscribe: (() => void) | null = null;
-
     try {
-      unsubscribe = db
+      // Change from onSnapshot to get() to avoid index issues
+      const snapshot = await db
         .collection("bankAccounts")
         .where("userId", "==", user.uid)
-        .orderBy("createdAt", "desc")
-        .onSnapshot(
-          (snapshot) => {
-            const accounts = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            })) as BankAccount[];
-            setBankAccounts(accounts);
-            setLoading(false);
-          },
-          (err) => {
-            console.error("Failed to fetch bank accounts:", err);
-            setBankAccounts([]);
-            setLoading(false);
-          },
-        );
+        .get(); // Removed .orderBy("createdAt", "desc") to avoid index requirement
+
+      const accounts = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as BankAccount[];
+
+      // Sort manually to avoid Firestore index requirement
+      accounts.sort((a, b) => {
+        const aTime = a.createdAt?.toDate?.() || new Date();
+        const bTime = b.createdAt?.toDate?.() || new Date();
+        return bTime.getTime() - aTime.getTime();
+      });
+
+      setBankAccounts(accounts);
+      setLoading(false);
     } catch (error) {
-      console.error("Error setting up bank accounts listener:", error);
+      console.error("Error loading bank accounts:", error);
+      setBankAccounts([]);
       setLoading(false);
     }
+  };
 
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+  useEffect(() => {
+    loadBankAccounts();
   }, [user]);
 
   const resetForm = () => {
@@ -187,9 +187,21 @@ const BankAccountsPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">
-        Bank Accounts Management
-      </h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+          Bank Accounts Management
+        </h1>
+        <button
+          onClick={() => loadBankAccounts()}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          {loading ? "Loading..." : "Refresh"}
+        </button>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4 mb-8">
         {error && <p className="text-red-500">{error}</p>}
