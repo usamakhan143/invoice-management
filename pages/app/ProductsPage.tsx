@@ -1,6 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePermissions } from '../../hooks/usePermissions';
+import { PAGES } from '../../config/permissions';
 import { db } from '../../services/firebase';
 import type { Product } from '../../types';
 import Spinner from '../../components/Spinner';
@@ -8,24 +11,16 @@ import Spinner from '../../components/Spinner';
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 
 const ProductsPage: React.FC = () => {
+    usePageTitle("Products");
     const { user } = useAuth();
+    const { canCreate, canEdit, canDelete, hasPageAccess } = usePermissions();
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentProduct, setCurrentProduct] = useState<Partial<Product> | null>(null);
 
     useEffect(() => {
-        if (!user) return;
-        const unsubscribe = db.collection(`users/${user.uid}/products`)
-            .onSnapshot(snapshot => {
-                const fetchedProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-                setProducts(fetchedProducts);
-                setLoading(false);
-            }, err => {
-                console.error(err);
-                setLoading(false);
-            });
-        return () => unsubscribe();
+        loadProducts();
     }, [user]);
 
     const openModal = (product: Partial<Product> | null = null) => {
@@ -38,8 +33,28 @@ const ProductsPage: React.FC = () => {
         setCurrentProduct(null);
     };
 
+    const loadProducts = async () => {
+        if (!user) return;
+        setLoading(true);
+        try {
+            const snapshot = await db.collection(`users/${user.uid}/products`).get();
+            const fetchedProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+            setProducts(fetchedProducts);
+        } catch (error) {
+            console.error("Error loading products:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!user || !currentProduct) return;
+        
+        // Validate required fields
+        if (!currentProduct.name || !currentProduct.price) {
+            alert("Please fill in all required fields (Name and Price)");
+            return;
+        }
         
         try {
             if ('id' in currentProduct && currentProduct.id) {
@@ -48,8 +63,11 @@ const ProductsPage: React.FC = () => {
                 await db.collection(`users/${user.uid}/products`).add(currentProduct);
             }
             closeModal();
+            // Auto refresh data after successful operation
+            await loadProducts();
         } catch (error) {
             console.error("Error saving product:", error);
+            alert("Failed to save product");
         }
     };
 
@@ -58,12 +76,30 @@ const ProductsPage: React.FC = () => {
         if(window.confirm("Are you sure you want to delete this product?")) {
             try {
                 await db.collection(`users/${user.uid}/products`).doc(productId).delete();
+                // Auto refresh data after successful deletion
+                await loadProducts();
             } catch (error) {
                 console.error("Error deleting product:", error);
                 alert("Failed to delete product. It may be linked to existing invoices.");
             }
         }
     };
+
+    if (!hasPageAccess(PAGES.PRODUCTS)) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                    <div className="text-6xl mb-4">🔒</div>
+                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Access Denied
+                    </h3>
+                    <p className="text-gray-500 dark:text-gray-400">
+                        You don't have permission to access Products.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     if (loading) {
         return <div className="flex justify-center items-center h-full"><Spinner /></div>;
@@ -73,9 +109,23 @@ const ProductsPage: React.FC = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Products & Services</h1>
-                <button onClick={() => openModal()} className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">
-                    Add Product
-                </button>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => loadProducts()}
+                        disabled={loading}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        {loading ? "Loading..." : "Refresh"}
+                    </button>
+                    {canCreate(PAGES.PRODUCTS) && (
+                        <button onClick={() => openModal()} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                            Add Product
+                        </button>
+                    )}
+                </div>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
                 <div className="overflow-x-auto">
@@ -95,8 +145,12 @@ const ProductsPage: React.FC = () => {
                                     <td className="px-6 py-4">{product.description}</td>
                                     <td className="px-6 py-4">{formatCurrency(product.price)}</td>
                                     <td className="px-6 py-4 flex space-x-2">
-                                        <button onClick={() => openModal(product)} className="text-yellow-500 hover:text-yellow-700">Edit</button>
-                                        <button onClick={() => handleDelete(product.id)} className="text-red-500 hover:text-red-700">Delete</button>
+                                        {canEdit(PAGES.PRODUCTS) && (
+                                            <button onClick={() => openModal(product)} className="text-yellow-500 hover:text-yellow-700">Edit</button>
+                                        )}
+                                        {canDelete(PAGES.PRODUCTS) && (
+                                            <button onClick={() => handleDelete(product.id)} className="text-red-500 hover:text-red-700">Delete</button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

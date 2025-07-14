@@ -126,6 +126,8 @@ const BankAccountsPage: React.FC = () => {
         // For now, initialBalance is optional and not tracked in invoices.
       }
       resetForm();
+      // Auto refresh data after successful operation
+      await loadBankAccounts();
     } catch (err) {
       console.error("Failed to save bank account:", err);
       setError("Failed to save bank account.");
@@ -153,6 +155,8 @@ const BankAccountsPage: React.FC = () => {
     setLoading(true);
     try {
       await db.collection("bankAccounts").doc(id).delete();
+      // Auto refresh data after successful deletion
+      await loadBankAccounts();
     } catch (err) {
       console.error("Failed to delete bank account:", err);
       setError("Failed to delete bank account.");
