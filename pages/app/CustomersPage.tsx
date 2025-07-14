@@ -119,6 +119,12 @@ const CustomersPage: React.FC = () => {
   const handleSave = async () => {
     if (!user || !currentCustomer) return;
 
+    // Validate required fields
+    if (!currentCustomer.name || !currentCustomer.email) {
+      alert("Please fill in all required fields (Name and Email)");
+      return;
+    }
+
     try {
       if ("id" in currentCustomer && currentCustomer.id) {
         await db
@@ -129,8 +135,10 @@ const CustomersPage: React.FC = () => {
         await db.collection(`users/${user.uid}/customers`).add(currentCustomer);
       }
       closeModal();
+      // Data will auto-refresh due to onSnapshot listener
     } catch (error) {
       console.error("Error saving customer:", error);
+      alert("Failed to save customer. Please try again.");
     }
   };
 
@@ -142,6 +150,7 @@ const CustomersPage: React.FC = () => {
           .collection(`users/${user.uid}/customers`)
           .doc(customerId)
           .delete();
+        // Data will auto-refresh due to onSnapshot listener
       } catch (error) {
         console.error("Error deleting customer:", error);
         alert(

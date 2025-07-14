@@ -266,6 +266,8 @@ const ExpensesPage: React.FC = () => {
       }
 
       closeModal();
+      // Auto refresh data after successful operation
+      await loadData();
     } catch (error) {
       console.error("Error saving expense:", error);
       alert("Failed to save expense");
@@ -293,6 +295,8 @@ const ExpensesPage: React.FC = () => {
                   0) + expense.amount,
             });
         }
+        // Auto refresh data after successful deletion
+        await loadData();
       } catch (error) {
         console.error("Error deleting expense:", error);
         alert("Failed to delete expense");

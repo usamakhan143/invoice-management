@@ -30,6 +30,15 @@ const UserManagementPage: React.FC = () => {
     [],
   );
   const [error, setError] = useState("");
+  
+  // Edit user states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<CompanyUser | null>(null);
+  const [editForm, setEditForm] = useState({
+    role: "viewer" as UserRole,
+    customPermissions: false,
+  });
+  const [editSelectedPermissions, setEditSelectedPermissions] = useState<Permission[]>([]);
 
   const loadUsers = async () => {
     if (!user || !userProfile) return;
@@ -104,6 +113,16 @@ const UserManagementPage: React.FC = () => {
         ? selectedPermissions
         : ROLE_PERMISSIONS[createForm.role];
 
+      // Store current user info to restore later
+      const currentUserEmail = user.email;
+      const currentUserPassword = prompt(
+        "Please enter your password to continue with user creation:"
+      );
+      
+      if (!currentUserPassword) {
+        throw new Error("Password required to create new users");
+      }
+
       // Create Firebase user first
       const newUserCredential =
         await firebaseAuth.createUserWithEmailAndPassword(
@@ -143,8 +162,17 @@ const UserManagementPage: React.FC = () => {
         createdAt: Timestamp.now(),
       });
 
+      // Sign out the newly created user and sign back in as the original user
+      await firebaseAuth.signOut();
+      if (currentUserEmail) {
+        await firebaseAuth.signInWithEmailAndPassword(currentUserEmail, currentUserPassword);
+      }
+
       setIsCreateModalOpen(false);
       resetCreateForm();
+      
+      // Auto refresh data after successful operation
+      await loadUsers();
 
       alert(`User ${createForm.email} created successfully!`);
     } catch (error: any) {
@@ -220,9 +248,90 @@ const UserManagementPage: React.FC = () => {
 
     try {
       await db.collection("companyUsers").doc(userId).delete();
+      // Auto refresh data after successful deletion
+      await loadUsers();
     } catch (error) {
       console.error("Error deleting user:", error);
       alert("Failed to remove user");
+    }
+  };
+
+  // Edit user functions
+  const openEditModal = (userToEdit: CompanyUser) => {
+    setEditingUser(userToEdit);
+    setEditForm({
+      role: userToEdit.role,
+      customPermissions: userToEdit.permissions && userToEdit.permissions.length > 0 && 
+        JSON.stringify(userToEdit.permissions) !== JSON.stringify(ROLE_PERMISSIONS[userToEdit.role])
+    });
+    setEditSelectedPermissions(userToEdit.permissions || ROLE_PERMISSIONS[userToEdit.role]);
+    setIsEditModalOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingUser(null);
+    setEditForm({ role: "viewer", customPermissions: false });
+    setEditSelectedPermissions([]);
+  };
+
+  const handleEditRoleChange = (role: UserRole) => {
+    setEditForm({ ...editForm, role });
+    if (!editForm.customPermissions) {
+      setEditSelectedPermissions(ROLE_PERMISSIONS[role]);
+    }
+  };
+
+  const toggleEditCustomPermissions = () => {
+    const newCustomPermissions = !editForm.customPermissions;
+    setEditForm({ ...editForm, customPermissions: newCustomPermissions });
+    if (!newCustomPermissions) {
+      setEditSelectedPermissions(ROLE_PERMISSIONS[editForm.role]);
+    }
+  };
+
+  const updateEditPermission = (
+    pageIndex: number,
+    action: keyof Permission["actions"],
+    value: boolean,
+  ) => {
+    const newPermissions = [...editSelectedPermissions];
+    newPermissions[pageIndex] = {
+      ...newPermissions[pageIndex],
+      actions: {
+        ...newPermissions[pageIndex].actions,
+        [action]: value,
+      },
+    };
+    setEditSelectedPermissions(newPermissions);
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+
+    try {
+      const permissions = editForm.customPermissions
+        ? editSelectedPermissions
+        : ROLE_PERMISSIONS[editForm.role];
+
+      // Update company user record
+      await db.collection("companyUsers").doc(editingUser.id).update({
+        role: editForm.role,
+        permissions: permissions,
+      });
+
+      // Update user profile in users collection
+      await db.collection("users").doc(editingUser.uid).update({
+        role: editForm.role,
+        permissions: permissions,
+      });
+
+      closeEditModal();
+      await loadUsers();
+      alert("User updated successfully!");
+    } catch (error: any) {
+      console.error("Error updating user:", error);
+      alert("Failed to update user: " + error.message);
     }
   };
 
@@ -387,6 +496,14 @@ const UserManagementPage: React.FC = () => {
                       {user.createdAt?.toDate().toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 flex space-x-2">
+                      {canEdit(PAGES.USER_MANAGEMENT) && user.role !== "owner" && (
+                        <button
+                          onClick={() => openEditModal(user)}
+                          className="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded"
+                        >
+                          Edit
+                        </button>
+                      )}
                       {canEdit(PAGES.USER_MANAGEMENT) && (
                         <button
                           onClick={() =>
@@ -589,6 +706,108 @@ const UserManagementPage: React.FC = () => {
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
                 {loading ? "Creating..." : "Create User"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {isEditModalOpen && editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Edit User: {editingUser.displayName}
+            </h3>
+
+            <div className="space-y-4">
+              {/* Role Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Role
+                </label>
+                <select
+                  value={editForm.role}
+                  onChange={(e) => handleEditRoleChange(e.target.value as UserRole)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              {/* Custom Permissions Toggle */}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="editCustomPermissions"
+                  checked={editForm.customPermissions}
+                  onChange={toggleEditCustomPermissions}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
+                <label
+                  htmlFor="editCustomPermissions"
+                  className="ml-2 text-sm text-gray-900 dark:text-gray-300"
+                >
+                  Custom Permissions
+                </label>
+              </div>
+
+              {/* Custom Permissions Grid */}
+              {editForm.customPermissions && (
+                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
+                    Page Permissions
+                  </h4>
+                  <div className="space-y-3">
+                    {editSelectedPermissions.map((permission, pageIndex) => (
+                      <div key={permission.page} className="border-b border-gray-200 dark:border-gray-600 pb-3">
+                        <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2 capitalize">
+                          {permission.page.replace('-', ' ')}
+                        </h5>
+                        <div className="grid grid-cols-5 gap-2">
+                          {Object.entries(permission.actions).map(([action, enabled]) => (
+                            <label key={action} className="flex items-center text-xs">
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                onChange={(e) =>
+                                  updateEditPermission(
+                                    pageIndex,
+                                    action as keyof Permission["actions"],
+                                    e.target.checked,
+                                  )
+                                }
+                                className="h-3 w-3 text-blue-600 border-gray-300 rounded mr-1"
+                              />
+                              <span className="text-gray-700 dark:text-gray-300 capitalize">
+                                {action}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={closeEditModal}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateUser}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Update User
               </button>
             </div>
           </div>
