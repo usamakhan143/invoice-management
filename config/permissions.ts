@@ -6,6 +6,7 @@ export const PAGES = {
   CUSTOMERS: "customers",
   PRODUCTS: "products",
   BANK_ACCOUNTS: "bank-accounts",
+  BANK_ACCOUNTS_VIEW: "bank-accounts-view",
   EXPENSES: "expenses",
   USER_MANAGEMENT: "user-management",
   REPORTS: "reports",
@@ -70,6 +71,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
         edit: true,
         delete: true,
         export: true,
+      },
+    },
+    {
+      page: PAGES.BANK_ACCOUNTS_VIEW,
+      actions: {
+        view: true,
       },
     },
     {
@@ -156,6 +163,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
       },
     },
     {
+      page: PAGES.BANK_ACCOUNTS_VIEW,
+      actions: {
+        view: true,
+      },
+    },
+    {
       page: PAGES.EXPENSES,
       actions: {
         view: true,
@@ -239,6 +252,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
       },
     },
     {
+      page: PAGES.BANK_ACCOUNTS_VIEW,
+      actions: {
+        view: true,
+      },
+    },
+    {
       page: PAGES.EXPENSES,
       actions: {
         view: true,
@@ -302,6 +321,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
       },
     },
     {
+      page: PAGES.BANK_ACCOUNTS_VIEW,
+      actions: {
+        view: false,
+      },
+    },
+    {
       page: PAGES.EXPENSES,
       actions: {
         view: true,
@@ -352,6 +377,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
         edit: false,
         delete: false,
         export: false,
+      },
+    },
+    {
+      page: PAGES.BANK_ACCOUNTS_VIEW,
+      actions: {
+        view: false,
       },
     },
   ],

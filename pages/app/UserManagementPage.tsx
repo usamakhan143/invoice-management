@@ -3,6 +3,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { db, auth as firebaseAuth, Timestamp } from "../../services/firebase";
+import { ActivityLogger } from "../../services/activityLogger";
 import {
   ROLE_PERMISSIONS,
   ROLE_DESCRIPTIONS,
@@ -17,6 +18,8 @@ const UserManagementPage: React.FC = () => {
   const { isOwner, isAdmin, canCreate, canEdit, canDelete } = usePermissions();
 
   const [users, setUsers] = useState<CompanyUser[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<CompanyUser[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -30,7 +33,7 @@ const UserManagementPage: React.FC = () => {
     [],
   );
   const [error, setError] = useState("");
-  
+
   // Edit user states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<CompanyUser | null>(null);
@@ -38,13 +41,15 @@ const UserManagementPage: React.FC = () => {
     role: "viewer" as UserRole,
     customPermissions: false,
   });
-  const [editSelectedPermissions, setEditSelectedPermissions] = useState<Permission[]>([]);
+  const [editSelectedPermissions, setEditSelectedPermissions] = useState<
+    Permission[]
+  >([]);
 
   const loadUsers = async () => {
     if (!user || !userProfile) return;
-    
+
     setLoading(true);
-    
+
     try {
       const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
 
@@ -54,36 +59,75 @@ const UserManagementPage: React.FC = () => {
         return;
       }
 
-      // Change from onSnapshot to get() to avoid index issues
-      const snapshot = await db
+      // Use onSnapshot for real-time updates
+      const unsubscribe = db
         .collection("companyUsers")
         .where("companyId", "==", companyId)
-        .get(); // Removed .orderBy("createdAt", "desc") to avoid index requirement
+        .onSnapshot(
+          (snapshot) => {
+            const usersData = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            })) as CompanyUser[];
 
-      const usersData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CompanyUser[];
+            // Sort manually to avoid Firestore index requirement
+            usersData.sort((a, b) => {
+              const aTime = a.createdAt?.toDate?.() || new Date();
+              const bTime = b.createdAt?.toDate?.() || new Date();
+              return bTime.getTime() - aTime.getTime();
+            });
 
-      // Sort manually to avoid Firestore index requirement
-      usersData.sort((a, b) => {
-        const aTime = a.createdAt?.toDate?.() || new Date();
-        const bTime = b.createdAt?.toDate?.() || new Date();
-        return bTime.getTime() - aTime.getTime();
-      });
+            setUsers(usersData);
+            setFilteredUsers(usersData);
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Error loading users:", error);
+            setUsers([]);
+            setLoading(false);
+          },
+        );
 
-      setUsers(usersData);
-      setLoading(false);
+      // Return cleanup function
+      return unsubscribe;
     } catch (error) {
-      console.error("Error loading users:", error);
+      console.error("Error setting up users listener:", error);
       setUsers([]);
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadUsers();
+    let unsubscribe: (() => void) | undefined;
+
+    const setupListener = async () => {
+      unsubscribe = await loadUsers();
+    };
+
+    setupListener();
+
+    // Cleanup listener on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [user, userProfile]);
+
+  // Filter users based on search term
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredUsers(users);
+    } else {
+      const filtered = users.filter(
+        (user) =>
+          user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          user.role.toLowerCase().includes(searchTerm.toLowerCase()),
+      );
+      setFilteredUsers(filtered);
+    }
+  }, [searchTerm, users]);
 
   const handleCreateUser = async () => {
     if (!user || !userProfile) return;
@@ -113,33 +157,15 @@ const UserManagementPage: React.FC = () => {
         ? selectedPermissions
         : ROLE_PERMISSIONS[createForm.role];
 
-      // Store current user info to restore later
-      const currentUserEmail = user.email;
-      const currentUserPassword = prompt(
-        "Please enter your password to continue with user creation:"
-      );
-      
-      if (!currentUserPassword) {
-        throw new Error("Password required to create new users");
-      }
+      // Generate a unique user ID (in production, this should be done via Firebase Admin SDK)
+      const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      // Create Firebase user first
-      const newUserCredential =
-        await firebaseAuth.createUserWithEmailAndPassword(
-          createForm.email,
-          createForm.password,
-        );
-      const newFirebaseUser = newUserCredential.user;
-
-      if (!newFirebaseUser) {
-        throw new Error("Failed to create user account");
-      }
-
-      // Create user profile in users collection
-      await db.collection("users").doc(newFirebaseUser.uid).set({
-        uid: newFirebaseUser.uid,
+      // Create user profile in users collection (without Firebase Auth to avoid logout)
+      await db.collection("users").doc(newUserId).set({
+        uid: newUserId,
         email: createForm.email,
         companyName: userProfile.companyName,
+        displayName: createForm.displayName,
         createdAt: Timestamp.now(),
         invoiceCounter: 0,
         role: createForm.role,
@@ -147,11 +173,13 @@ const UserManagementPage: React.FC = () => {
         companyId: companyId,
         permissions: permissions,
         isActive: true,
+        // Add password for manual login (in production, use proper hashing)
+        tempPassword: createForm.password,
       });
 
       // Create company user record
       await db.collection("companyUsers").add({
-        uid: newFirebaseUser.uid,
+        uid: newUserId,
         email: createForm.email,
         displayName: createForm.displayName,
         role: createForm.role,
@@ -162,21 +190,47 @@ const UserManagementPage: React.FC = () => {
         createdAt: Timestamp.now(),
       });
 
-      // Sign out the newly created user and sign back in as the original user
-      await firebaseAuth.signOut();
-      if (currentUserEmail) {
-        await firebaseAuth.signInWithEmailAndPassword(currentUserEmail, currentUserPassword);
-      }
+      // Log user creation activity
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_created",
+        `Created new user: ${createForm.displayName} (${createForm.email})`,
+        {
+          entityId: newUserId,
+          entityType: "user",
+          newValue: {
+            email: createForm.email,
+            displayName: createForm.displayName,
+            role: createForm.role,
+          },
+        },
+      );
 
       setIsCreateModalOpen(false);
       resetCreateForm();
-      
+
       // Auto refresh data after successful operation
       await loadUsers();
 
-      alert(`User ${createForm.email} created successfully!`);
+      alert(
+        `User ${createForm.email} created successfully! They can now login using the "Login As" button or manually with email: ${createForm.email} and the password you provided.`,
+      );
     } catch (error: any) {
       setError(error.message);
+      // If error occurred, try to sign back in as admin
+      if (user?.email) {
+        try {
+          const password = prompt(
+            "Please enter your password to restore your session:",
+          );
+          if (password) {
+            await firebaseAuth.signInWithEmailAndPassword(user.email, password);
+          }
+        } catch (authError) {
+          console.error("Failed to restore admin session:", authError);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -246,8 +300,30 @@ const UserManagementPage: React.FC = () => {
       return;
     }
 
+    const userToDelete = users.find((u) => u.id === userId);
+
     try {
       await db.collection("companyUsers").doc(userId).delete();
+
+      // Log user deletion activity
+      if (user && userProfile && userToDelete) {
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "user_deleted",
+          `Removed user: ${userToDelete.displayName} (${userEmail})`,
+          {
+            entityId: userId,
+            entityType: "user",
+            oldValue: {
+              email: userEmail,
+              displayName: userToDelete.displayName,
+              role: userToDelete.role,
+            },
+          },
+        );
+      }
+
       // Auto refresh data after successful deletion
       await loadUsers();
     } catch (error) {
@@ -261,10 +337,15 @@ const UserManagementPage: React.FC = () => {
     setEditingUser(userToEdit);
     setEditForm({
       role: userToEdit.role,
-      customPermissions: userToEdit.permissions && userToEdit.permissions.length > 0 && 
-        JSON.stringify(userToEdit.permissions) !== JSON.stringify(ROLE_PERMISSIONS[userToEdit.role])
+      customPermissions:
+        userToEdit.permissions &&
+        userToEdit.permissions.length > 0 &&
+        JSON.stringify(userToEdit.permissions) !==
+          JSON.stringify(ROLE_PERMISSIONS[userToEdit.role]),
     });
-    setEditSelectedPermissions(userToEdit.permissions || ROLE_PERMISSIONS[userToEdit.role]);
+    setEditSelectedPermissions(
+      userToEdit.permissions || ROLE_PERMISSIONS[userToEdit.role],
+    );
     setIsEditModalOpen(true);
   };
 
@@ -326,12 +407,101 @@ const UserManagementPage: React.FC = () => {
         permissions: permissions,
       });
 
+      // Log user update activity
+      await ActivityLogger.logActivity(
+        user!,
+        userProfile!,
+        "user_updated",
+        `Updated user: ${editingUser.displayName} (${editingUser.email})`,
+        {
+          entityId: editingUser.uid,
+          entityType: "user",
+          newValue: {
+            role: editForm.role,
+            permissions: permissions,
+          },
+        },
+      );
+
       closeEditModal();
       await loadUsers();
       alert("User updated successfully!");
     } catch (error: any) {
       console.error("Error updating user:", error);
       alert("Failed to update user: " + error.message);
+    }
+  };
+
+  const handleDirectLogin = async (targetUser: CompanyUser) => {
+    try {
+      // Store current admin info
+      const currentAdminEmail = user?.email;
+      const currentAdminUid = user?.uid;
+
+      // Get user data from users collection
+      const userDoc = await db.collection("users").doc(targetUser.uid).get();
+      const userData = userDoc.data();
+
+      if (!userData) {
+        alert("User data not found. This user may need to be recreated.");
+        return;
+      }
+
+      // If user has Firebase auth, try to login with Firebase
+      if (userData.tempPassword) {
+        // This is for users created through our system
+        try {
+          // Create Firebase user if doesn't exist
+          await firebaseAuth.createUserWithEmailAndPassword(
+            targetUser.email,
+            userData.tempPassword,
+          );
+        } catch (createError: any) {
+          // If user already exists, try to sign in
+          if (createError.code === "auth/email-already-in-use") {
+            await firebaseAuth.signInWithEmailAndPassword(
+              targetUser.email,
+              userData.tempPassword,
+            );
+          } else {
+            throw createError;
+          }
+        }
+
+        // Open dashboard in new tab
+        setTimeout(() => {
+          window.open(
+            `${window.location.origin}${window.location.pathname}#/`,
+            "_blank",
+          );
+
+          // Restore admin session after a delay
+          setTimeout(async () => {
+            if (currentAdminEmail) {
+              // Get admin user data
+              const adminDoc = await db
+                .collection("users")
+                .doc(currentAdminUid!)
+                .get();
+              const adminData = adminDoc.data();
+
+              if (adminData?.tempPassword) {
+                await firebaseAuth.signInWithEmailAndPassword(
+                  currentAdminEmail,
+                  adminData.tempPassword,
+                );
+              }
+            }
+          }, 2000);
+        }, 1000);
+      } else {
+        // For legacy users, just open login page with pre-filled email
+        const loginUrl = `${window.location.origin}${window.location.pathname}#/login?email=${encodeURIComponent(targetUser.email)}`;
+        window.open(loginUrl, "_blank");
+      }
+    } catch (error: any) {
+      console.error("Direct login failed:", error);
+      alert("Failed to login as user: " + error.message);
     }
   };
 
@@ -371,8 +541,18 @@ const UserManagementPage: React.FC = () => {
             disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
             {loading ? "Loading..." : "Refresh"}
           </button>
@@ -387,6 +567,59 @@ const UserManagementPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-6">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg
+              className="h-5 w-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder="Search users by name, email, or role..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          {searchTerm
+            ? `Found ${filteredUsers.length} user${filteredUsers.length !== 1 ? "s" : ""} matching "${searchTerm}"`
+            : `Total ${users.length} user${users.length !== 1 ? "s" : ""}`}
+        </div>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-lg text-white">
@@ -396,23 +629,22 @@ const UserManagementPage: React.FC = () => {
         <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Active Users</h3>
           <p className="text-2xl font-bold">
-            {users.filter((u) => u.isActive).length}
+            {filteredUsers.filter((u) => u.isActive).length}
           </p>
         </div>
         <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Admins</h3>
           <p className="text-2xl font-bold">
             {
-              users.filter((u) => u.role === "admin" || u.role === "owner")
-                .length
+              filteredUsers.filter(
+                (u) => u.role === "admin" || u.role === "owner",
+              ).length
             }
           </p>
         </div>
         <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 rounded-lg text-white">
-          <h3 className="text-sm font-medium">Viewers</h3>
-          <p className="text-2xl font-bold">
-            {users.filter((u) => u.role === "viewer").length}
-          </p>
+          <h3 className="text-sm font-medium">Filtered Results</h3>
+          <p className="text-2xl font-bold">{filteredUsers.length}</p>
         </div>
       </div>
 
@@ -420,11 +652,11 @@ const UserManagementPage: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
-            Team Members ({users.length})
+            Team Members ({filteredUsers.length} of {users.length})
           </h2>
         </div>
 
-        {users.length === 0 ? (
+        {filteredUsers.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-600 dark:text-gray-300 mb-4">
               No team members found.
@@ -449,7 +681,7 @@ const UserManagementPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <tr
                     key={user.id}
                     className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
@@ -495,38 +727,104 @@ const UserManagementPage: React.FC = () => {
                     <td className="px-6 py-4">
                       {user.createdAt?.toDate().toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 flex space-x-2">
-                      {canEdit(PAGES.USER_MANAGEMENT) && user.role !== "owner" && (
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => openEditModal(user)}
-                          className="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded"
+                          onClick={() => handleDirectLogin(user)}
+                          className="inline-flex items-center px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
+                          title="Login as this user"
                         >
-                          Edit
-                        </button>
-                      )}
-                      {canEdit(PAGES.USER_MANAGEMENT) && (
-                        <button
-                          onClick={() =>
-                            toggleUserStatus(user.id, user.isActive)
-                          }
-                          className={`text-sm px-2 py-1 rounded ${
-                            user.isActive
-                              ? "text-red-600 hover:text-red-800"
-                              : "text-green-600 hover:text-green-800"
-                          }`}
-                        >
-                          {user.isActive ? "Deactivate" : "Activate"}
-                        </button>
-                      )}
-                      {canDelete(PAGES.USER_MANAGEMENT) &&
-                        user.role !== "owner" && (
-                          <button
-                            onClick={() => deleteUser(user.id, user.email)}
-                            className="text-red-500 hover:text-red-700 text-sm px-2 py-1 rounded"
+                          <svg
+                            className="w-3 h-3 mr-1"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
                           >
-                            Remove
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth="2"
+                              d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                            />
+                          </svg>
+                          Login As
+                        </button>
+                        {canEdit(PAGES.USER_MANAGEMENT) &&
+                          user.role !== "owner" && (
+                            <button
+                              onClick={() => openEditModal(user)}
+                              className="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-blue-800 dark:text-blue-200 dark:border-blue-600 dark:hover:bg-blue-700"
+                            >
+                              <svg
+                                className="w-3 h-3 mr-1"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                />
+                              </svg>
+                              Edit
+                            </button>
+                          )}
+                        {canEdit(PAGES.USER_MANAGEMENT) && (
+                          <button
+                            onClick={() =>
+                              toggleUserStatus(user.id, user.isActive)
+                            }
+                            className={`inline-flex items-center px-3 py-1 text-xs font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                              user.isActive
+                                ? "text-red-700 bg-red-100 border-red-300 hover:bg-red-200 focus:ring-red-500 dark:bg-red-800 dark:text-red-200 dark:border-red-600 dark:hover:bg-red-700"
+                                : "text-green-700 bg-green-100 border-green-300 hover:bg-green-200 focus:ring-green-500 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
+                            }`}
+                          >
+                            <svg
+                              className="w-3 h-3 mr-1"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d={
+                                  user.isActive
+                                    ? "M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636"
+                                    : "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                }
+                              />
+                            </svg>
+                            {user.isActive ? "Deactivate" : "Activate"}
                           </button>
                         )}
+                        {canDelete(PAGES.USER_MANAGEMENT) &&
+                          user.role !== "owner" && (
+                            <button
+                              onClick={() => deleteUser(user.id, user.email)}
+                              className="inline-flex items-center px-3 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:bg-red-800 dark:text-red-200 dark:border-red-600 dark:hover:bg-red-700"
+                            >
+                              <svg
+                                className="w-3 h-3 mr-1"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                              Remove
+                            </button>
+                          )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -599,6 +897,7 @@ const UserManagementPage: React.FC = () => {
                   placeholder="Enter password for new user"
                   minLength={6}
                   required
+                  autoComplete="new-password"
                 />
               </div>
 
@@ -728,7 +1027,9 @@ const UserManagementPage: React.FC = () => {
                 </label>
                 <select
                   value={editForm.role}
-                  onChange={(e) => handleEditRoleChange(e.target.value as UserRole)}
+                  onChange={(e) =>
+                    handleEditRoleChange(e.target.value as UserRole)
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   <option value="viewer">Viewer</option>
@@ -763,30 +1064,38 @@ const UserManagementPage: React.FC = () => {
                   </h4>
                   <div className="space-y-3">
                     {editSelectedPermissions.map((permission, pageIndex) => (
-                      <div key={permission.page} className="border-b border-gray-200 dark:border-gray-600 pb-3">
+                      <div
+                        key={permission.page}
+                        className="border-b border-gray-200 dark:border-gray-600 pb-3"
+                      >
                         <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2 capitalize">
-                          {permission.page.replace('-', ' ')}
+                          {permission.page.replace("-", " ")}
                         </h5>
                         <div className="grid grid-cols-5 gap-2">
-                          {Object.entries(permission.actions).map(([action, enabled]) => (
-                            <label key={action} className="flex items-center text-xs">
-                              <input
-                                type="checkbox"
-                                checked={enabled}
-                                onChange={(e) =>
-                                  updateEditPermission(
-                                    pageIndex,
-                                    action as keyof Permission["actions"],
-                                    e.target.checked,
-                                  )
-                                }
-                                className="h-3 w-3 text-blue-600 border-gray-300 rounded mr-1"
-                              />
-                              <span className="text-gray-700 dark:text-gray-300 capitalize">
-                                {action}
-                              </span>
-                            </label>
-                          ))}
+                          {Object.entries(permission.actions).map(
+                            ([action, enabled]) => (
+                              <label
+                                key={action}
+                                className="flex items-center text-xs"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  onChange={(e) =>
+                                    updateEditPermission(
+                                      pageIndex,
+                                      action as keyof Permission["actions"],
+                                      e.target.checked,
+                                    )
+                                  }
+                                  className="h-3 w-3 text-blue-600 border-gray-300 rounded mr-1"
+                                />
+                                <span className="text-gray-700 dark:text-gray-300 capitalize">
+                                  {action}
+                                </span>
+                              </label>
+                            ),
+                          )}
                         </div>
                       </div>
                     ))}

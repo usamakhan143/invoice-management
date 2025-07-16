@@ -68,6 +68,47 @@ const Sidebar: React.FC = () => {
       page: PAGES.EXPENSES,
     },
     {
+      to: "/activity",
+      icon: (
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h2m0 0h2m-2 0v4a2 2 0 002 2h2a2 2 0 002-2v-4m-6 0a2 2 0 002-2V9a2 2 0 00-2-2H9z"
+          />
+        </svg>
+      ),
+      label: "My Activity",
+      page: PAGES.DASHBOARD,
+    },
+    {
+      to: "/company-activity",
+      icon: (
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+          />
+        </svg>
+      ),
+      label: "Company Activity",
+      page: PAGES.DASHBOARD,
+      adminOnly: true,
+    },
+    {
       to: "/users",
       icon: (
         <svg
@@ -113,8 +154,8 @@ const Sidebar: React.FC = () => {
           <CloseIcon />
         </button>
       </div>
-      <div className="flex flex-col justify-between flex-1">
-        <nav className="mt-4">
+      <div className="flex flex-col justify-between flex-1 overflow-hidden">
+        <nav className="mt-4 flex-1 overflow-y-auto custom-scrollbar sidebar-scrollbar">
           <ul>
             {navItems.map((item) => (
               <li key={item.to}>

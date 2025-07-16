@@ -17,6 +17,7 @@ export interface UserProfile {
   uid: string;
   email: string;
   companyName: string;
+  displayName?: string; // Add display name for individual users
   createdAt: firebase.firestore.Timestamp;
   invoiceCounter: number;
   // Role-based fields
@@ -126,4 +127,43 @@ export interface Expense {
   currencySymbol: string;
   date: firebase.firestore.Timestamp;
   createdAt: firebase.firestore.Timestamp;
+}
+
+export type ActivityType =
+  | "invoice_created"
+  | "invoice_updated"
+  | "invoice_deleted"
+  | "customer_created"
+  | "customer_updated"
+  | "customer_deleted"
+  | "product_created"
+  | "product_updated"
+  | "product_deleted"
+  | "bank_account_created"
+  | "bank_account_updated"
+  | "bank_account_deleted"
+  | "expense_created"
+  | "expense_updated"
+  | "expense_deleted"
+  | "user_created"
+  | "user_updated"
+  | "user_deleted"
+  | "login"
+  | "logout";
+
+export interface Activity {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  companyId: string;
+  type: ActivityType;
+  description: string;
+  metadata?: {
+    entityId?: string;
+    entityType?: string;
+    oldValue?: any;
+    newValue?: any;
+  };
+  timestamp: firebase.firestore.Timestamp;
 }

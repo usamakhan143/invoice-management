@@ -6,6 +6,7 @@ import React, {
   ReactNode,
 } from "react";
 import { auth, db } from "../services/firebase";
+import { ActivityLogger } from "../services/activityLogger";
 import type { UserProfile } from "../types";
 import type firebase from "firebase/compat/app";
 
@@ -35,13 +36,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         userDocUnsubscribe = null;
       }
 
+      const previousUser = user;
       setUser(firebaseUser);
 
       if (firebaseUser) {
         try {
           const userDocRef = db.collection("users").doc(firebaseUser.uid);
           userDocUnsubscribe = userDocRef.onSnapshot(
-            (doc) => {
+            async (doc) => {
               if (doc.exists) {
                 const userData = doc.data() as UserProfile;
 
@@ -53,8 +55,45 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                 }
 
                 setUserProfile(userData);
+
+                // Log login activity (only if this is a new login, not a page refresh)
+                if (!previousUser && firebaseUser) {
+                  ActivityLogger.logActivity(
+                    firebaseUser,
+                    userData,
+                    "login",
+                    `${userData.companyName || firebaseUser.email} logged in`,
+                  );
+                }
               } else {
-                setUserProfile(null);
+                // If no document found with Firebase UID, try to find by email
+                // This handles users created through admin panel
+                if (firebaseUser.email) {
+                  const userByEmailQuery = await db
+                    .collection("users")
+                    .where("email", "==", firebaseUser.email)
+                    .get();
+
+                  if (!userByEmailQuery.empty) {
+                    const userDoc = userByEmailQuery.docs[0];
+                    const userData = userDoc.data() as UserProfile;
+                    setUserProfile(userData);
+
+                    // Log login activity
+                    if (!previousUser && firebaseUser) {
+                      ActivityLogger.logActivity(
+                        firebaseUser,
+                        userData,
+                        "login",
+                        `${userData.companyName || firebaseUser.email} logged in`,
+                      );
+                    }
+                  } else {
+                    setUserProfile(null);
+                  }
+                } else {
+                  setUserProfile(null);
+                }
               }
               setLoading(false);
             },
@@ -70,6 +109,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           setLoading(false);
         }
       } else {
+        // Log logout activity if we had a user before
+        if (previousUser && userProfile) {
+          ActivityLogger.logActivity(
+            previousUser,
+            userProfile,
+            "logout",
+            `${userProfile.companyName || previousUser.email} logged out`,
+          );
+        }
         setUserProfile(null);
         setLoading(false);
       }
@@ -85,6 +133,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   }, []);
 
   const logout = async () => {
+    // Log logout activity before signing out
+    if (user && userProfile) {
+      try {
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "logout",
+          `${userProfile.companyName || user.email} logged out`,
+        );
+      } catch (error) {
+        console.error("Failed to log logout activity:", error);
+      }
+    }
     await auth.signOut();
   };
 

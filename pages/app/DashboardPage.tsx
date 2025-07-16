@@ -4,6 +4,8 @@ import DashboardCard from "../../components/DashboardCard";
 import { CustomerIcon, InvoiceIcon, RevenueIcon } from "../../constants";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { usePermissions } from "../../hooks/usePermissions";
+import { PAGES } from "../../config/permissions";
 import { db } from "../../services/firebase";
 import type { Invoice, Customer, BankAccount, Expense } from "../../types";
 import Spinner from "../../components/Spinner";
@@ -11,6 +13,7 @@ import Spinner from "../../components/Spinner";
 const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
   const { user } = useAuth();
+  const { hasPageAccess } = usePermissions();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -240,50 +243,52 @@ const DashboardPage: React.FC = () => {
       </div>
 
       {/* Bank Accounts Overview */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4">
-          Bank Accounts
-        </h2>
-        {bankBalances.length === 0 ? (
-          <div className="text-center py-4">
-            <p className="text-gray-600 dark:text-gray-300 mb-4">
-              No bank accounts found.
-            </p>
-            <Link
-              to="/bank-accounts"
-              className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Add Bank Account
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {bankBalances.map((account) => (
-              <div
-                key={account.id}
-                className="border border-gray-200 dark:border-gray-600 rounded-lg p-4"
+      {hasPageAccess(PAGES.BANK_ACCOUNTS_VIEW) && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4">
+            Bank Accounts
+          </h2>
+          {bankBalances.length === 0 ? (
+            <div className="text-center py-4">
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                No bank accounts found.
+              </p>
+              <Link
+                to="/bank-accounts"
+                className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
-                <h3 className="font-semibold text-gray-800 dark:text-white">
-                  {account.accountName}
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  {account.bankName}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  {account.currency}
-                </p>
-                <p className="text-lg font-bold text-green-600 mt-2">
-                  {formatCurrency(
-                    account.currentBalance || 0,
-                    account.currency,
-                    account.currencySymbol || "$",
-                  )}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                Add Bank Account
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {bankBalances.map((account) => (
+                <div
+                  key={account.id}
+                  className="border border-gray-200 dark:border-gray-600 rounded-lg p-4"
+                >
+                  <h3 className="font-semibold text-gray-800 dark:text-white">
+                    {account.accountName}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {account.bankName}
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {account.currency}
+                  </p>
+                  <p className="text-lg font-bold text-green-600 mt-2">
+                    {formatCurrency(
+                      account.currentBalance || 0,
+                      account.currency,
+                      account.currencySymbol || "$",
+                    )}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent Invoices */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
