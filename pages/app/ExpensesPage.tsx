@@ -124,8 +124,27 @@ const ExpensesPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!user || !userProfile) return;
+
+    // Set up real-time listener for user's expenses
+    const unsubscribe = db
+      .collection("expenses")
+      .where("userId", "==", user.uid)
+      .onSnapshot(
+        () => {
+          // Reload data when expenses change
+          loadData();
+        },
+        (error) => {
+          console.error("Error in expenses listener:", error);
+        },
+      );
+
+    // Initial load
     loadData();
-  }, [user]);
+
+    return () => unsubscribe();
+  }, [user, userProfile]);
 
   const getFilteredExpenses = () => {
     let filtered = expenses;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { ActivityLogger } from "../../services/activityLogger";
+import { db } from "../../services/firebase";
 import type { Activity, ActivityType } from "../../types";
 import Spinner from "../../components/Spinner";
 
@@ -15,26 +16,82 @@ const ActivityPage: React.FC = () => {
   const [dateFilter, setDateFilter] = useState<string>("all");
 
   const loadActivities = async () => {
-    if (!user) return;
+    if (!user || !userProfile) return;
 
     setLoading(true);
     try {
+      // Use the actual user ID from userProfile (handles admin-created users)
+      const actualUserId = userProfile.uid || user.uid;
+      console.log("Loading activities for user:", actualUserId, "email:", userProfile.email);
+
       const userActivities = await ActivityLogger.getUserActivities(
-        user.uid,
+        actualUserId,
         100,
       );
-      setActivities(userActivities);
-      setFilteredActivities(userActivities);
+
+      // If no activities found with userProfile.uid, try with user.uid as fallback
+      if (userActivities.length === 0 && userProfile.uid !== user.uid) {
+        console.log("No activities found with userProfile.uid, trying user.uid:", user.uid);
+        const fallbackActivities = await ActivityLogger.getUserActivities(
+          user.uid,
+          100,
+        );
+        setActivities(fallbackActivities);
+        setFilteredActivities(fallbackActivities);
+      } else {
+        setActivities(userActivities);
+        setFilteredActivities(userActivities);
+      }
     } catch (error) {
-      console.error("Error loading activities:", error);
+      console.error("Error loading user activities:", error);
+      setActivities([]);
+      setFilteredActivities([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!user || !userProfile) return;
+
+    // Initial load
     loadActivities();
-  }, [user]);
+
+    // Set up real-time listener for activities
+    const actualUserId = userProfile.uid || user.uid;
+
+    try {
+      const unsubscribe = db
+        .collection("activities")
+        .where("userId", "==", actualUserId)
+        .orderBy("timestamp", "desc")
+        .limit(100)
+        .onSnapshot(
+          (snapshot) => {
+            const activitiesData = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            })) as Activity[];
+
+            console.log(`Real-time: Loaded ${activitiesData.length} activities for user ${actualUserId}`);
+            setActivities(activitiesData);
+            setFilteredActivities(activitiesData);
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Error in activities listener:", error);
+            // Fallback to manual loading if real-time fails
+            loadActivities();
+          }
+        );
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error setting up activities listener:", error);
+      // Fallback to manual loading
+      loadActivities();
+    }
+  }, [user, userProfile]);
 
   useEffect(() => {
     let filtered = [...activities];

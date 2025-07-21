@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { db, FieldValue, Timestamp } from "../../services/firebase";
+import { InvoiceService } from "../../services/invoiceService";
+import { CustomerService } from "../../services/customerService";
 import type {
   Invoice,
   InvoiceItem,
@@ -56,42 +58,66 @@ const InvoiceFormPage: React.FC = () => {
   };
 
   const fetchInitialData = useCallback(async () => {
-    if (!user) return;
+    if (!user || !userProfile) return;
     setLoading(true);
     try {
-      const customersSnap = await db
-        .collection(`users/${user.uid}/customers`)
-        .get();
-      setCustomers(
-        customersSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Customer,
-        ),
-      );
+      // Determine company ID for accessing company-wide data
+      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
 
-      const productsSnap = await db
+      // Load customers using centralized service
+      const customersData = await CustomerService.getCustomers(
+        user,
+        userProfile,
+        userProfile?.isOwner || false,
+        userProfile?.role === "admin" || false,
+      );
+      setCustomers(customersData);
+
+      // Load products: user's own + company products if authorized
+      let productsData: Product[] = [];
+
+      // User's own products
+      const userProductsSnap = await db
         .collection(`users/${user.uid}/products`)
         .get();
-      setProducts(
-        productsSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Product,
-        ),
+      productsData = userProductsSnap.docs.map(
+        (doc) => ({ id: doc.id, ...doc.data() }) as Product,
       );
 
-      const bankAccountsSnap = await db
-        .collection("bankAccounts")
-        .where("userId", "==", user.uid)
-        .get();
-      setBankAccounts(
-        bankAccountsSnap.docs.map(
+      // Company products (if user has access and it's different from user)
+      if (companyId && companyId !== user.uid) {
+        const companyProductsSnap = await db
+          .collection(`users/${companyId}/products`)
+          .get();
+        const companyProducts = companyProductsSnap.docs.map(
+          (doc) =>
+            ({
+              id: doc.id,
+              ...doc.data(),
+              _isCompanyProduct: true,
+            }) as Product,
+        );
+        productsData = [...productsData, ...companyProducts];
+      }
+
+      setProducts(productsData);
+
+      // Load bank accounts: company bank accounts for authorized users
+      let bankAccountsData: BankAccount[] = [];
+      if (companyId) {
+        const bankAccountsSnap = await db
+          .collection("bankAccounts")
+          .where("userId", "==", companyId)
+          .get();
+        bankAccountsData = bankAccountsSnap.docs.map(
           (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-        ),
-      );
+        );
+      }
+      setBankAccounts(bankAccountsData);
 
       if (id) {
-        const invoiceDoc = await db
-          .collection(`users/${user.uid}/invoices`)
-          .doc(id)
-          .get();
+        // Load from centralized collection
+        const invoiceDoc = await db.collection("invoices").doc(id).get();
         if (invoiceDoc.exists) {
           const data = invoiceDoc.data() as Invoice;
           // Ensure backward compatibility for existing invoices
@@ -130,19 +156,66 @@ const InvoiceFormPage: React.FC = () => {
     }
   }, [invoiceData.bankAccountId, bankAccounts]);
 
-  // Update payment calculations when total or payment type changes
+  // Update payment calculations when total, payment type, or upfront payment changes
   useEffect(() => {
     const total = calculateTotal(invoiceData.items || []);
-    const amountPaid = invoiceData.amountPaid || 0;
+    let amountPaid = invoiceData.amountPaid || 0;
+
+    // Add upfront amount to paid amount if upfront payment is marked as received
+    if (invoiceData.paymentType === "upfront" && invoiceData.upfrontPaid && invoiceData.upfrontAmount) {
+      // Check if upfront payment is already included in the payments array
+      const hasUpfrontPayment = invoiceData.payments?.some(p => p.description?.includes("Upfront payment"));
+      if (!hasUpfrontPayment) {
+        amountPaid += invoiceData.upfrontAmount;
+      }
+    }
+
     const remaining = total - amountPaid;
 
     setInvoiceData((prev) => ({
       ...prev,
       total,
       totalAmountDue: total,
+      amountPaid,
       remainingAmount: Math.max(0, remaining),
     }));
-  }, [invoiceData.items, invoiceData.amountPaid]);
+  }, [invoiceData.items, invoiceData.amountPaid, invoiceData.paymentType, invoiceData.upfrontPaid, invoiceData.upfrontAmount, invoiceData.payments]);
+
+  // Handle upfront payment checkbox - automatically add/remove upfront payment record
+  useEffect(() => {
+    if (invoiceData.paymentType === "upfront" && invoiceData.upfrontAmount) {
+      const hasUpfrontPayment = invoiceData.payments?.some(p => p.id === "upfront_payment");
+
+      if (invoiceData.upfrontPaid && !hasUpfrontPayment) {
+        // Add upfront payment record
+        const upfrontPayment: PaymentRecord = {
+          id: "upfront_payment",
+          amount: invoiceData.upfrontAmount,
+          date: Timestamp.now(),
+          description: "Upfront payment received",
+        };
+
+        const updatedPayments = [...(invoiceData.payments || []), upfrontPayment];
+        const newAmountPaid = (invoiceData.amountPaid || 0) + invoiceData.upfrontAmount;
+
+        setInvoiceData(prev => ({
+          ...prev,
+          payments: updatedPayments,
+          amountPaid: newAmountPaid,
+        }));
+      } else if (!invoiceData.upfrontPaid && hasUpfrontPayment) {
+        // Remove upfront payment record
+        const updatedPayments = invoiceData.payments?.filter(p => p.id !== "upfront_payment") || [];
+        const newAmountPaid = (invoiceData.amountPaid || 0) - invoiceData.upfrontAmount;
+
+        setInvoiceData(prev => ({
+          ...prev,
+          payments: updatedPayments,
+          amountPaid: Math.max(0, newAmountPaid),
+        }));
+      }
+    }
+  }, [invoiceData.upfrontPaid, invoiceData.upfrontAmount, invoiceData.paymentType]);
 
   const handleItemChange = (
     index: number,
@@ -343,35 +416,8 @@ const InvoiceFormPage: React.FC = () => {
     }
 
     try {
-      if (id) {
-        // Update existing invoice
-        await db
-          .collection(`users/${user.uid}/invoices`)
-          .doc(id)
-          .update(finalInvoiceData);
-      } else {
-        // Create new invoice
-        const userDocRef = db.collection("users").doc(user.uid);
-
-        await db.runTransaction(async (transaction) => {
-          const userDoc = await transaction.get(userDocRef);
-          if (!userDoc.exists) {
-            throw "User document does not exist!";
-          }
-
-          const newInvoiceCounter = (userDoc.data()?.invoiceCounter || 0) + 1;
-          const invoiceNumber = `INV-${String(newInvoiceCounter).padStart(4, "0")}`;
-
-          const newInvoiceRef = db
-            .collection(`users/${user.uid}/invoices`)
-            .doc();
-          transaction.set(newInvoiceRef, {
-            ...finalInvoiceData,
-            invoiceNumber,
-          });
-          transaction.update(userDocRef, { invoiceCounter: newInvoiceCounter });
-        });
-      }
+      // Use the centralized invoice service
+      await InvoiceService.saveInvoice(finalInvoiceData, user, userProfile, id);
       navigate("/invoices");
     } catch (err: any) {
       console.error(err);
@@ -884,6 +930,31 @@ const InvoiceFormPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Upfront Payment Display */}
+          {invoiceData.paymentType === "upfront" && invoiceData.upfrontAmount && (
+            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-md font-semibold text-blue-700 dark:text-blue-300">
+                    Upfront Payment
+                  </h3>
+                  <p className="text-sm text-blue-600 dark:text-blue-400">
+                    {bankAccountCurrency}{invoiceData.upfrontAmount.toFixed(2)}
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    invoiceData.upfrontPaid
+                      ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
+                      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
+                  }`}>
+                    {invoiceData.upfrontPaid ? "✓ Received" : "⏳ Pending"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showPaymentForm && (
             <div className="mb-4 p-4 bg-white dark:bg-gray-700 rounded-lg border border-green-200 dark:border-green-800">

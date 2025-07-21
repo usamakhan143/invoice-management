@@ -11,6 +11,7 @@ import {
 } from "../../config/permissions";
 import type { CompanyUser, UserRole, Permission } from "../../types";
 import Spinner from "../../components/Spinner";
+import RoleManagement from "../../components/RoleManagement";
 
 const UserManagementPage: React.FC = () => {
   usePageTitle("User Management");
@@ -19,6 +20,7 @@ const UserManagementPage: React.FC = () => {
 
   const [users, setUsers] = useState<CompanyUser[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<CompanyUser[]>([]);
+  const [activeTab, setActiveTab] = useState<"users" | "roles">("users");
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -32,6 +34,7 @@ const UserManagementPage: React.FC = () => {
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>(
     [],
   );
+  const [customRoles, setCustomRoles] = useState<any[]>([]);
   const [error, setError] = useState("");
 
   // Edit user states
@@ -44,6 +47,30 @@ const UserManagementPage: React.FC = () => {
   const [editSelectedPermissions, setEditSelectedPermissions] = useState<
     Permission[]
   >([]);
+
+  // Load custom roles for this company
+  const loadCustomRoles = async () => {
+    if (!user || !userProfile) return;
+
+    try {
+      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
+      if (!companyId) return;
+
+      const rolesSnapshot = await db
+        .collection("customRoles")
+        .where("companyId", "==", companyId)
+        .get();
+
+      const rolesData = rolesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setCustomRoles(rolesData);
+    } catch (error) {
+      console.error("Error loading custom roles:", error);
+    }
+  };
 
   const loadUsers = async () => {
     if (!user || !userProfile) return;
@@ -102,6 +129,7 @@ const UserManagementPage: React.FC = () => {
 
     const setupListener = async () => {
       unsubscribe = await loadUsers();
+      await loadCustomRoles();
     };
 
     setupListener();
@@ -153,9 +181,20 @@ const UserManagementPage: React.FC = () => {
       }
 
       // Get permissions based on role or custom selection
-      const permissions = createForm.customPermissions
-        ? selectedPermissions
-        : ROLE_PERMISSIONS[createForm.role];
+      let permissions: Permission[] = [];
+
+      if (createForm.customPermissions) {
+        permissions = selectedPermissions;
+      } else {
+        // Check if it's a custom role first
+        const customRole = customRoles.find(role => role.name === createForm.role);
+        if (customRole) {
+          permissions = customRole.permissions || [];
+        } else {
+          // Fallback to default role permissions
+          permissions = ROLE_PERMISSIONS[createForm.role as UserRole] || ROLE_PERMISSIONS["viewer"];
+        }
+      }
 
       // Generate a unique user ID (in production, this should be done via Firebase Admin SDK)
       const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -391,9 +430,21 @@ const UserManagementPage: React.FC = () => {
     if (!editingUser) return;
 
     try {
-      const permissions = editForm.customPermissions
-        ? editSelectedPermissions
-        : ROLE_PERMISSIONS[editForm.role];
+      // Get permissions based on role or custom selection
+      let permissions: Permission[] = [];
+
+      if (editForm.customPermissions) {
+        permissions = editSelectedPermissions;
+      } else {
+        // Check if it's a custom role first
+        const customRole = customRoles.find(role => role.name === editForm.role);
+        if (customRole) {
+          permissions = customRole.permissions || [];
+        } else {
+          // Fallback to default role permissions
+          permissions = ROLE_PERMISSIONS[editForm.role as UserRole] || ROLE_PERMISSIONS["viewer"];
+        }
+      }
 
       // Update company user record
       await db.collection("companyUsers").doc(editingUser.id).update({
@@ -535,40 +586,71 @@ const UserManagementPage: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
           User Management
         </h1>
-        <div className="flex gap-3">
-          <button
-            onClick={() => loadUsers()}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            {loading ? "Loading..." : "Refresh"}
-          </button>
-          {canCreate(PAGES.USER_MANAGEMENT) && (
+        {activeTab === "users" && (
+          <div className="flex gap-3">
             <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              onClick={() => loadUsers()}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              Create User
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              {loading ? "Loading..." : "Refresh"}
             </button>
-          )}
-        </div>
+            {canCreate(PAGES.USER_MANAGEMENT) && (
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Create User
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-6">
+      {/* Tabs */}
+      <div className="mb-6">
+        <nav className="flex space-x-8" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === "users"
+                ? "border-primary-500 text-primary-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            Users ({users.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("roles")}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === "roles"
+                ? "border-primary-500 text-primary-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            Roles
+          </button>
+        </nav>
+      </div>
+
+      {/* Users Tab Content */}
+      {activeTab === "users" && (
+        <>
+          {/* Search Bar */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-6">
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <svg
@@ -910,13 +992,24 @@ const UserManagementPage: React.FC = () => {
                   onChange={(e) => handleRoleChange(e.target.value as UserRole)}
                   className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                  {Object.entries(ROLE_DESCRIPTIONS).map(
-                    ([role, description]) => (
-                      <option key={role} value={role}>
-                        {role.charAt(0).toUpperCase() + role.slice(1)} -{" "}
-                        {description}
-                      </option>
-                    ),
+                  <optgroup label="Default Roles">
+                    {Object.entries(ROLE_DESCRIPTIONS).map(
+                      ([role, description]) => (
+                        <option key={role} value={role}>
+                          {role.charAt(0).toUpperCase() + role.slice(1)} -{" "}
+                          {description}
+                        </option>
+                      ),
+                    )}
+                  </optgroup>
+                  {customRoles.length > 0 && (
+                    <optgroup label="Custom Roles">
+                      {customRoles.map((role) => (
+                        <option key={role.id} value={role.name}>
+                          {role.name} - {role.description || "Custom role"}
+                        </option>
+                      ))}
+                    </optgroup>
                   )}
                 </select>
               </div>
@@ -1032,10 +1125,21 @@ const UserManagementPage: React.FC = () => {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                  <option value="viewer">Viewer</option>
-                  <option value="editor">Editor</option>
-                  <option value="manager">Manager</option>
-                  <option value="admin">Admin</option>
+                  <optgroup label="Default Roles">
+                    <option value="viewer">Viewer</option>
+                    <option value="editor">Editor</option>
+                    <option value="manager">Manager</option>
+                    <option value="admin">Admin</option>
+                  </optgroup>
+                  {customRoles.length > 0 && (
+                    <optgroup label="Custom Roles">
+                      {customRoles.map((role) => (
+                        <option key={role.id} value={role.name}>
+                          {role.name} - {role.description || "Custom role"}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
@@ -1121,6 +1225,13 @@ const UserManagementPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {/* Roles Tab Content */}
+      {activeTab === "roles" && (
+        <RoleManagement />
       )}
     </div>
   );

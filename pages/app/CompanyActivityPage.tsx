@@ -32,16 +32,52 @@ const CompanyActivityPage: React.FC = () => {
         return;
       }
 
-      // Load company activities and users in parallel
+      // Load company activities and all users (including newly created)
       const [companyActivities, usersSnapshot] = await Promise.all([
         ActivityLogger.getCompanyActivities(companyId, 200),
-        db.collection("companyUsers").where("companyId", "==", companyId).get(),
+        // Get all users for this company from main users collection
+        db.collection("users").where("companyId", "==", companyId).get(),
       ]);
 
-      const companyUsers = usersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CompanyUser[];
+      // Also get owner user
+      const ownerDoc = await db.collection("users").doc(companyId).get();
+
+      const companyUsers: CompanyUser[] = [];
+
+      // Add owner
+      if (ownerDoc.exists) {
+        const ownerData = ownerDoc.data();
+        companyUsers.push({
+          id: ownerDoc.id,
+          uid: ownerDoc.id,
+          email: ownerData?.email || "",
+          displayName:
+            ownerData?.displayName || ownerData?.companyName || "Owner",
+          role: "owner" as any,
+          permissions: [],
+          isActive: true,
+          createdAt: ownerData?.createdAt,
+          invitedBy: "",
+          companyId: companyId,
+        });
+      }
+
+      // Add other company users
+      usersSnapshot.docs.forEach((doc) => {
+        const userData = doc.data();
+        companyUsers.push({
+          id: doc.id,
+          uid: doc.id,
+          email: userData.email || "",
+          displayName: userData.displayName || userData.companyName || "User",
+          role: userData.role || "viewer",
+          permissions: userData.permissions || [],
+          isActive: userData.isActive !== false,
+          createdAt: userData.createdAt,
+          invitedBy: userData.invitedBy || "",
+          companyId: companyId,
+        });
+      });
 
       setActivities(companyActivities);
       setFilteredActivities(companyActivities);

@@ -49,6 +49,14 @@ export interface Customer {
   email: string;
   phone: string;
   address: string;
+  // Creator tracking (same pattern as Invoice)
+  createdBy?: string;
+  createdById?: string;
+  companyId?: string;
+  createdAt?: firebase.firestore.Timestamp;
+  updatedBy?: string;
+  updatedById?: string;
+  updatedAt?: firebase.firestore.Timestamp;
 }
 
 export interface Product {
@@ -99,6 +107,14 @@ export interface Invoice {
   milestoneDescription?: string;
   upfrontAmount?: number;
   upfrontPaid?: boolean;
+  // Creator tracking
+  createdBy?: string;
+  createdById?: string;
+  companyId?: string;
+  createdAt?: firebase.firestore.Timestamp;
+  updatedBy?: string;
+  updatedById?: string;
+  updatedAt?: firebase.firestore.Timestamp;
 }
 
 export interface BankAccount {

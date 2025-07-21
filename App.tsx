@@ -20,6 +20,7 @@ const ActivityPage = lazy(() => import("./pages/app/ActivityPage"));
 const CompanyActivityPage = lazy(
   () => import("./pages/app/CompanyActivityPage"),
 );
+const ProfilePage = lazy(() => import("./pages/app/ProfilePage"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const SignUpPage = lazy(() => import("./pages/auth/SignUpPage"));
 
@@ -27,12 +28,12 @@ const ProtectedRoute: React.FC = () => {
   const { user, loading } = useAuth();
   const [showTimeout, setShowTimeout] = React.useState(false);
 
-  // Show timeout message after 10 seconds of loading
+  // Show timeout message after 5 seconds, force load after 8 seconds
   React.useEffect(() => {
     if (loading) {
       const timer = setTimeout(() => {
         setShowTimeout(true);
-      }, 10000);
+      }, 5000);
       return () => clearTimeout(timer);
     } else {
       setShowTimeout(false);
@@ -98,6 +99,7 @@ const App: React.FC = () => {
                   path="/company-activity"
                   element={<CompanyActivityPage />}
                 />
+                <Route path="/profile" element={<ProfilePage />} />
               </Route>
             </Route>
             <Route element={<AuthLayout />}>

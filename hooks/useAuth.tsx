@@ -47,6 +47,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
               if (doc.exists) {
                 const userData = doc.data() as UserProfile;
 
+                // Check if user is deactivated
+                if (userData.isActive === false) {
+                  console.log("User is deactivated, logging out...");
+                  await auth.signOut();
+                  setUserProfile(null);
+                  setLoading(false);
+                  return;
+                }
+
                 // Check if this user is a company owner (original account)
                 if (!userData.companyId && !userData.role) {
                   userData.isOwner = true;
@@ -56,13 +65,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
                 setUserProfile(userData);
 
-                // Log login activity (only if this is a new login, not a page refresh)
-                if (!previousUser && firebaseUser) {
+                // Log login activity only on actual login (not on refresh)
+                // Use a more specific session key with timestamp
+                const loginKey = `loginLogged_${firebaseUser.uid}`;
+                const lastLoginTime = sessionStorage.getItem(loginKey);
+                const currentTime = Date.now();
+                const fiveMinutesAgo = currentTime - 5 * 60 * 1000;
+
+                if (
+                  !previousUser &&
+                  firebaseUser &&
+                  (!lastLoginTime ||
+                    parseInt(lastLoginTime) < fiveMinutesAgo)
+                ) {
+                  sessionStorage.setItem(loginKey, currentTime.toString());
                   ActivityLogger.logActivity(
                     firebaseUser,
                     userData,
                     "login",
-                    `${userData.companyName || firebaseUser.email} logged in`,
+                    `${userData.displayName || userData.companyName || firebaseUser.email} logged in`,
                   );
                 }
               } else {
@@ -77,15 +98,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                   if (!userByEmailQuery.empty) {
                     const userDoc = userByEmailQuery.docs[0];
                     const userData = userDoc.data() as UserProfile;
+
+                    // Check if user is deactivated
+                    if (userData.isActive === false) {
+                      console.log("User is deactivated, logging out...");
+                      await auth.signOut();
+                      setUserProfile(null);
+                      setLoading(false);
+                      return;
+                    }
+
                     setUserProfile(userData);
 
-                    // Log login activity
-                    if (!previousUser && firebaseUser) {
+                    // Log login activity only on actual login (not on refresh)
+                    // Use a more specific session key with timestamp
+                    const loginKey = `loginLogged_${firebaseUser.uid}`;
+                    const lastLoginTime = sessionStorage.getItem(loginKey);
+                    const currentTime = Date.now();
+                    const fiveMinutesAgo = currentTime - 5 * 60 * 1000;
+
+                    if (
+                      !previousUser &&
+                      firebaseUser &&
+                      (!lastLoginTime ||
+                        parseInt(lastLoginTime) < fiveMinutesAgo)
+                    ) {
+                      sessionStorage.setItem(loginKey, currentTime.toString());
                       ActivityLogger.logActivity(
                         firebaseUser,
                         userData,
                         "login",
-                        `${userData.companyName || firebaseUser.email} logged in`,
+                        `${userData.displayName || userData.companyName || firebaseUser.email} logged in`,
                       );
                     }
                   } else {
@@ -99,6 +142,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
             },
             (error) => {
               console.error("Error fetching user profile:", error);
+              // Immediately stop loading on errors to prevent infinite spinner
               setUserProfile(null);
               setLoading(false);
             },
@@ -108,6 +152,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           setUserProfile(null);
           setLoading(false);
         }
+
+        // Force loading to stop after 1 second to prevent infinite spinner
+        setTimeout(() => {
+          console.warn("Auth loading timeout - forcing completion");
+          setLoading(false);
+        }, 1000);
       } else {
         // Log logout activity if we had a user before
         if (previousUser && userProfile) {
@@ -115,8 +165,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
             previousUser,
             userProfile,
             "logout",
-            `${userProfile.companyName || previousUser.email} logged out`,
+            `${userProfile.displayName || userProfile.companyName || previousUser.email} logged out`,
           );
+        }
+        // Clear login session tracking
+        if (previousUser) {
+          sessionStorage.removeItem(`loginLogged_${previousUser.uid}`);
         }
         setUserProfile(null);
         setLoading(false);
@@ -145,6 +199,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       } catch (error) {
         console.error("Failed to log logout activity:", error);
       }
+    }
+    // Clear login session tracking
+    if (user) {
+      sessionStorage.removeItem(`loginLogged_${user.uid}`);
     }
     await auth.signOut();
   };

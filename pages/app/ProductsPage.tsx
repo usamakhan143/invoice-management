@@ -26,8 +26,24 @@ const ProductsPage: React.FC = () => {
   );
 
   useEffect(() => {
+    if (!user || !userProfile) return;
+
+    // Set up real-time listener for current user's products
+    const unsubscribe = db.collection(`users/${user.uid}/products`).onSnapshot(
+      () => {
+        // Reload all products when user's products change
+        loadProducts();
+      },
+      (error) => {
+        console.error("Error in products listener:", error);
+      },
+    );
+
+    // Initial load
     loadProducts();
-  }, [user]);
+
+    return () => unsubscribe();
+  }, [user, userProfile]);
 
   const openModal = (product: Partial<Product> | null = null) => {
     setCurrentProduct(
@@ -85,6 +101,17 @@ const ProductsPage: React.FC = () => {
           (doc) => ({ id: doc.id, ...doc.data() }) as Product,
         );
       }
+
+      // Sort products by creation date (most recent first) - Issue #8
+      productsData.sort((a, b) => {
+        const dateA = (a as any).createdAt
+          ? new Date((a as any).createdAt).getTime()
+          : 0;
+        const dateB = (b as any).createdAt
+          ? new Date((b as any).createdAt).getTime()
+          : 0;
+        return dateB - dateA;
+      });
 
       setProducts(productsData);
     } catch (error) {

@@ -3,6 +3,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
+import { CustomerService } from "../../services/customerService";
 import type { Customer } from "../../types";
 import Spinner from "../../components/Spinner";
 
@@ -62,61 +63,46 @@ const CustomersPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const customersPerPage = 20;
 
+  // Load customers function using centralized CustomerService (same pattern as invoices)
+  const loadCustomers = async () => {
+    if (!user || !userProfile) return;
+
+    setLoading(true);
+    try {
+      const customersData = await CustomerService.getCustomers(
+        user,
+        userProfile,
+        isOwner,
+        isAdmin,
+      );
+
+      setCustomers(customersData);
+      setFilteredCustomers(customersData);
+      setCurrentPage(1);
+    } catch (error) {
+      console.error("Error loading customers:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!user || !userProfile) return;
 
-    const loadCustomers = async () => {
-      try {
-        let customersData: Customer[] = [];
-
-        if (isOwner || isAdmin) {
-          // Admin sees all company customers across all users
-          const companyId = userProfile.isOwner
-            ? user.uid
-            : userProfile.companyId;
-          if (companyId) {
-            const allUsersSnapshot = await db
-              .collection("users")
-              .where("companyId", "==", companyId)
-              .get();
-
-            const userIds = allUsersSnapshot.docs.map((doc) => doc.id);
-            userIds.push(companyId); // Include owner's customers
-
-            // Get customers from all company users
-            const customersPromises = userIds.map((userId) =>
-              db.collection(`users/${userId}/customers`).get(),
-            );
-
-            const customersSnapshots = await Promise.all(customersPromises);
-
-            customersSnapshots.forEach((snapshot) => {
-              snapshot.docs.forEach((doc) => {
-                customersData.push({ id: doc.id, ...doc.data() } as Customer);
-              });
-            });
-          }
-        } else {
-          // Regular user sees only their customers
-          const snapshot = await db
-            .collection(`users/${user.uid}/customers`)
-            .get();
-          customersData = snapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Customer,
-          );
-        }
-
+    // Set up real-time listener using CustomerService (same pattern as invoices)
+    const unsubscribe = CustomerService.getCustomersRealTime(
+      user,
+      userProfile,
+      isOwner,
+      isAdmin,
+      (customersData) => {
         setCustomers(customersData);
         setFilteredCustomers(customersData);
-        setCurrentPage(1);
         setLoading(false);
-      } catch (error) {
-        console.error("Error loading customers:", error);
-        setLoading(false);
-      }
-    };
+      },
+    );
 
-    loadCustomers();
+    return () => unsubscribe();
   }, [user, userProfile, isOwner, isAdmin]);
 
   // Filter customers based on search term
@@ -133,105 +119,46 @@ const CustomersPage: React.FC = () => {
       );
       setFilteredCustomers(filtered);
     }
-    setCurrentPage(1); // Reset to first page when searching
+    setCurrentPage(1);
   }, [searchTerm, customers]);
 
-  const totalPages = Math.ceil(filteredCustomers.length / customersPerPage);
-  const currentCustomers = filteredCustomers.slice(
-    (currentPage - 1) * customersPerPage,
-    currentPage * customersPerPage,
-  );
-
-  const openModal = (customer?: Customer) => {
-    if (customer) {
-      setCurrentCustomer({
-        ...customer,
-        name: customer.name || "",
-        email: customer.email || "",
-        phone: customer.phone || "",
-        address: customer.address || "",
-      });
-    } else {
-      setCurrentCustomer({ name: "", email: "", phone: "", address: "" });
-    }
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setCurrentCustomer(null);
-  };
-
-  const handleSave = async () => {
-    if (!user || !currentCustomer || !userProfile) return;
-
-    // Validate required fields
-    if (!currentCustomer.name || !currentCustomer.email) {
-      alert("Please fill in all required fields (Name and Email)");
-      return;
-    }
+  const handleSubmit = async () => {
+    if (!user || !userProfile || !currentCustomer) return;
 
     try {
       const isUpdate = "id" in currentCustomer && currentCustomer.id;
 
-      // Prepare clean customer data (remove any unwanted properties)
+      // Prepare customer data
       const customerData = {
         name: currentCustomer.name || "",
         email: currentCustomer.email || "",
         phone: currentCustomer.phone || "",
         address: currentCustomer.address || "",
-        ...(isUpdate
-          ? {
-              updatedBy: userProfile.companyName || user.email,
-              updatedById: user.uid,
-              updatedAt: new Date(),
-            }
-          : {
-              createdBy: userProfile.companyName || user.email,
-              createdById: user.uid,
-              createdAt: new Date(),
-            }),
       };
 
-      if (isUpdate) {
-        await db
-          .collection(`users/${user.uid}/customers`)
-          .doc(currentCustomer.id)
-          .update(customerData);
+      // Use CustomerService to save (handles creator tracking automatically)
+      const customerId = await CustomerService.saveCustomer(
+        customerData,
+        user,
+        userProfile,
+        isUpdate ? currentCustomer.id : undefined,
+      );
 
-        // Log update activity
-        await ActivityLogger.logActivity(
-          user,
-          userProfile,
-          "customer_updated",
-          `Updated customer: ${customerData.name}`,
-          {
-            entityId: currentCustomer.id,
-            entityType: "customer",
-            newValue: customerData,
-          },
-        );
-      } else {
-        const docRef = await db
-          .collection(`users/${user.uid}/customers`)
-          .add(customerData);
-
-        // Log create activity
-        await ActivityLogger.logActivity(
-          user,
-          userProfile,
-          "customer_created",
-          `Created new customer: ${customerData.name}`,
-          {
-            entityId: docRef.id,
-            entityType: "customer",
-            newValue: customerData,
-          },
-        );
-      }
+      // Log activity
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        isUpdate ? "customer_updated" : "customer_created",
+        `${isUpdate ? "Updated" : "Created new"} customer: ${customerData.name}`,
+        {
+          entityId: customerId,
+          entityType: "customer",
+          newValue: customerData,
+        },
+      );
 
       closeModal();
-      // Data will auto-refresh due to onSnapshot listener
+      // Data will auto-refresh due to real-time listener
     } catch (error) {
       console.error("Error saving customer:", error);
       alert("Failed to save customer. Please try again.");
@@ -245,10 +172,8 @@ const CustomersPage: React.FC = () => {
 
     if (window.confirm("Are you sure you want to delete this customer?")) {
       try {
-        await db
-          .collection(`users/${user.uid}/customers`)
-          .doc(customerId)
-          .delete();
+        // Use CustomerService to delete
+        await CustomerService.deleteCustomer(customerId);
 
         // Log delete activity
         await ActivityLogger.logActivity(
@@ -263,7 +188,7 @@ const CustomersPage: React.FC = () => {
           },
         );
 
-        // Data will auto-refresh due to onSnapshot listener
+        // Data will auto-refresh due to real-time listener
       } catch (error) {
         console.error("Error deleting customer:", error);
         alert(
@@ -273,6 +198,35 @@ const CustomersPage: React.FC = () => {
     }
   };
 
+  const openModal = (customer?: Customer) => {
+    if (customer) {
+      setCurrentCustomer(customer);
+    } else {
+      setCurrentCustomer({ name: "", email: "", phone: "", address: "" });
+    }
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setCurrentCustomer(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <Spinner />
+      </div>
+    );
+  }
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredCustomers.length / customersPerPage);
+  const currentCustomers = filteredCustomers.slice(
+    (currentPage - 1) * customersPerPage,
+    currentPage * customersPerPage,
+  );
+
   return (
     <div>
       <div className="mb-6">
@@ -280,12 +234,36 @@ const CustomersPage: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
             Customers
           </h1>
-          <button
-            onClick={openModal}
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-          >
-            Add Customer
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => {
+                setLoading(true);
+                loadCustomers();
+              }}
+              className="px-3 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 flex items-center"
+              title="Refresh customer list"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+            <button
+              onClick={() => openModal()}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              Add Customer
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -310,7 +288,7 @@ const CustomersPage: React.FC = () => {
             placeholder="Search customers by name, email, phone, or address..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           />
           {searchTerm && (
             <button
@@ -337,10 +315,13 @@ const CustomersPage: React.FC = () => {
         {/* Results info */}
         <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
           {searchTerm
-            ? `Found ${filteredCustomers.length} customer${filteredCustomers.length !== 1 ? "s" : ""} matching "${searchTerm}"`
+            ? `Found ${filteredCustomers.length} customer${
+                filteredCustomers.length !== 1 ? "s" : ""
+              } matching "${searchTerm}"`
             : `Total ${customers.length} customer${customers.length !== 1 ? "s" : ""}`}
         </div>
       </div>
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
@@ -380,37 +361,33 @@ const CustomersPage: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="text-sm">
                         <div className="text-gray-900 dark:text-white">
-                          {(customer as any).createdBy ||
-                            (customer as any).updatedBy ||
-                            "Unknown"}
+                          {customer.createdBy || "Unknown User"}
                         </div>
                         <div className="text-gray-500 text-xs">
-                          {(customer as any).createdAt
-                            ? new Date(
-                                (customer as any).createdAt,
-                              ).toLocaleDateString()
-                            : (customer as any).updatedAt
-                              ? new Date(
-                                  (customer as any).updatedAt,
-                                ).toLocaleDateString()
-                              : ""}
+                          {customer.createdAt
+                            ? customer.createdAt.toDate
+                              ? customer.createdAt.toDate().toLocaleDateString()
+                              : new Date(customer.createdAt as any).toLocaleDateString()
+                            : ""}
                         </div>
                       </div>
                     </td>
                   )}
-                  <td className="px-6 py-4 flex space-x-2">
-                    <button
-                      onClick={() => openModal(customer)}
-                      className="text-yellow-500 hover:text-yellow-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(customer.id)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      Delete
-                    </button>
+                  <td className="px-6 py-4">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => openModal(customer)}
+                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(customer.id)}
+                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -425,6 +402,7 @@ const CustomersPage: React.FC = () => {
         onPageChange={setCurrentPage}
       />
 
+      {/* Modal - Match Product Popup Design Exactly */}
       {isModalOpen && currentCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
@@ -435,7 +413,7 @@ const CustomersPage: React.FC = () => {
               <input
                 type="text"
                 placeholder="Name"
-                value={currentCustomer.name || ""}
+                value={currentCustomer.name}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -447,7 +425,7 @@ const CustomersPage: React.FC = () => {
               <input
                 type="email"
                 placeholder="Email"
-                value={currentCustomer.email || ""}
+                value={currentCustomer.email}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -459,7 +437,7 @@ const CustomersPage: React.FC = () => {
               <input
                 type="tel"
                 placeholder="Phone"
-                value={currentCustomer.phone || ""}
+                value={currentCustomer.phone}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -469,8 +447,8 @@ const CustomersPage: React.FC = () => {
                 className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
               <textarea
-                placeholder="Address"
-                value={currentCustomer.address || ""}
+                placeholder="Address (optional)"
+                value={currentCustomer.address}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -488,7 +466,7 @@ const CustomersPage: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={handleSave}
+                onClick={handleSubmit}
                 className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
               >
                 Save

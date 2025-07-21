@@ -7,13 +7,16 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PAGES } from "../../config/permissions";
 import { db } from "../../services/firebase";
+import { InvoiceService } from "../../services/invoiceService";
+import { CustomerService } from "../../services/customerService";
 import type { Invoice, Customer, BankAccount, Expense } from "../../types";
 import Spinner from "../../components/Spinner";
+import InvoiceVerificationSection from "../../components/InvoiceVerificationSection";
 
 const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
-  const { user } = useAuth();
-  const { hasPageAccess } = usePermissions();
+  const { user, userProfile } = useAuth();
+  const { hasPageAccess, isOwner, isAdmin } = usePermissions();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -24,98 +27,115 @@ const DashboardPage: React.FC = () => {
   );
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !userProfile) return;
 
-    const loadData = async () => {
-      setLoading(true);
+    setLoading(true);
 
-      try {
-        // Load all data in parallel for better performance
-        const [
-          invoicesSnapshot,
-          customersSnapshot,
-          bankAccountsSnapshot,
-          expensesSnapshot,
-          exchangeRatesResponse,
-        ] = await Promise.allSettled([
-          db.collection(`users/${user.uid}/invoices`).get(),
-          db.collection(`users/${user.uid}/customers`).get(),
-          db.collection("bankAccounts").where("userId", "==", user.uid).get(),
-          db.collection("expenses").where("userId", "==", user.uid).get(),
-          fetch("https://open.er-api.com/v6/latest/USD").catch(() => null),
-        ]);
+    // Determine company ID for data loading
+    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
 
-        // Process invoices
-        if (invoicesSnapshot.status === "fulfilled") {
-          const invoicesData = invoicesSnapshot.value.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Invoice,
-          );
+    // Failsafe: Stop loading after 10 seconds
+    const timeoutId = setTimeout(() => {
+      console.warn("Dashboard loading timeout");
+      setLoading(false);
+    }, 10000);
+
+    // Set up real-time listeners for invoices using the service
+    let invoicesUnsubscribe: () => void;
+
+    try {
+      invoicesUnsubscribe = InvoiceService.getInvoicesRealTime(
+        user,
+        userProfile,
+        isOwner,
+        isAdmin,
+        (invoicesData) => {
           setInvoices(invoicesData);
-        } else {
-          console.error("Error loading invoices:", invoicesSnapshot.reason);
-          setInvoices([]);
-        }
+          // Stop loading when invoice data is received (even if empty)
+          if (!loading) setLoading(false);
+        },
+      );
+    } catch (error) {
+      console.error("Error setting up invoice listener:", error);
+      setInvoices([]);
+      setLoading(false);
+    }
 
-        // Process customers
-        if (customersSnapshot.status === "fulfilled") {
-          const customersData = customersSnapshot.value.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Customer,
+    // Load other data with safer approach
+    const loadOtherData = async () => {
+      try {
+        // Load data one by one with individual error handling
+        let customersData: Customer[] = [];
+        let bankAccountsData: BankAccount[] = [];
+        let expensesData: Expense[] = [];
+
+        // Load customers safely
+        try {
+          customersData = await CustomerService.getCustomers(
+            user,
+            userProfile,
+            isOwner,
+            isAdmin,
           );
-          setCustomers(customersData);
-        } else {
-          console.error("Error loading customers:", customersSnapshot.reason);
-          setCustomers([]);
+        } catch (customerError) {
+          console.error("Error loading customers:", customerError);
+          customersData = [];
         }
 
-        // Process bank accounts
-        if (bankAccountsSnapshot.status === "fulfilled") {
-          const bankAccountsData = bankAccountsSnapshot.value.docs.map(
+        // Load bank accounts safely
+        try {
+          const bankAccountsSnapshot = await db
+            .collection("bankAccounts")
+            .get();
+          const allBankAccounts = bankAccountsSnapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
           );
-          setBankAccounts(bankAccountsData);
-        } else {
-          console.error(
-            "Error loading bank accounts:",
-            bankAccountsSnapshot.reason,
+          // Filter for user's bank accounts
+          bankAccountsData = allBankAccounts.filter(
+            (account) => account.userId === (companyId || user.uid),
           );
-          setBankAccounts([]);
+        } catch (bankError) {
+          console.error("Error loading bank accounts:", bankError);
+          bankAccountsData = [];
         }
 
-        // Process expenses
-        if (expensesSnapshot.status === "fulfilled") {
-          const expensesData = expensesSnapshot.value.docs.map(
+        // Load expenses safely
+        try {
+          const expensesSnapshot = await db.collection("expenses").get();
+          const allExpenses = expensesSnapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
           );
-          setExpenses(expensesData);
-        } else {
-          console.error("Error loading expenses:", expensesSnapshot.reason);
-          setExpenses([]);
+          // Filter for user's expenses
+          expensesData = allExpenses.filter(
+            (expense) => expense.userId === user.uid,
+          );
+        } catch (expenseError) {
+          console.error("Error loading expenses:", expenseError);
+          expensesData = [];
         }
 
-        // Process exchange rates
-        if (
-          exchangeRatesResponse.status === "fulfilled" &&
-          exchangeRatesResponse.value
-        ) {
-          try {
-            const data = await exchangeRatesResponse.value.json();
-            if (data && data.rates) {
-              setExchangeRates(data.rates);
-            } else {
-              // Use default rates
-              setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
-            }
-          } catch {
+        // Set the data
+        setCustomers(customersData);
+        setBankAccounts(bankAccountsData);
+        setExpenses(expensesData);
+
+        // Load exchange rates separately
+        try {
+          const exchangeRatesResponse = await fetch(
+            "https://open.er-api.com/v6/latest/USD",
+          );
+          const data = await exchangeRatesResponse.json();
+          if (data && data.rates) {
+            setExchangeRates(data.rates);
+          } else {
             setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
           }
-        } else {
-          // Use default rates if fetch failed
+        } catch (ratesError) {
+          console.error("Error loading exchange rates:", ratesError);
           setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
         }
       } catch (error) {
         console.error("Error loading dashboard data:", error);
-        // Set empty arrays to prevent UI issues
-        setInvoices([]);
         setCustomers([]);
         setBankAccounts([]);
         setExpenses([]);
@@ -125,8 +145,16 @@ const DashboardPage: React.FC = () => {
       }
     };
 
-    loadData();
-  }, [user]);
+    loadOtherData();
+
+    // Cleanup function
+    return () => {
+      clearTimeout(timeoutId);
+      if (invoicesUnsubscribe) {
+        invoicesUnsubscribe();
+      }
+    };
+  }, [user, userProfile, isOwner, isAdmin]);
 
   const formatCurrency = (
     amount: number,
@@ -333,6 +361,11 @@ const DashboardPage: React.FC = () => {
                   <th scope="col" className="px-6 py-3">
                     Status
                   </th>
+                  {(isOwner || isAdmin) && (
+                    <th scope="col" className="px-6 py-3">
+                      Created By
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -373,6 +406,11 @@ const DashboardPage: React.FC = () => {
                           invoice.status.slice(1)}
                       </span>
                     </td>
+                    {(isOwner || isAdmin) && (
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                        {invoice.createdBy || "Unknown User"}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -380,6 +418,13 @@ const DashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Invoice Verification Section - Only for Admins/Owners */}
+      {(isOwner || isAdmin) && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6">
+          <InvoiceVerificationSection />
+        </div>
+      )}
     </div>
   );
 };

@@ -117,6 +117,23 @@ const formatCurrency = (amount: number, currency?: string) => {
   return `${symbol}${amount.toFixed(2)}`;
 };
 
+// Calculate correct remaining amount for upfront payment types
+const calculateRemainingAmount = (invoice: Invoice): number => {
+  const totalAmount = invoice.total || invoice.totalAmountDue || 0;
+  let amountPaid = invoice.amountPaid || 0;
+
+  // For upfront payment type, include upfront amount in paid amount if marked as paid
+  if (invoice.paymentType === "upfront" && invoice.upfrontPaid && invoice.upfrontAmount) {
+    // Check if upfront payment is already included in amountPaid
+    const hasUpfrontInPayments = invoice.payments?.some(p => p.id === "upfront_payment" || p.description?.toLowerCase().includes("upfront"));
+    if (!hasUpfrontInPayments) {
+      amountPaid += invoice.upfrontAmount;
+    }
+  }
+
+  return Math.max(0, totalAmount - amountPaid);
+};
+
 interface InvoicePDFProps {
   invoice: Invoice;
   userProfile: UserProfile;
@@ -234,7 +251,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, userProfile }) => (
             <Text style={{ marginBottom: 3 }}>
               Remaining Amount:{" "}
               {formatCurrency(
-                invoice.remainingAmount || 0,
+                calculateRemainingAmount(invoice),
                 invoice.bankAccountCurrency,
               )}
             </Text>
@@ -264,14 +281,59 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, userProfile }) => (
         )}
 
         <Text style={[styles.total, { marginTop: 15 }]}>
-          {invoice.remainingAmount && invoice.remainingAmount > 0
-            ? `Outstanding: ${formatCurrency(invoice.remainingAmount, invoice.bankAccountCurrency)}`
+          {calculateRemainingAmount(invoice) > 0
+            ? `Outstanding: ${formatCurrency(calculateRemainingAmount(invoice), invoice.bankAccountCurrency)}`
             : "PAID IN FULL"}
         </Text>
       </View>
       <Text style={styles.footer}>Thank you for your business!</Text>
+
+      {/* Unique Identity Code for Authentication */}
+      <View style={{
+        position: 'absolute',
+        bottom: 10,
+        right: 60,
+        fontSize: 8,
+        color: '#666',
+        textAlign: 'right',
+        opacity: 0.7
+      }}>
+        <Text>Invoice Authentication Code:</Text>
+        <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9 }}>
+          {generateInvoiceAuthCode(invoice, userProfile)}
+        </Text>
+        <Text style={{ fontSize: 7, marginTop: 2 }}>
+          Verify authenticity at your company portal
+        </Text>
+      </View>
     </Page>
   </Document>
 );
+
+// Generate unique authentication code for invoice verification
+const generateInvoiceAuthCode = (invoice: Invoice, userProfile: UserProfile | null): string => {
+  if (!userProfile) return "AUTH-ERROR";
+
+  // Create a unique code based on invoice data, company, and user
+  const companyId = userProfile.isOwner ? userProfile.uid : userProfile.companyId;
+  const creatorId = invoice.createdById || "unknown";
+  const invoiceData = `${invoice.id}-${invoice.invoiceNumber}-${companyId}-${creatorId}`;
+
+  // Simple hash function for generating a readable code
+  let hash = 0;
+  for (let i = 0; i < invoiceData.length; i++) {
+    const char = invoiceData.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+
+  // Convert to positive number and format as readable code
+  const positiveHash = Math.abs(hash);
+  const company = companyId?.substring(0, 3).toUpperCase() || "UNK";
+  const invoice_short = invoice.invoiceNumber?.replace(/[^0-9]/g, "").substring(0, 3) || "001";
+  const hash_short = positiveHash.toString().substring(0, 6);
+
+  return `${company}-${invoice_short}-${hash_short}`;
+};
 
 export default InvoicePDF;
