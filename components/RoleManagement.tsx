@@ -2,15 +2,19 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { db, Timestamp } from "../services/firebase";
 import { ActivityLogger } from "../services/activityLogger";
-import { PAGES, ACTIONS } from "../config/permissions";
-import type { UserRole, Permission } from "../types";
+import {
+  PERMISSION_GROUPS,
+  PERMISSION_CATEGORIES,
+  GRANULAR_PERMISSIONS,
+  PERMISSION_DESCRIPTIONS
+} from "../config/permissions";
 import Spinner from "./Spinner";
 
 interface CustomRole {
   id: string;
   name: string;
   description: string;
-  permissions: Permission[];
+  granularPermissions: string[]; // New granular permissions array
   companyId: string;
   isDefault: boolean;
   createdAt: any;
@@ -38,7 +42,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
   const [roleForm, setRoleForm] = useState({
     name: "",
     description: "",
-    permissions: [] as Permission[],
+    granularPermissions: [] as string[],
   });
 
   const loadRoles = async () => {
@@ -47,7 +51,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
     setLoading(true);
     try {
       const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-      
+
       if (!companyId) {
         setLoading(false);
         return;
@@ -80,21 +84,8 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
   }, [user, userProfile]);
 
   const initializePermissions = () => {
-    const pages = Object.values(PAGES);
-    const actions = Object.values(ACTIONS);
-    
-    const defaultPermissions: Permission[] = pages.map(page => ({
-      page,
-      actions: {
-        view: false,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    }));
-
-    return defaultPermissions;
+    // Return empty array - permissions will be selected individually
+    return [];
   };
 
   const openModal = (role?: CustomRole) => {
@@ -103,14 +94,14 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
       setRoleForm({
         name: role.name,
         description: role.description,
-        permissions: role.permissions || initializePermissions(),
+        granularPermissions: role.granularPermissions || [],
       });
     } else {
       setEditingRole(null);
       setRoleForm({
         name: "",
         description: "",
-        permissions: initializePermissions(),
+        granularPermissions: [],
       });
     }
     setIsModalOpen(true);
@@ -123,21 +114,24 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
     setRoleForm({
       name: "",
       description: "",
-      permissions: [],
+      granularPermissions: [],
     });
     setError("");
   };
 
-  const updatePermission = (pageIndex: number, action: string, value: boolean) => {
-    const updatedPermissions = [...roleForm.permissions];
-    updatedPermissions[pageIndex] = {
-      ...updatedPermissions[pageIndex],
-      actions: {
-        ...updatedPermissions[pageIndex].actions,
-        [action]: value,
-      },
-    };
-    setRoleForm({ ...roleForm, permissions: updatedPermissions });
+  const togglePermission = (permission: string) => {
+    const updatedPermissions = [...roleForm.granularPermissions];
+    const index = updatedPermissions.indexOf(permission);
+
+    if (index > -1) {
+      // Permission exists, remove it
+      updatedPermissions.splice(index, 1);
+    } else {
+      // Permission doesn't exist, add it
+      updatedPermissions.push(permission);
+    }
+
+    setRoleForm({ ...roleForm, granularPermissions: updatedPermissions });
   };
 
   const handleSaveRole = async () => {
@@ -160,7 +154,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
       const roleData = {
         name: roleForm.name.trim(),
         description: roleForm.description.trim(),
-        permissions: roleForm.permissions,
+        granularPermissions: roleForm.granularPermissions,
         companyId,
         isDefault: false,
         ...(editingRole
@@ -317,13 +311,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
                       {role.description || "No description"}
                     </td>
                     <td className="px-6 py-4">
-                      {role.permissions?.reduce(
-                        (count, perm) =>
-                          count +
-                          Object.values(perm.actions || {}).filter(Boolean).length,
-                        0,
-                      ) || 0}{" "}
-                      permissions
+                      {role.granularPermissions?.length || 0} permissions
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm">
@@ -411,36 +399,39 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
                 <h4 className="text-md font-semibold text-gray-800 dark:text-white mb-3">
                   Permissions
                 </h4>
-                <div className="space-y-4">
-                  {roleForm.permissions.map((permission, index) => (
+                <div className="space-y-6">
+                  {Object.entries(PERMISSION_GROUPS).map(([category, permissions]) => (
                     <div
-                      key={permission.page}
+                      key={category}
                       className="border rounded-lg p-4 dark:border-gray-600"
                     >
-                      <h5 className="font-medium text-gray-800 dark:text-white mb-2">
-                        {permission.page
+                      <h5 className="font-medium text-gray-800 dark:text-white mb-3">
+                        {category
                           .replace("-", " ")
-                          .replace(/\b\w/g, (l) => l.toUpperCase())}
+                          .replace(/\b\w/g, (l) => l.toUpperCase())} Permissions
                       </h5>
-                      <div className="grid grid-cols-5 gap-2">
-                        {Object.entries(ACTIONS).map(([actionKey, actionValue]) => (
+                      <div className="space-y-2">
+                        {permissions.map((permission) => (
                           <label
-                            key={actionKey}
-                            className="flex items-center space-x-2"
+                            key={permission}
+                            className="flex items-start space-x-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded"
                           >
                             <input
                               type="checkbox"
-                              checked={
-                                permission.actions?.[actionValue as keyof typeof permission.actions] || false
-                              }
-                              onChange={(e) =>
-                                updatePermission(index, actionValue, e.target.checked)
-                              }
-                              className="rounded"
+                              checked={roleForm.granularPermissions.includes(permission)}
+                              onChange={() => togglePermission(permission)}
+                              className="mt-1 rounded"
                             />
-                            <span className="text-sm text-gray-700 dark:text-gray-300">
-                              {actionValue.charAt(0).toUpperCase() + actionValue.slice(1)}
-                            </span>
+                            <div className="flex-1">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                {permission.split('_').map(word =>
+                                  word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                                ).join(' ')}
+                              </span>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                {PERMISSION_DESCRIPTIONS[permission] || "No description available"}
+                              </p>
+                            </div>
                           </label>
                         ))}
                       </div>

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
-import { PAGES } from "../../config/permissions";
 import { ActivityLogger } from "../../services/activityLogger";
 import { db } from "../../services/firebase";
 import type { Activity, ActivityType, CompanyUser } from "../../types";
@@ -11,7 +10,7 @@ import Spinner from "../../components/Spinner";
 const CompanyActivityPage: React.FC = () => {
   usePageTitle("Company Activity");
   const { user, userProfile } = useAuth();
-  const { hasPageAccess, isOwner, isAdmin } = usePermissions();
+  const { canViewCompanyActivity, isOwner, isAdmin } = usePermissions();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [users, setUsers] = useState<CompanyUser[]>([]);
@@ -176,7 +175,7 @@ const CompanyActivityPage: React.FC = () => {
     return userStats.sort((a, b) => b.total - a.total);
   };
 
-  if (!hasPageAccess(PAGES.DASHBOARD) || (!isOwner && !isAdmin)) {
+  if (!canViewCompanyActivity()) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

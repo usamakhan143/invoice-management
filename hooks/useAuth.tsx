@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { auth, db } from "../services/firebase";
 import { ActivityLogger } from "../services/activityLogger";
+import { PermissionService } from "../services/permissionService";
+import { RealTimePermissionService } from "../services/realTimePermissionService";
 import type { UserProfile } from "../types";
 import type firebase from "firebase/compat/app";
 
@@ -15,6 +17,7 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   loading: boolean;
   logout: () => Promise<void>;
+  setUserProfile: (profile: UserProfile | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,12 +31,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
   useEffect(() => {
     let userDocUnsubscribe: (() => void) | null = null;
+    let companyUserUnsubscribe: (() => void) | null = null;
+    let roleUnsubscribe: (() => void) | null = null;
 
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
-      // Clean up previous user document listener
+      // Clean up previous listeners
       if (userDocUnsubscribe) {
         userDocUnsubscribe();
         userDocUnsubscribe = null;
+      }
+      if (companyUserUnsubscribe) {
+        companyUserUnsubscribe();
+        companyUserUnsubscribe = null;
+      }
+      if (roleUnsubscribe) {
+        roleUnsubscribe();
+        roleUnsubscribe = null;
       }
 
       const previousUser = user;
@@ -59,8 +72,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                 // Check if this user is a company owner (original account)
                 if (!userData.companyId && !userData.role) {
                   userData.isOwner = true;
-                  userData.role = "owner";
                   userData.companyId = firebaseUser.uid;
+                }
+
+                // Load granular permissions from role if needed
+                const granularPermissions = await PermissionService.loadUserPermissions(userData);
+                if (granularPermissions.length > 0 &&
+                    JSON.stringify(userData.granularPermissions || []) !== JSON.stringify(granularPermissions)) {
+                  userData.granularPermissions = granularPermissions;
+                  // Update the database with loaded permissions
+                  await PermissionService.syncUserPermissions(userData.uid, granularPermissions);
                 }
 
                 setUserProfile(userData);
@@ -106,6 +127,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                       setUserProfile(null);
                       setLoading(false);
                       return;
+                    }
+
+                    // Load granular permissions from role if needed
+                    const granularPermissions = await PermissionService.loadUserPermissions(userData);
+                    if (granularPermissions.length > 0 &&
+                        JSON.stringify(userData.granularPermissions || []) !== JSON.stringify(granularPermissions)) {
+                      userData.granularPermissions = granularPermissions;
+                      // Update the database with loaded permissions
+                      await PermissionService.syncUserPermissions(userData.uid, granularPermissions);
                     }
 
                     setUserProfile(userData);
@@ -182,6 +212,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       if (userDocUnsubscribe) {
         userDocUnsubscribe();
       }
+      // Clean up real-time permission listeners
+      RealTimePermissionService.cleanup();
       unsubscribe();
     };
   }, []);
@@ -207,7 +239,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     await auth.signOut();
   };
 
-  const value = { user, userProfile, loading, logout };
+  const value = { user, userProfile, loading, logout, setUserProfile };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

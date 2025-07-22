@@ -5,11 +5,9 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { db, auth as firebaseAuth, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import {
-  ROLE_PERMISSIONS,
-  ROLE_DESCRIPTIONS,
   PAGES,
 } from "../../config/permissions";
-import type { CompanyUser, UserRole, Permission } from "../../types";
+import type { CompanyUser } from "../../types";
 import Spinner from "../../components/Spinner";
 import RoleManagement from "../../components/RoleManagement";
 
@@ -28,12 +26,8 @@ const UserManagementPage: React.FC = () => {
     email: "",
     password: "",
     displayName: "",
-    role: "viewer" as UserRole,
-    customPermissions: false,
+    role: "custom",
   });
-  const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>(
-    [],
-  );
   const [customRoles, setCustomRoles] = useState<any[]>([]);
   const [error, setError] = useState("");
 
@@ -41,12 +35,8 @@ const UserManagementPage: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<CompanyUser | null>(null);
   const [editForm, setEditForm] = useState({
-    role: "viewer" as UserRole,
-    customPermissions: false,
+    role: "custom",
   });
-  const [editSelectedPermissions, setEditSelectedPermissions] = useState<
-    Permission[]
-  >([]);
 
   // Load custom roles for this company
   const loadCustomRoles = async () => {
@@ -180,20 +170,15 @@ const UserManagementPage: React.FC = () => {
         throw new Error("User with this email already exists in your company");
       }
 
-      // Get permissions based on role or custom selection
-      let permissions: Permission[] = [];
+      // Get permissions from selected custom role
+      let granularPermissions: string[] = [];
 
-      if (createForm.customPermissions) {
-        permissions = selectedPermissions;
+      const customRole = customRoles.find(role => role.name === createForm.role);
+      if (customRole) {
+        granularPermissions = customRole.granularPermissions || [];
+        console.log("Assigning permissions to new user:", granularPermissions);
       } else {
-        // Check if it's a custom role first
-        const customRole = customRoles.find(role => role.name === createForm.role);
-        if (customRole) {
-          permissions = customRole.permissions || [];
-        } else {
-          // Fallback to default role permissions
-          permissions = ROLE_PERMISSIONS[createForm.role as UserRole] || ROLE_PERMISSIONS["viewer"];
-        }
+        console.log("No custom role found for:", createForm.role);
       }
 
       // Generate a unique user ID (in production, this should be done via Firebase Admin SDK)
@@ -210,7 +195,7 @@ const UserManagementPage: React.FC = () => {
         role: createForm.role,
         isOwner: false,
         companyId: companyId,
-        permissions: permissions,
+        granularPermissions: granularPermissions,
         isActive: true,
         // Add password for manual login (in production, use proper hashing)
         tempPassword: createForm.password,
@@ -222,7 +207,7 @@ const UserManagementPage: React.FC = () => {
         email: createForm.email,
         displayName: createForm.displayName,
         role: createForm.role,
-        permissions,
+        granularPermissions: granularPermissions,
         isActive: true,
         companyId,
         invitedBy: user.uid,
@@ -280,43 +265,13 @@ const UserManagementPage: React.FC = () => {
       email: "",
       password: "",
       displayName: "",
-      role: "viewer",
-      customPermissions: false,
+      role: "custom",
     });
-    setSelectedPermissions([]);
     setError("");
   };
 
-  const handleRoleChange = (role: UserRole) => {
+  const handleRoleChange = (role: string) => {
     setCreateForm({ ...createForm, role });
-    if (!createForm.customPermissions) {
-      setSelectedPermissions(ROLE_PERMISSIONS[role]);
-    }
-  };
-
-  const toggleCustomPermissions = () => {
-    const newCustom = !createForm.customPermissions;
-    setCreateForm({ ...createForm, customPermissions: newCustom });
-
-    if (!newCustom) {
-      setSelectedPermissions(ROLE_PERMISSIONS[createForm.role]);
-    }
-  };
-
-  const updatePermission = (
-    pageIndex: number,
-    action: keyof Permission["actions"],
-    value: boolean,
-  ) => {
-    const updatedPermissions = [...selectedPermissions];
-    if (!updatedPermissions[pageIndex]) {
-      updatedPermissions[pageIndex] = {
-        page: Object.values(PAGES)[pageIndex],
-        actions: {},
-      };
-    }
-    updatedPermissions[pageIndex].actions[action] = value;
-    setSelectedPermissions(updatedPermissions);
   };
 
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
@@ -376,86 +331,45 @@ const UserManagementPage: React.FC = () => {
     setEditingUser(userToEdit);
     setEditForm({
       role: userToEdit.role,
-      customPermissions:
-        userToEdit.permissions &&
-        userToEdit.permissions.length > 0 &&
-        JSON.stringify(userToEdit.permissions) !==
-          JSON.stringify(ROLE_PERMISSIONS[userToEdit.role]),
     });
-    setEditSelectedPermissions(
-      userToEdit.permissions || ROLE_PERMISSIONS[userToEdit.role],
-    );
     setIsEditModalOpen(true);
   };
 
   const closeEditModal = () => {
     setIsEditModalOpen(false);
     setEditingUser(null);
-    setEditForm({ role: "viewer", customPermissions: false });
-    setEditSelectedPermissions([]);
+    setEditForm({ role: "custom" });
   };
 
-  const handleEditRoleChange = (role: UserRole) => {
+  const handleEditRoleChange = (role: string) => {
     setEditForm({ ...editForm, role });
-    if (!editForm.customPermissions) {
-      setEditSelectedPermissions(ROLE_PERMISSIONS[role]);
-    }
-  };
-
-  const toggleEditCustomPermissions = () => {
-    const newCustomPermissions = !editForm.customPermissions;
-    setEditForm({ ...editForm, customPermissions: newCustomPermissions });
-    if (!newCustomPermissions) {
-      setEditSelectedPermissions(ROLE_PERMISSIONS[editForm.role]);
-    }
-  };
-
-  const updateEditPermission = (
-    pageIndex: number,
-    action: keyof Permission["actions"],
-    value: boolean,
-  ) => {
-    const newPermissions = [...editSelectedPermissions];
-    newPermissions[pageIndex] = {
-      ...newPermissions[pageIndex],
-      actions: {
-        ...newPermissions[pageIndex].actions,
-        [action]: value,
-      },
-    };
-    setEditSelectedPermissions(newPermissions);
   };
 
   const handleUpdateUser = async () => {
     if (!editingUser) return;
 
     try {
-      // Get permissions based on role or custom selection
-      let permissions: Permission[] = [];
+      // Get permissions from selected custom role
+      let granularPermissions: string[] = [];
 
-      if (editForm.customPermissions) {
-        permissions = editSelectedPermissions;
+      const customRole = customRoles.find(role => role.name === editForm.role);
+      if (customRole) {
+        granularPermissions = customRole.granularPermissions || [];
+        console.log("Updating user permissions:", granularPermissions);
       } else {
-        // Check if it's a custom role first
-        const customRole = customRoles.find(role => role.name === editForm.role);
-        if (customRole) {
-          permissions = customRole.permissions || [];
-        } else {
-          // Fallback to default role permissions
-          permissions = ROLE_PERMISSIONS[editForm.role as UserRole] || ROLE_PERMISSIONS["viewer"];
-        }
+        console.log("No custom role found for:", editForm.role);
       }
 
       // Update company user record
       await db.collection("companyUsers").doc(editingUser.id).update({
         role: editForm.role,
-        permissions: permissions,
+        granularPermissions: granularPermissions,
       });
 
       // Update user profile in users collection
       await db.collection("users").doc(editingUser.uid).update({
         role: editForm.role,
-        permissions: permissions,
+        granularPermissions: granularPermissions,
       });
 
       // Log user update activity
@@ -469,7 +383,7 @@ const UserManagementPage: React.FC = () => {
           entityType: "user",
           newValue: {
             role: editForm.role,
-            permissions: permissions,
+            granularPermissions: granularPermissions,
           },
         },
       );
@@ -989,92 +903,24 @@ const UserManagementPage: React.FC = () => {
                 </label>
                 <select
                   value={createForm.role}
-                  onChange={(e) => handleRoleChange(e.target.value as UserRole)}
+                  onChange={(e) => handleRoleChange(e.target.value)}
                   className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                  <optgroup label="Default Roles">
-                    {Object.entries(ROLE_DESCRIPTIONS).map(
-                      ([role, description]) => (
-                        <option key={role} value={role}>
-                          {role.charAt(0).toUpperCase() + role.slice(1)} -{" "}
-                          {description}
-                        </option>
-                      ),
-                    )}
-                  </optgroup>
-                  {customRoles.length > 0 && (
-                    <optgroup label="Custom Roles">
-                      {customRoles.map((role) => (
-                        <option key={role.id} value={role.name}>
-                          {role.name} - {role.description || "Custom role"}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
+                  <option value="custom">Select a role...</option>
+                  {customRoles.length > 0 && customRoles.map((role) => (
+                    <option key={role.id} value={role.name}>
+                      {role.name} - {role.description || "Custom role"}
+                    </option>
+                  ))}
                 </select>
+                {customRoles.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    No custom roles available. Create a custom role first.
+                  </p>
+                )}
               </div>
 
-              <div>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={createForm.customPermissions}
-                    onChange={toggleCustomPermissions}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">
-                    Custom Permissions (Override role defaults)
-                  </span>
-                </label>
-              </div>
 
-              {createForm.customPermissions && (
-                <div className="border rounded-md p-4 dark:border-gray-600">
-                  <h4 className="font-medium mb-3 text-gray-800 dark:text-white">
-                    Permission Settings
-                  </h4>
-                  <div className="space-y-3">
-                    {Object.values(PAGES).map((page, pageIndex) => (
-                      <div
-                        key={page}
-                        className="flex items-center justify-between"
-                      >
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
-                          {page.replace("-", " ")}
-                        </span>
-                        <div className="flex space-x-3">
-                          {["view", "create", "edit", "delete"].map(
-                            (action) => (
-                              <label
-                                key={action}
-                                className="flex items-center text-xs"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    selectedPermissions[pageIndex]?.actions?.[
-                                      action as keyof Permission["actions"]
-                                    ] || false
-                                  }
-                                  onChange={(e) =>
-                                    updatePermission(
-                                      pageIndex,
-                                      action as keyof Permission["actions"],
-                                      e.target.checked,
-                                    )
-                                  }
-                                  className="mr-1"
-                                />
-                                {action}
-                              </label>
-                            ),
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="mt-6 flex justify-end space-x-3">
@@ -1093,6 +939,7 @@ const UserManagementPage: React.FC = () => {
                   !createForm.email ||
                   !createForm.displayName ||
                   !createForm.password ||
+                  createForm.role === "custom" ||
                   loading
                 }
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
@@ -1120,92 +967,19 @@ const UserManagementPage: React.FC = () => {
                 </label>
                 <select
                   value={editForm.role}
-                  onChange={(e) =>
-                    handleEditRoleChange(e.target.value as UserRole)
-                  }
+                  onChange={(e) => handleEditRoleChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                  <optgroup label="Default Roles">
-                    <option value="viewer">Viewer</option>
-                    <option value="editor">Editor</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
-                  </optgroup>
-                  {customRoles.length > 0 && (
-                    <optgroup label="Custom Roles">
-                      {customRoles.map((role) => (
-                        <option key={role.id} value={role.name}>
-                          {role.name} - {role.description || "Custom role"}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
+                  <option value="custom">Select a role...</option>
+                  {customRoles.length > 0 && customRoles.map((role) => (
+                    <option key={role.id} value={role.name}>
+                      {role.name} - {role.description || "Custom role"}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              {/* Custom Permissions Toggle */}
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="editCustomPermissions"
-                  checked={editForm.customPermissions}
-                  onChange={toggleEditCustomPermissions}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                />
-                <label
-                  htmlFor="editCustomPermissions"
-                  className="ml-2 text-sm text-gray-900 dark:text-gray-300"
-                >
-                  Custom Permissions
-                </label>
-              </div>
 
-              {/* Custom Permissions Grid */}
-              {editForm.customPermissions && (
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
-                    Page Permissions
-                  </h4>
-                  <div className="space-y-3">
-                    {editSelectedPermissions.map((permission, pageIndex) => (
-                      <div
-                        key={permission.page}
-                        className="border-b border-gray-200 dark:border-gray-600 pb-3"
-                      >
-                        <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2 capitalize">
-                          {permission.page.replace("-", " ")}
-                        </h5>
-                        <div className="grid grid-cols-5 gap-2">
-                          {Object.entries(permission.actions).map(
-                            ([action, enabled]) => (
-                              <label
-                                key={action}
-                                className="flex items-center text-xs"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={enabled}
-                                  onChange={(e) =>
-                                    updateEditPermission(
-                                      pageIndex,
-                                      action as keyof Permission["actions"],
-                                      e.target.checked,
-                                    )
-                                  }
-                                  className="h-3 w-3 text-blue-600 border-gray-300 rounded mr-1"
-                                />
-                                <span className="text-gray-700 dark:text-gray-300 capitalize">
-                                  {action}
-                                </span>
-                              </label>
-                            ),
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Modal Actions */}

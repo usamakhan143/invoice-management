@@ -1,6 +1,6 @@
 import firebase from "firebase/compat/app";
 
-export type UserRole = "owner" | "admin" | "manager" | "editor" | "viewer";
+export type UserRole = "custom"; // Only support custom roles now
 
 export interface Permission {
   page: string;
@@ -13,17 +13,26 @@ export interface Permission {
   };
 }
 
+// New granular permission structure
+export interface GranularPermission {
+  permission: string;
+  enabled: boolean;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
   companyName: string;
-  displayName?: string; // Add display name for individual users
+  displayName?: string;
   createdAt: firebase.firestore.Timestamp;
   invoiceCounter: number;
-  // Role-based fields
-  role?: UserRole;
+  // Role-based fields - simplified for custom roles only
+  role?: string; // Now refers to custom role name
   isOwner?: boolean;
-  companyId?: string; // Links to the company owner
+  companyId?: string;
+  // New granular permissions system
+  granularPermissions?: string[]; // Array of permission strings
+  // Keep old permissions for backward compatibility during migration
   permissions?: Permission[];
   isActive?: boolean;
   invitedBy?: string;
@@ -35,7 +44,10 @@ export interface CompanyUser {
   uid: string;
   email: string;
   displayName: string;
-  role: UserRole;
+  role: string; // Custom role name
+  // New granular permissions
+  granularPermissions: string[];
+  // Keep old permissions for backward compatibility
   permissions: Permission[];
   isActive: boolean;
   createdAt: firebase.firestore.Timestamp;

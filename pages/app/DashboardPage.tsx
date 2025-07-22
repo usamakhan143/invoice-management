@@ -5,7 +5,7 @@ import { CustomerIcon, InvoiceIcon, RevenueIcon } from "../../constants";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
-import { PAGES } from "../../config/permissions";
+import { usePermissionRefresh } from "../../hooks/usePermissionRefresh";
 import { db } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
@@ -16,7 +16,18 @@ import InvoiceVerificationSection from "../../components/InvoiceVerificationSect
 const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
   const { user, userProfile } = useAuth();
-  const { hasPageAccess, isOwner, isAdmin } = usePermissions();
+  const {
+    canViewTotalRevenue,
+    canViewOutstandingRevenue,
+    canViewMonthlyExpenses,
+    canViewTotalCustomers,
+    canViewDashboardBankAccounts,
+    canViewRecentInvoices,
+    canAccessInvoiceVerification,
+    isOwner,
+    isAdmin
+  } = usePermissions();
+  const { refreshPermissions, setupRealTimeListeners } = usePermissionRefresh();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -30,6 +41,9 @@ const DashboardPage: React.FC = () => {
     if (!user || !userProfile) return;
 
     setLoading(true);
+
+    // Set up real-time permission listeners
+    setupRealTimeListeners();
 
     // Determine company ID for data loading
     const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
@@ -203,6 +217,11 @@ const DashboardPage: React.FC = () => {
     );
   }
 
+  // Check if user has any dashboard permissions
+  const hasAnyDashboardPermission = canViewTotalRevenue() || canViewOutstandingRevenue() ||
+    canViewMonthlyExpenses() || canViewTotalCustomers() || canViewDashboardBankAccounts() ||
+    canViewRecentInvoices() || canAccessInvoiceVerification();
+
   const bankBalances = bankAccounts.map((account) => {
     const paidInvoicesTotal = invoices
       .filter(
@@ -228,50 +247,93 @@ const DashboardPage: React.FC = () => {
         Dashboard
       </h1>
 
+      {/* Debug Panel - Remove this after testing */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4 mb-6">
+          <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Debug Info (Real-time):</h4>
+          <div className="text-sm text-yellow-700 dark:text-yellow-300">
+            <p>User: {userProfile?.email}</p>
+            <p>Is Owner: {isOwner ? 'Yes' : 'No'}</p>
+            <p>Role: {userProfile?.role || 'None'}</p>
+            <p>Granular Permissions: {userProfile?.granularPermissions?.length || 0} total</p>
+            <p>Can View Revenue: {canViewTotalRevenue() ? 'Yes' : 'No'}</p>
+            <p>Can View Customers: {canViewTotalCustomers() ? 'Yes' : 'No'}</p>
+            <p>Can View Recent Invoices: {canViewRecentInvoices() ? 'Yes' : 'No'}</p>
+            <p className="mt-2 text-xs">Last updated: {new Date().toLocaleTimeString()}</p>
+            <button
+              onClick={refreshPermissions}
+              className="mt-2 px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
+            >
+              Refresh Permissions
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!hasAnyDashboardPermission && !isOwner && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
+          <div className="text-6xl mb-4">📊</div>
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Dashboard Access Limited
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400">
+            You don't have permissions to view dashboard sections. Contact your administrator to request access.
+          </p>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <DashboardCard
-          title="Total Revenue (Paid)"
-          value={formatCurrency(totalRevenue)}
-          icon={<RevenueIcon />}
-          color="bg-green-500"
-        />
-        <DashboardCard
-          title="Outstanding Revenue"
-          value={formatCurrency(outstandingRevenue)}
-          icon={<InvoiceIcon />}
-          color="bg-yellow-500"
-        />
-        <DashboardCard
-          title="This Month Expenses"
-          value={formatCurrency(thisMonthExpenses)}
-          icon={
-            <svg
-              className="h-8 w-8 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-              />
-            </svg>
-          }
-          color="bg-red-500"
-        />
-        <DashboardCard
-          title="Total Customers"
-          value={customers.length.toString()}
-          icon={<CustomerIcon />}
-          color="bg-blue-500"
-        />
+        {canViewTotalRevenue() && (
+          <DashboardCard
+            title="Total Revenue (Paid)"
+            value={formatCurrency(totalRevenue)}
+            icon={<RevenueIcon />}
+            color="bg-green-500"
+          />
+        )}
+        {canViewOutstandingRevenue() && (
+          <DashboardCard
+            title="Outstanding Revenue"
+            value={formatCurrency(outstandingRevenue)}
+            icon={<InvoiceIcon />}
+            color="bg-yellow-500"
+          />
+        )}
+        {canViewMonthlyExpenses() && (
+          <DashboardCard
+            title="This Month Expenses"
+            value={formatCurrency(thisMonthExpenses)}
+            icon={
+              <svg
+                className="h-8 w-8 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                />
+              </svg>
+            }
+            color="bg-red-500"
+          />
+        )}
+        {canViewTotalCustomers() && (
+          <DashboardCard
+            title="Total Customers"
+            value={customers.length.toString()}
+            icon={<CustomerIcon />}
+            color="bg-blue-500"
+          />
+        )}
       </div>
 
       {/* Bank Accounts Overview */}
-      {hasPageAccess(PAGES.BANK_ACCOUNTS_VIEW) && (
+      {canViewDashboardBankAccounts() && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4">
             Bank Accounts
@@ -319,7 +381,8 @@ const DashboardPage: React.FC = () => {
       )}
 
       {/* Recent Invoices */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+      {canViewRecentInvoices() && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
             Recent Invoices
@@ -417,10 +480,11 @@ const DashboardPage: React.FC = () => {
             </table>
           </div>
         )}
-      </div>
+        </div>
+      )}
 
-      {/* Invoice Verification Section - Only for Admins/Owners */}
-      {(isOwner || isAdmin) && (
+      {/* Invoice Verification Section */}
+      {canAccessInvoiceVerification() && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6">
           <InvoiceVerificationSection />
         </div>

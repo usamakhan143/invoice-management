@@ -1,8 +1,207 @@
-import type { UserRole, Permission } from "../types";
+import type { Permission } from "../types";
 
+// Remove old role-based system completely
+// Now only use granular permissions
+
+export const PERMISSION_CATEGORIES = {
+  DASHBOARD: "dashboard",
+  INVOICES: "invoices", 
+  CUSTOMERS: "customers",
+  PRODUCTS: "products",
+  BANK_ACCOUNTS: "bank-accounts",
+  EXPENSES: "expenses",
+  USER_MANAGEMENT: "user-management",
+  CUSTOM_ROLES: "custom-roles",
+  COMPANY_ACTIVITY: "company-activity",
+  SIDEBAR: "sidebar",
+} as const;
+
+// New granular permissions for each section/UI element
+export const GRANULAR_PERMISSIONS = {
+  // Dashboard Page Permissions
+  DASHBOARD_VIEW_TOTAL_REVENUE: "dashboard_view_total_revenue",
+  DASHBOARD_VIEW_OUTSTANDING_REVENUE: "dashboard_view_outstanding_revenue", 
+  DASHBOARD_VIEW_MONTHLY_EXPENSES: "dashboard_view_monthly_expenses",
+  DASHBOARD_VIEW_TOTAL_CUSTOMERS: "dashboard_view_total_customers",
+  DASHBOARD_VIEW_BANK_ACCOUNTS: "dashboard_view_bank_accounts",
+  DASHBOARD_VIEW_RECENT_INVOICES: "dashboard_view_recent_invoices",
+  DASHBOARD_ACCESS_INVOICE_VERIFICATION: "dashboard_access_invoice_verification",
+
+  // Invoices Page Permissions
+  INVOICES_CREATE: "invoices_create",
+  INVOICES_VIEW_PDF: "invoices_view_pdf", 
+  INVOICES_PAYMENT_TRACKING: "invoices_payment_tracking",
+  INVOICES_EDIT: "invoices_edit",
+  INVOICES_DELETE: "invoices_delete",
+
+  // Customers Page Permissions
+  CUSTOMERS_CREATE: "customers_create",
+  CUSTOMERS_EDIT: "customers_edit",
+  CUSTOMERS_DELETE: "customers_delete",
+
+  // Products Page Permissions
+  PRODUCTS_CREATE: "products_create",
+  PRODUCTS_EDIT: "products_edit", 
+  PRODUCTS_DELETE: "products_delete",
+
+  // Bank Accounts Page Permissions
+  BANK_ACCOUNTS_CREATE: "bank_accounts_create",
+  BANK_ACCOUNTS_EDIT: "bank_accounts_edit",
+  BANK_ACCOUNTS_DELETE: "bank_accounts_delete",
+
+  // Expenses Page Permissions
+  EXPENSES_CREATE: "expenses_create",
+  EXPENSES_EDIT: "expenses_edit",
+  EXPENSES_DELETE: "expenses_delete",
+
+  // Company Activity Section (Admin only)
+  COMPANY_ACTIVITY_VIEW: "company_activity_view",
+
+  // User Management Page Permissions
+  USER_MANAGEMENT_CREATE: "user_management_create",
+  USER_MANAGEMENT_LOGIN_AS: "user_management_login_as",
+  USER_MANAGEMENT_EDIT: "user_management_edit", 
+  USER_MANAGEMENT_ACTIVATE_DEACTIVATE: "user_management_activate_deactivate",
+  USER_MANAGEMENT_REMOVE: "user_management_remove",
+
+  // Custom Roles Page Permissions
+  CUSTOM_ROLES_CREATE: "custom_roles_create",
+  CUSTOM_ROLES_EDIT: "custom_roles_edit",
+  CUSTOM_ROLES_DELETE: "custom_roles_delete",
+
+  // Sidebar Permissions
+  SIDEBAR_EDIT_PROFILE: "sidebar_edit_profile",
+} as const;
+
+// Permission descriptions for the role management UI
+export const PERMISSION_DESCRIPTIONS = {
+  // Dashboard
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_TOTAL_REVENUE]: "View Total Revenue (Paid) card on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_OUTSTANDING_REVENUE]: "View Outstanding Revenue card on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MONTHLY_EXPENSES]: "View This Month Expenses card on dashboard", 
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_TOTAL_CUSTOMERS]: "View Total Customers card on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_BANK_ACCOUNTS]: "View Bank Accounts section on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES]: "View Recent Invoices section on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION]: "Access Invoice Authentication Verification section",
+
+  // Invoices
+  [GRANULAR_PERMISSIONS.INVOICES_CREATE]: "Show 'Create Invoice' button",
+  [GRANULAR_PERMISSIONS.INVOICES_VIEW_PDF]: "View PDF of invoices",
+  [GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING]: "Open Payment Tracking popup",
+  [GRANULAR_PERMISSIONS.INVOICES_EDIT]: "Edit invoices",
+  [GRANULAR_PERMISSIONS.INVOICES_DELETE]: "Delete invoices",
+
+  // Customers
+  [GRANULAR_PERMISSIONS.CUSTOMERS_CREATE]: "Show 'Add Customer' button",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_EDIT]: "Edit customers",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DELETE]: "Delete customers",
+
+  // Products
+  [GRANULAR_PERMISSIONS.PRODUCTS_CREATE]: "Show 'Add Product' button", 
+  [GRANULAR_PERMISSIONS.PRODUCTS_EDIT]: "Edit products",
+  [GRANULAR_PERMISSIONS.PRODUCTS_DELETE]: "Delete products",
+
+  // Bank Accounts
+  [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE]: "Access form to add bank accounts",
+  [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_EDIT]: "Edit bank accounts",
+  [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE]: "Delete bank accounts",
+
+  // Expenses
+  [GRANULAR_PERMISSIONS.EXPENSES_CREATE]: "Show 'Add Expense' button",
+  [GRANULAR_PERMISSIONS.EXPENSES_EDIT]: "Edit expenses", 
+  [GRANULAR_PERMISSIONS.EXPENSES_DELETE]: "Delete expenses",
+
+  // Company Activity
+  [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
+
+  // User Management
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_CREATE]: "Show 'Create User' button",
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS]: "Show 'Login As' button",
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT]: "Edit users",
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE]: "Activate/Deactivate users",
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_REMOVE]: "Remove users",
+
+  // Custom Roles
+  [GRANULAR_PERMISSIONS.CUSTOM_ROLES_CREATE]: "Show 'Create Custom Role' button",
+  [GRANULAR_PERMISSIONS.CUSTOM_ROLES_EDIT]: "Edit custom roles",
+  [GRANULAR_PERMISSIONS.CUSTOM_ROLES_DELETE]: "Delete custom roles",
+
+  // Sidebar
+  [GRANULAR_PERMISSIONS.SIDEBAR_EDIT_PROFILE]: "Show/Edit profile icon in sidebar",
+};
+
+// Group permissions by category for better organization in UI
+export const PERMISSION_GROUPS = {
+  [PERMISSION_CATEGORIES.DASHBOARD]: [
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_TOTAL_REVENUE,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_OUTSTANDING_REVENUE,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MONTHLY_EXPENSES,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_TOTAL_CUSTOMERS,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_BANK_ACCOUNTS,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES,
+    GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION,
+  ],
+  [PERMISSION_CATEGORIES.INVOICES]: [
+    GRANULAR_PERMISSIONS.INVOICES_CREATE,
+    GRANULAR_PERMISSIONS.INVOICES_VIEW_PDF,
+    GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING,
+    GRANULAR_PERMISSIONS.INVOICES_EDIT,
+    GRANULAR_PERMISSIONS.INVOICES_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.CUSTOMERS]: [
+    GRANULAR_PERMISSIONS.CUSTOMERS_CREATE,
+    GRANULAR_PERMISSIONS.CUSTOMERS_EDIT,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.PRODUCTS]: [
+    GRANULAR_PERMISSIONS.PRODUCTS_CREATE,
+    GRANULAR_PERMISSIONS.PRODUCTS_EDIT,
+    GRANULAR_PERMISSIONS.PRODUCTS_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.BANK_ACCOUNTS]: [
+    GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE,
+    GRANULAR_PERMISSIONS.BANK_ACCOUNTS_EDIT,
+    GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.EXPENSES]: [
+    GRANULAR_PERMISSIONS.EXPENSES_CREATE,
+    GRANULAR_PERMISSIONS.EXPENSES_EDIT,
+    GRANULAR_PERMISSIONS.EXPENSES_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.COMPANY_ACTIVITY]: [
+    GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,
+  ],
+  [PERMISSION_CATEGORIES.USER_MANAGEMENT]: [
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_CREATE,
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS,
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT,
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE,
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_REMOVE,
+  ],
+  [PERMISSION_CATEGORIES.CUSTOM_ROLES]: [
+    GRANULAR_PERMISSIONS.CUSTOM_ROLES_CREATE,
+    GRANULAR_PERMISSIONS.CUSTOM_ROLES_EDIT,
+    GRANULAR_PERMISSIONS.CUSTOM_ROLES_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.SIDEBAR]: [
+    GRANULAR_PERMISSIONS.SIDEBAR_EDIT_PROFILE,
+  ],
+};
+
+// Helper function to get all permissions as an array
+export const getAllPermissions = (): string[] => {
+  return Object.values(GRANULAR_PERMISSIONS);
+};
+
+// Helper function to get permission group names  
+export const getPermissionGroupNames = (): string[] => {
+  return Object.keys(PERMISSION_GROUPS);
+};
+
+// Legacy page constants for backward compatibility (to be removed)
 export const PAGES = {
   DASHBOARD: "dashboard",
-  INVOICES: "invoices",
+  INVOICES: "invoices", 
   CUSTOMERS: "customers",
   PRODUCTS: "products",
   BANK_ACCOUNTS: "bank-accounts",
@@ -12,391 +211,11 @@ export const PAGES = {
   REPORTS: "reports",
 } as const;
 
+// Legacy actions for backward compatibility (to be removed)
 export const ACTIONS = {
   VIEW: "view",
   CREATE: "create",
-  EDIT: "edit",
+  EDIT: "edit", 
   DELETE: "delete",
   EXPORT: "export",
 } as const;
-
-// Default role permissions
-export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
-  owner: [
-    {
-      page: PAGES.DASHBOARD,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.INVOICES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.CUSTOMERS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.PRODUCTS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS_VIEW,
-      actions: {
-        view: true,
-      },
-    },
-    {
-      page: PAGES.EXPENSES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.USER_MANAGEMENT,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.REPORTS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-  ],
-
-  admin: [
-    {
-      page: PAGES.DASHBOARD,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.INVOICES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.CUSTOMERS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.PRODUCTS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: true,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS_VIEW,
-      actions: {
-        view: true,
-      },
-    },
-    {
-      page: PAGES.EXPENSES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.USER_MANAGEMENT,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.REPORTS,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: true,
-      },
-    },
-  ],
-
-  manager: [
-    {
-      page: PAGES.DASHBOARD,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.INVOICES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.CUSTOMERS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.PRODUCTS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS_VIEW,
-      actions: {
-        view: true,
-      },
-    },
-    {
-      page: PAGES.EXPENSES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: true,
-      },
-    },
-    {
-      page: PAGES.REPORTS,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: true,
-      },
-    },
-  ],
-
-  editor: [
-    {
-      page: PAGES.DASHBOARD,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.INVOICES,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.CUSTOMERS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.PRODUCTS,
-      actions: {
-        view: true,
-        create: true,
-        edit: true,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS_VIEW,
-      actions: {
-        view: false,
-      },
-    },
-    {
-      page: PAGES.EXPENSES,
-      actions: {
-        view: true,
-        create: true,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-  ],
-
-  viewer: [
-    {
-      page: PAGES.DASHBOARD,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.INVOICES,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.CUSTOMERS,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.PRODUCTS,
-      actions: {
-        view: true,
-        create: false,
-        edit: false,
-        delete: false,
-        export: false,
-      },
-    },
-    {
-      page: PAGES.BANK_ACCOUNTS_VIEW,
-      actions: {
-        view: false,
-      },
-    },
-  ],
-};
-
-export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
-  owner:
-    "Full access to all features and settings. Can manage company and all users.",
-  admin:
-    "Manage invoices, customers, products, and users. Limited bank account access.",
-  manager:
-    "Manage invoices, customers, and products. View reports and expenses.",
-  editor:
-    "Create and edit invoices, customers, and products. No delete permissions.",
-  viewer:
-    "View-only access to main business data. Cannot create or modify anything.",
-};
