@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useNavigate } from "react-router-dom";
 import { db, auth as firebaseAuth, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
+import { TokenService } from "../../services/tokenService";
 import {
   PAGES,
 } from "../../config/permissions";
@@ -14,11 +16,25 @@ import RoleManagement from "../../components/RoleManagement";
 const UserManagementPage: React.FC = () => {
   usePageTitle("User Management");
   const { user, userProfile } = useAuth();
-  const { isOwner, isAdmin, canCreate, canEdit, canDelete } = usePermissions();
+  const {
+    canViewUserManagement,
+    canCreateUser,
+    canLoginAsUser,
+    canEditUser,
+    canActivateDeactivateUser,
+    canViewCustomRoles,
+    canCreateCustomRole,
+    canEditCustomRole,
+    canDeleteCustomRole,
+    isOwner,
+    isAdmin
+  } = usePermissions();
+  const navigate = useNavigate();
 
   const [users, setUsers] = useState<CompanyUser[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<CompanyUser[]>([]);
   const [activeTab, setActiveTab] = useState<"users" | "roles">("users");
+  const [userFilterTab, setUserFilterTab] = useState<"active" | "deactivated">("active");
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -30,6 +46,14 @@ const UserManagementPage: React.FC = () => {
   });
   const [customRoles, setCustomRoles] = useState<any[]>([]);
   const [error, setError] = useState("");
+
+  // Page access control
+  useEffect(() => {
+    if (!canViewUserManagement()) {
+      navigate("/");
+      return;
+    }
+  }, [canViewUserManagement, navigate]);
 
   // Edit user states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -94,6 +118,8 @@ const UserManagementPage: React.FC = () => {
               return bTime.getTime() - aTime.getTime();
             });
 
+
+
             setUsers(usersData);
             setFilteredUsers(usersData);
             setLoading(false);
@@ -132,20 +158,21 @@ const UserManagementPage: React.FC = () => {
     };
   }, [user, userProfile]);
 
-  // Filter users based on search term
+  // Filter users based on search term and status
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredUsers(users);
-    } else {
-      const filtered = users.filter(
-        (user) =>
-          user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          user.role.toLowerCase().includes(searchTerm.toLowerCase()),
-      );
-      setFilteredUsers(filtered);
-    }
-  }, [searchTerm, users]);
+    const filtered = users.filter((user) => {
+      const matchesSearch = !searchTerm.trim() ||
+        user.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.role?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesStatus = userFilterTab === "active" ? user.isActive : !user.isActive;
+
+      return matchesSearch && matchesStatus;
+    });
+
+    setFilteredUsers(filtered);
+  }, [searchTerm, users, userFilterTab]);
 
   const handleCreateUser = async () => {
     if (!user || !userProfile) return;
@@ -176,9 +203,6 @@ const UserManagementPage: React.FC = () => {
       const customRole = customRoles.find(role => role.name === createForm.role);
       if (customRole) {
         granularPermissions = customRole.granularPermissions || [];
-        console.log("Assigning permissions to new user:", granularPermissions);
-      } else {
-        console.log("No custom role found for:", createForm.role);
       }
 
       // Generate a unique user ID (in production, this should be done via Firebase Admin SDK)
@@ -276,9 +300,73 @@ const UserManagementPage: React.FC = () => {
 
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
+      const newStatus = !currentStatus;
+      const targetUser = users.find(u => u.id === userId);
+
+      if (!targetUser) {
+        alert("User not found");
+        return;
+      }
+
+      // If deactivating, delete all tokens first to force immediate logout
+      if (!newStatus) {
+        try {
+          await TokenService.revokeUserTokenByEmail(targetUser.email);
+        } catch (error) {
+          // Silent error handling
+        }
+      }
+
+      // Update user status in companyUsers collection
       await db.collection("companyUsers").doc(userId).update({
-        isActive: !currentStatus,
+        isActive: newStatus,
       });
+
+      // Update user document in users collection using the Firebase Auth UID
+      if (targetUser.uid) {
+        try {
+          if (!newStatus) {
+            // Deactivating user - set isDeactivated flag
+            await db.collection("users").doc(targetUser.uid).update({
+              isDeactivated: true,
+            });
+          } else {
+            // Reactivating user - remove isDeactivated flag
+            await db.collection("users").doc(targetUser.uid).update({
+              isDeactivated: false,
+            });
+          }
+        } catch (userDocError: any) {
+          // If user document doesn't exist, create it with the deactivation flag
+          if (userDocError.code === 'not-found') {
+            await db.collection("users").doc(targetUser.uid).set({
+              email: targetUser.email,
+              isDeactivated: !newStatus,
+            }, { merge: true });
+          } else {
+            console.error("Error updating user document:", userDocError);
+            // Don't fail the entire operation if user document update fails
+          }
+        }
+      }
+
+      // Log activity
+      if (user && userProfile) {
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          newStatus ? "user_activated" : "user_deactivated",
+          `${newStatus ? "Activated" : "Deactivated"} user: ${targetUser.displayName} (${targetUser.email})`,
+          {
+            entityId: userId,
+            entityType: "user",
+            newValue: { isActive: newStatus },
+          },
+        );
+      }
+
+      // Refresh user list
+      await loadUsers();
     } catch (error) {
       console.error("Error updating user status:", error);
       alert("Failed to update user status");
@@ -355,9 +443,6 @@ const UserManagementPage: React.FC = () => {
       const customRole = customRoles.find(role => role.name === editForm.role);
       if (customRole) {
         granularPermissions = customRole.granularPermissions || [];
-        console.log("Updating user permissions:", granularPermissions);
-      } else {
-        console.log("No custom role found for:", editForm.role);
       }
 
       // Update company user record
@@ -399,78 +484,69 @@ const UserManagementPage: React.FC = () => {
 
   const handleDirectLogin = async (targetUser: CompanyUser) => {
     try {
+      console.log("🚀 LOGIN AS DEBUG - Starting login as:", targetUser.email);
+
+      // Check if target user is active
+      if (!targetUser.isActive) {
+        console.log("❌ Target user is not active");
+        alert("Cannot login as deactivated user.");
+        return;
+      }
+      console.log("✅ Target user is active");
+
       // Store current admin info
       const currentAdminEmail = user?.email;
-      const currentAdminUid = user?.uid;
+      const currentAdminPassword = userProfile?.tempPassword;
+      console.log("📝 Current admin:", currentAdminEmail);
+      console.log("📝 Admin has password:", !!currentAdminPassword);
 
-      // Get user data from users collection
+      // Get target user data from users collection
+      console.log("🔍 Fetching target user data...");
       const userDoc = await db.collection("users").doc(targetUser.uid).get();
       const userData = userDoc.data();
+      console.log("📄 User data exists:", !!userData);
 
       if (!userData) {
+        console.log("❌ No user data found");
         alert("User data not found. This user may need to be recreated.");
         return;
       }
 
-      // If user has Firebase auth, try to login with Firebase
-      if (userData.tempPassword) {
-        // This is for users created through our system
-        try {
-          // Create Firebase user if doesn't exist
-          await firebaseAuth.createUserWithEmailAndPassword(
-            targetUser.email,
-            userData.tempPassword,
-          );
-        } catch (createError: any) {
-          // If user already exists, try to sign in
-          if (createError.code === "auth/email-already-in-use") {
-            await firebaseAuth.signInWithEmailAndPassword(
-              targetUser.email,
-              userData.tempPassword,
-            );
-          } else {
-            throw createError;
-          }
-        }
-
-        // Open dashboard in new tab
-        setTimeout(() => {
-          window.open(
-            `${window.location.origin}${window.location.pathname}#/`,
-            "_blank",
-          );
-
-          // Restore admin session after a delay
-          setTimeout(async () => {
-            if (currentAdminEmail) {
-              // Get admin user data
-              const adminDoc = await db
-                .collection("users")
-                .doc(currentAdminUid!)
-                .get();
-              const adminData = adminDoc.data();
-
-              if (adminData?.tempPassword) {
-                await firebaseAuth.signInWithEmailAndPassword(
-                  currentAdminEmail,
-                  adminData.tempPassword,
-                );
-              }
-            }
-          }, 2000);
-        }, 1000);
-      } else {
-        // For legacy users, just open login page with pre-filled email
-        const loginUrl = `${window.location.origin}${window.location.pathname}#/login?email=${encodeURIComponent(targetUser.email)}`;
-        window.open(loginUrl, "_blank");
+      console.log("🔑 Target user has password:", !!userData.tempPassword);
+      if (!userData.tempPassword) {
+        console.log("❌ No temp password found");
+        alert("User does not have login credentials. Please create them first.");
+        return;
       }
+
+      console.log("🔄 Signing in as target user...");
+      // Sign in as target user directly (no token deletion first)
+      const targetUserCredential = await firebaseAuth.signInWithEmailAndPassword(
+        targetUser.email,
+        userData.tempPassword,
+      );
+      console.log("✅ Firebase sign in successful");
+
+      // Create new token for target user
+      if (targetUserCredential.user) {
+        console.log("🎟️ Creating token for target user...");
+        await TokenService.createUserToken(targetUserCredential.user);
+        console.log("✅ Token created successfully");
+
+        // Force page reload to trigger useAuth with new user
+        console.log("🔄 Redirecting to dashboard...");
+        window.location.href = `${window.location.origin}${window.location.pathname}#/`;
+      }
+
     } catch (error: any) {
-      console.error("Direct login failed:", error);
+      console.error("❌ LOGIN AS ERROR:", error);
+      console.error("Error code:", error.code);
+      console.error("Error message:", error.message);
       alert("Failed to login as user: " + error.message);
     }
   };
 
-  if (!isOwner && !isAdmin) {
+  if (!canViewUserManagement()) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -522,7 +598,7 @@ const UserManagementPage: React.FC = () => {
               </svg>
               {loading ? "Loading..." : "Refresh"}
             </button>
-            {canCreate(PAGES.USER_MANAGEMENT) && (
+            {canCreateUser() && (
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
@@ -545,24 +621,52 @@ const UserManagementPage: React.FC = () => {
                 : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
             }`}
           >
-            Users ({users.length})
+            Team Members
           </button>
-          <button
-            onClick={() => setActiveTab("roles")}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === "roles"
-                ? "border-primary-500 text-primary-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            }`}
-          >
-            Roles
-          </button>
+          {canViewCustomRoles() && (
+            <button
+              onClick={() => setActiveTab("roles")}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "roles"
+                  ? "border-primary-500 text-primary-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Roles
+            </button>
+          )}
         </nav>
       </div>
 
       {/* Users Tab Content */}
       {activeTab === "users" && (
         <>
+          {/* User Status Filter Tabs */}
+          <div className="mb-4">
+            <div className="flex space-x-4">
+              <button
+                onClick={() => setUserFilterTab("active")}
+                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                  userFilterTab === "active"
+                    ? "bg-green-100 text-green-800 border border-green-300"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                Active Users ({users.filter(u => u.isActive).length})
+              </button>
+              <button
+                onClick={() => setUserFilterTab("deactivated")}
+                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                  userFilterTab === "deactivated"
+                    ? "bg-red-100 text-red-800 border border-red-300"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                Deactivated Users ({users.filter(u => !u.isActive).length})
+              </button>
+            </div>
+          </div>
+
           {/* Search Bar */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-6">
         <div className="relative">
@@ -725,27 +829,29 @@ const UserManagementPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleDirectLogin(user)}
-                          className="inline-flex items-center px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
-                          title="Login as this user"
-                        >
-                          <svg
-                            className="w-3 h-3 mr-1"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                        {(canLoginAsUser() || isOwner || isAdmin) && user.isActive && (
+                          <button
+                            onClick={() => handleDirectLogin(user)}
+                            className="inline-flex items-center px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
+                            title="Login as this user"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
-                            />
-                          </svg>
-                          Login As
-                        </button>
-                        {canEdit(PAGES.USER_MANAGEMENT) &&
+                            <svg
+                              className="w-3 h-3 mr-1"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                              />
+                            </svg>
+                            Login As
+                          </button>
+                        )}
+                        {canEditUser() &&
                           user.role !== "owner" && (
                             <button
                               onClick={() => openEditModal(user)}
@@ -767,7 +873,7 @@ const UserManagementPage: React.FC = () => {
                               Edit
                             </button>
                           )}
-                        {canEdit(PAGES.USER_MANAGEMENT) && (
+                        {canActivateDeactivateUser() && user.role !== "owner" && (
                           <button
                             onClick={() =>
                               toggleUserStatus(user.id, user.isActive)
@@ -798,28 +904,9 @@ const UserManagementPage: React.FC = () => {
                             {user.isActive ? "Deactivate" : "Activate"}
                           </button>
                         )}
-                        {canDelete(PAGES.USER_MANAGEMENT) &&
-                          user.role !== "owner" && (
-                            <button
-                              onClick={() => deleteUser(user.id, user.email)}
-                              className="inline-flex items-center px-3 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:bg-red-800 dark:text-red-200 dark:border-red-600 dark:hover:bg-red-700"
-                            >
-                              <svg
-                                className="w-3 h-3 mr-1"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="2"
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                />
-                              </svg>
-                              Remove
-                            </button>
-                          )}
+                        {!canLoginAsUser() && !canEditUser() && !canActivateDeactivateUser() && (
+                          <span className="text-gray-400 text-xs">No actions available</span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1004,7 +1091,7 @@ const UserManagementPage: React.FC = () => {
       )}
 
       {/* Roles Tab Content */}
-      {activeTab === "roles" && (
+      {activeTab === "roles" && canViewCustomRoles() && (
         <RoleManagement />
       )}
     </div>

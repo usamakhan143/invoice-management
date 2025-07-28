@@ -133,7 +133,11 @@ const Sidebar: React.FC = () => {
 
   // Filter navigation items based on permissions
   const navItems = allNavItems.filter((item) => {
-    // Show user management only to owners and admins
+    // For user management, check specific permission instead of adminOnly
+    if (item.to === "/users") {
+      return hasPageAccess(item.page);
+    }
+    // Show other admin-only items to owners and admins
     if (item.adminOnly && !isOwner && !isAdmin) {
       return false;
     }

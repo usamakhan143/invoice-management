@@ -41,7 +41,7 @@ export class ActivityLogger {
         activity.metadata = metadata;
       }
 
-      console.log("Logging activity:", activity); // Debug log
+
       await db.collection("activities").add(activity);
     } catch (error) {
       console.error("Failed to log activity:", error);

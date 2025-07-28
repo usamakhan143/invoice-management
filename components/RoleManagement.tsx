@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { db, Timestamp } from "../services/firebase";
 import { ActivityLogger } from "../services/activityLogger";
 import {
@@ -33,6 +34,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
   onRoleUpdated,
 }) => {
   const { user, userProfile } = useAuth();
+  const { canCreateCustomRole, canEditCustomRole, canDeleteCustomRole } = usePermissions();
   const [roles, setRoles] = useState<CustomRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -257,12 +259,14 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
           Custom Roles
         </h2>
-        <button
-          onClick={() => openModal()}
-          className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-        >
-          Create Custom Role
-        </button>
+        {canCreateCustomRole() && (
+          <button
+            onClick={() => openModal()}
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+          >
+            Create Custom Role
+          </button>
+        )}
       </div>
 
       {/* Roles List */}
@@ -325,19 +329,24 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex space-x-2">
-                        <button
-                          onClick={() => openModal(role)}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
-                        >
-                          Edit
-                        </button>
-                        {!role.isDefault && (
+                        {canEditCustomRole() && (
+                          <button
+                            onClick={() => openModal(role)}
+                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {canDeleteCustomRole() && !role.isDefault && (
                           <button
                             onClick={() => handleDeleteRole(role.id, role.name)}
                             className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                           >
                             Delete
                           </button>
+                        )}
+                        {!canEditCustomRole() && !canDeleteCustomRole() && (
+                          <span className="text-gray-400 text-sm">No actions available</span>
                         )}
                       </div>
                     </td>

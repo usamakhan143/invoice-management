@@ -39,7 +39,7 @@ export const usePerformanceMonitor = () => {
         for (const entry of list.getEntries()) {
           if (entry.duration > 50) {
             // Long task threshold
-            console.warn("Long task detected:", entry.duration + "ms");
+
           }
         }
       });
@@ -80,7 +80,7 @@ export const withRetry = async <T,>(
       return await asyncFn();
     } catch (error) {
       lastError = error as Error;
-      console.warn(`Attempt ${attempt} failed:`, error);
+
 
       if (attempt < maxRetries) {
         await new Promise((resolve) => setTimeout(resolve, delay * attempt));

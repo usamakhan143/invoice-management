@@ -9,6 +9,8 @@ import { auth, db } from "../services/firebase";
 import { ActivityLogger } from "../services/activityLogger";
 import { PermissionService } from "../services/permissionService";
 import { RealTimePermissionService } from "../services/realTimePermissionService";
+import { UserMonitoringService } from "../services/userMonitoringService";
+import { TokenService } from "../services/tokenService";
 import type { UserProfile } from "../types";
 import type firebase from "firebase/compat/app";
 
@@ -54,15 +56,73 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
       if (firebaseUser) {
         try {
+          // Check if this is a fresh login (no token exists) or validate existing token
+          const storedToken = localStorage.getItem("userToken");
+          const storedUserId = localStorage.getItem("tokenUserId");
+
+          if (storedToken && storedUserId) {
+            // Existing session - validate token
+            const isValidToken = await TokenService.validateToken(firebaseUser);
+            if (!isValidToken) {
+              await auth.signOut();
+              setUserProfile(null);
+              setLoading(false);
+              return;
+            }
+          } else {
+            // Fresh login - FIRST check if user is allowed to login
+
+            // Check by EMAIL in companyUsers first (more reliable)
+            const companyUserQuery = await db
+              .collection("companyUsers")
+              .where("email", "==", firebaseUser.email)
+              .get();
+
+            if (!companyUserQuery.empty) {
+              const companyUserData = companyUserQuery.docs[0].data();
+              if (companyUserData.isActive === false) {
+                await auth.signOut();
+                setUserProfile(null);
+                setLoading(false);
+                return;
+              }
+            }
+
+            // Also check users collection for deactivation
+            const usersByEmailQuery = await db
+              .collection("users")
+              .where("email", "==", firebaseUser.email)
+              .get();
+
+            if (!usersByEmailQuery.empty) {
+              const userData = usersByEmailQuery.docs[0].data();
+              const isOwner = userData?.isOwner === true;
+
+              if (!isOwner && userData?.isDeactivated === true) {
+                await auth.signOut();
+                setUserProfile(null);
+                setLoading(false);
+                return;
+              }
+            }
+
+            // Only create token if user is allowed to login
+            try {
+              await TokenService.createUserToken(firebaseUser);
+            } catch (error) {
+              // Silent token creation error
+            }
+          }
+
           const userDocRef = db.collection("users").doc(firebaseUser.uid);
           userDocUnsubscribe = userDocRef.onSnapshot(
             async (doc) => {
               if (doc.exists) {
                 const userData = doc.data() as UserProfile;
 
-                // Check if user is deactivated
-                if (userData.isActive === false) {
-                  console.log("User is deactivated, logging out...");
+                // Check if user is deactivated (for both isActive false and isDeactivated true)
+                if (userData.isActive === false || userData.isDeactivated === true) {
+                  await TokenService.revokeCurrentToken(firebaseUser);
                   await auth.signOut();
                   setUserProfile(null);
                   setLoading(false);
@@ -122,7 +182,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
                     // Check if user is deactivated
                     if (userData.isActive === false) {
-                      console.log("User is deactivated, logging out...");
                       await auth.signOut();
                       setUserProfile(null);
                       setLoading(false);
@@ -183,9 +242,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           setLoading(false);
         }
 
+        // Start monitoring for real-time user deactivation
+        UserMonitoringService.startMonitoring(firebaseUser);
+
         // Force loading to stop after 1 second to prevent infinite spinner
         setTimeout(() => {
-          console.warn("Auth loading timeout - forcing completion");
           setLoading(false);
         }, 1000);
       } else {
@@ -214,6 +275,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       }
       // Clean up real-time permission listeners
       RealTimePermissionService.cleanup();
+      // Clean up user monitoring service
+      UserMonitoringService.cleanup();
       unsubscribe();
     };
   }, []);
@@ -232,10 +295,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         console.error("Failed to log logout activity:", error);
       }
     }
-    // Clear login session tracking
+
+    // Revoke current token before signing out
     if (user) {
+      try {
+        await TokenService.revokeCurrentToken(user);
+      } catch (error) {
+        console.error("Failed to revoke token:", error);
+      }
       sessionStorage.removeItem(`loginLogged_${user.uid}`);
     }
+
     await auth.signOut();
   };
 

@@ -2,6 +2,8 @@ import React, { Suspense, lazy, useEffect, useState } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import { usePageTitle } from "./hooks/usePageTitle";
+import { FirebaseHealthChecker } from "./services/firebaseHealth";
+import { enableOfflineSupport } from "./services/firebase";
 import Spinner from "./components/Spinner";
 import NetworkStatus from "./components/NetworkStatus";
 import AppLayout from "./layouts/AppLayout";
@@ -67,6 +69,44 @@ const ProtectedRoute: React.FC = () => {
 
 const App: React.FC = () => {
   usePageTitle();
+  const [firebaseReady, setFirebaseReady] = useState(false);
+  const [firebaseError, setFirebaseError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const initializeFirebase = async () => {
+      try {
+        // Enable offline support first
+        await enableOfflineSupport();
+
+        // Check Firebase connection
+        const healthCheck = await FirebaseHealthChecker.checkConnection();
+
+        if (!healthCheck.isConnected) {
+          setFirebaseError(healthCheck.error || 'Connection issues');
+        }
+
+        setFirebaseReady(true);
+      } catch (error) {
+        setFirebaseError(`Initialization failed: ${error}`);
+        setFirebaseReady(true); // Still allow app to load in offline mode
+      }
+    };
+
+    initializeFirebase();
+  }, []);
+
+  if (!firebaseReady) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <Spinner />
+          <p className="mt-4 text-gray-600 dark:text-gray-300">
+            Connecting to Firebase...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

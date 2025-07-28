@@ -67,6 +67,12 @@ export class CustomerService {
     const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
 
     try {
+      // Check connection before fetching
+      const isConnected = await FirebaseHealth.isFirebaseReachable();
+      if (!isConnected) {
+        console.log("🔄 Firebase offline, using cached data for customers");
+      }
+
       // Use FirebaseHealth for robust data fetching
       const customersRaw = await FirebaseHealth.safeGetCollection("customers");
 

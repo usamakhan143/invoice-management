@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { usePermissions } from "../../hooks/usePermissions";
 import { db, FieldValue, Timestamp } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
@@ -17,8 +18,27 @@ import Spinner from "../../components/Spinner";
 
 const InvoiceFormPage: React.FC = () => {
   const { user, userProfile } = useAuth();
+  const { canCreateInvoice, canEditInvoice } = usePermissions();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
+  // Check permissions for create/edit access
+  useEffect(() => {
+    if (!user || !userProfile) return;
+
+    // Check if user has permission to access this form
+    const isEditMode = !!id;
+    if (isEditMode && !canEditInvoice()) {
+      console.log("User doesn't have permission to edit invoices, redirecting to dashboard");
+      navigate("/");
+      return;
+    }
+    if (!isEditMode && !canCreateInvoice()) {
+      console.log("User doesn't have permission to create invoices, redirecting to dashboard");
+      navigate("/");
+      return;
+    }
+  }, [user, userProfile, id, canCreateInvoice, canEditInvoice, navigate]);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);

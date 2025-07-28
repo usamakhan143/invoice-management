@@ -17,9 +17,28 @@ const ProtectedComponent: React.FC<ProtectedComponentProps> = ({
   fallback = null,
   className,
 }) => {
-  const { hasAction } = usePermissions();
+  const { hasPageAccess, canCreate, canEdit, canDelete, canView } = usePermissions();
 
-  if (!hasAction(page, action)) {
+  // Map action to appropriate permission function
+  let hasPermission = false;
+  switch (action) {
+    case "view":
+      hasPermission = hasPageAccess(page) || canView(page);
+      break;
+    case "create":
+      hasPermission = canCreate(page);
+      break;
+    case "edit":
+      hasPermission = canEdit(page);
+      break;
+    case "delete":
+      hasPermission = canDelete(page);
+      break;
+    default:
+      hasPermission = hasPageAccess(page);
+  }
+
+  if (!hasPermission) {
     return <>{fallback}</>;
   }
 

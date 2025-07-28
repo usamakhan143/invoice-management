@@ -5,7 +5,7 @@ import type { Permission } from "../types";
 
 export const PERMISSION_CATEGORIES = {
   DASHBOARD: "dashboard",
-  INVOICES: "invoices", 
+  INVOICES: "invoices",
   CUSTOMERS: "customers",
   PRODUCTS: "products",
   BANK_ACCOUNTS: "bank-accounts",
@@ -20,28 +20,32 @@ export const PERMISSION_CATEGORIES = {
 export const GRANULAR_PERMISSIONS = {
   // Dashboard Page Permissions
   DASHBOARD_VIEW_TOTAL_REVENUE: "dashboard_view_total_revenue",
-  DASHBOARD_VIEW_OUTSTANDING_REVENUE: "dashboard_view_outstanding_revenue", 
+  DASHBOARD_VIEW_OUTSTANDING_REVENUE: "dashboard_view_outstanding_revenue",
   DASHBOARD_VIEW_MONTHLY_EXPENSES: "dashboard_view_monthly_expenses",
   DASHBOARD_VIEW_TOTAL_CUSTOMERS: "dashboard_view_total_customers",
   DASHBOARD_VIEW_BANK_ACCOUNTS: "dashboard_view_bank_accounts",
   DASHBOARD_VIEW_RECENT_INVOICES: "dashboard_view_recent_invoices",
   DASHBOARD_ACCESS_INVOICE_VERIFICATION: "dashboard_access_invoice_verification",
+  DASHBOARD_VIEW_DEBUG_INFO: "dashboard_view_debug_info",
 
   // Invoices Page Permissions
+  INVOICES_VIEW: "invoices_view",
   INVOICES_CREATE: "invoices_create",
-  INVOICES_VIEW_PDF: "invoices_view_pdf", 
+  INVOICES_VIEW_PDF: "invoices_view_pdf",
   INVOICES_PAYMENT_TRACKING: "invoices_payment_tracking",
   INVOICES_EDIT: "invoices_edit",
   INVOICES_DELETE: "invoices_delete",
+  INVOICES_VIEW_STATUS: "invoices_view_status",
 
   // Customers Page Permissions
+  CUSTOMERS_VIEW: "customers_view",
   CUSTOMERS_CREATE: "customers_create",
   CUSTOMERS_EDIT: "customers_edit",
   CUSTOMERS_DELETE: "customers_delete",
 
   // Products Page Permissions
   PRODUCTS_CREATE: "products_create",
-  PRODUCTS_EDIT: "products_edit", 
+  PRODUCTS_EDIT: "products_edit",
   PRODUCTS_DELETE: "products_delete",
 
   // Bank Accounts Page Permissions
@@ -50,6 +54,7 @@ export const GRANULAR_PERMISSIONS = {
   BANK_ACCOUNTS_DELETE: "bank_accounts_delete",
 
   // Expenses Page Permissions
+  EXPENSES_VIEW: "expenses_view",
   EXPENSES_CREATE: "expenses_create",
   EXPENSES_EDIT: "expenses_edit",
   EXPENSES_DELETE: "expenses_delete",
@@ -58,13 +63,14 @@ export const GRANULAR_PERMISSIONS = {
   COMPANY_ACTIVITY_VIEW: "company_activity_view",
 
   // User Management Page Permissions
+  USER_MANAGEMENT_VIEW: "user_management_view",
   USER_MANAGEMENT_CREATE: "user_management_create",
   USER_MANAGEMENT_LOGIN_AS: "user_management_login_as",
-  USER_MANAGEMENT_EDIT: "user_management_edit", 
+  USER_MANAGEMENT_EDIT: "user_management_edit",
   USER_MANAGEMENT_ACTIVATE_DEACTIVATE: "user_management_activate_deactivate",
-  USER_MANAGEMENT_REMOVE: "user_management_remove",
 
   // Custom Roles Page Permissions
+  CUSTOM_ROLES_VIEW: "custom_roles_view",
   CUSTOM_ROLES_CREATE: "custom_roles_create",
   CUSTOM_ROLES_EDIT: "custom_roles_edit",
   CUSTOM_ROLES_DELETE: "custom_roles_delete",
@@ -78,26 +84,30 @@ export const PERMISSION_DESCRIPTIONS = {
   // Dashboard
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_TOTAL_REVENUE]: "View Total Revenue (Paid) card on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_OUTSTANDING_REVENUE]: "View Outstanding Revenue card on dashboard",
-  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MONTHLY_EXPENSES]: "View This Month Expenses card on dashboard", 
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MONTHLY_EXPENSES]: "View This Month Expenses card on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_TOTAL_CUSTOMERS]: "View Total Customers card on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_BANK_ACCOUNTS]: "View Bank Accounts section on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES]: "View Recent Invoices section on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION]: "Access Invoice Authentication Verification section",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO]: "View Debug Info (Real-time) section on dashboard",
 
   // Invoices
+  [GRANULAR_PERMISSIONS.INVOICES_VIEW]: "Access invoices page and view invoice list",
   [GRANULAR_PERMISSIONS.INVOICES_CREATE]: "Show 'Create Invoice' button",
   [GRANULAR_PERMISSIONS.INVOICES_VIEW_PDF]: "View PDF of invoices",
   [GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING]: "Open Payment Tracking popup",
   [GRANULAR_PERMISSIONS.INVOICES_EDIT]: "Edit invoices",
   [GRANULAR_PERMISSIONS.INVOICES_DELETE]: "Delete invoices",
+  [GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS]: "View and modify invoice status column",
 
   // Customers
+  [GRANULAR_PERMISSIONS.CUSTOMERS_VIEW]: "Access customers page and view customer list",
   [GRANULAR_PERMISSIONS.CUSTOMERS_CREATE]: "Show 'Add Customer' button",
   [GRANULAR_PERMISSIONS.CUSTOMERS_EDIT]: "Edit customers",
   [GRANULAR_PERMISSIONS.CUSTOMERS_DELETE]: "Delete customers",
 
   // Products
-  [GRANULAR_PERMISSIONS.PRODUCTS_CREATE]: "Show 'Add Product' button", 
+  [GRANULAR_PERMISSIONS.PRODUCTS_CREATE]: "Show 'Add Product' button",
   [GRANULAR_PERMISSIONS.PRODUCTS_EDIT]: "Edit products",
   [GRANULAR_PERMISSIONS.PRODUCTS_DELETE]: "Delete products",
 
@@ -107,21 +117,23 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE]: "Delete bank accounts",
 
   // Expenses
+  [GRANULAR_PERMISSIONS.EXPENSES_VIEW]: "Access expenses page and view expense list",
   [GRANULAR_PERMISSIONS.EXPENSES_CREATE]: "Show 'Add Expense' button",
-  [GRANULAR_PERMISSIONS.EXPENSES_EDIT]: "Edit expenses", 
+  [GRANULAR_PERMISSIONS.EXPENSES_EDIT]: "Edit expenses",
   [GRANULAR_PERMISSIONS.EXPENSES_DELETE]: "Delete expenses",
 
   // Company Activity
   [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
 
   // User Management
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_VIEW]: "Access user management page and view user list",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_CREATE]: "Show 'Create User' button",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS]: "Show 'Login As' button",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT]: "Edit users",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE]: "Activate/Deactivate users",
-  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_REMOVE]: "Remove users",
 
   // Custom Roles
+  [GRANULAR_PERMISSIONS.CUSTOM_ROLES_VIEW]: "Access custom roles section and view roles list",
   [GRANULAR_PERMISSIONS.CUSTOM_ROLES_CREATE]: "Show 'Create Custom Role' button",
   [GRANULAR_PERMISSIONS.CUSTOM_ROLES_EDIT]: "Edit custom roles",
   [GRANULAR_PERMISSIONS.CUSTOM_ROLES_DELETE]: "Delete custom roles",
@@ -140,15 +152,19 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_BANK_ACCOUNTS,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES,
     GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO,
   ],
   [PERMISSION_CATEGORIES.INVOICES]: [
+    GRANULAR_PERMISSIONS.INVOICES_VIEW,
     GRANULAR_PERMISSIONS.INVOICES_CREATE,
     GRANULAR_PERMISSIONS.INVOICES_VIEW_PDF,
     GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING,
     GRANULAR_PERMISSIONS.INVOICES_EDIT,
     GRANULAR_PERMISSIONS.INVOICES_DELETE,
+    GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS,
   ],
   [PERMISSION_CATEGORIES.CUSTOMERS]: [
+    GRANULAR_PERMISSIONS.CUSTOMERS_VIEW,
     GRANULAR_PERMISSIONS.CUSTOMERS_CREATE,
     GRANULAR_PERMISSIONS.CUSTOMERS_EDIT,
     GRANULAR_PERMISSIONS.CUSTOMERS_DELETE,
@@ -164,6 +180,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE,
   ],
   [PERMISSION_CATEGORIES.EXPENSES]: [
+    GRANULAR_PERMISSIONS.EXPENSES_VIEW,
     GRANULAR_PERMISSIONS.EXPENSES_CREATE,
     GRANULAR_PERMISSIONS.EXPENSES_EDIT,
     GRANULAR_PERMISSIONS.EXPENSES_DELETE,
@@ -172,13 +189,14 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,
   ],
   [PERMISSION_CATEGORIES.USER_MANAGEMENT]: [
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_VIEW,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_CREATE,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE,
-    GRANULAR_PERMISSIONS.USER_MANAGEMENT_REMOVE,
   ],
   [PERMISSION_CATEGORIES.CUSTOM_ROLES]: [
+    GRANULAR_PERMISSIONS.CUSTOM_ROLES_VIEW,
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_CREATE,
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_EDIT,
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_DELETE,
@@ -193,7 +211,7 @@ export const getAllPermissions = (): string[] => {
   return Object.values(GRANULAR_PERMISSIONS);
 };
 
-// Helper function to get permission group names  
+// Helper function to get permission group names
 export const getPermissionGroupNames = (): string[] => {
   return Object.keys(PERMISSION_GROUPS);
 };
@@ -201,7 +219,7 @@ export const getPermissionGroupNames = (): string[] => {
 // Legacy page constants for backward compatibility (to be removed)
 export const PAGES = {
   DASHBOARD: "dashboard",
-  INVOICES: "invoices", 
+  INVOICES: "invoices",
   CUSTOMERS: "customers",
   PRODUCTS: "products",
   BANK_ACCOUNTS: "bank-accounts",
@@ -215,7 +233,7 @@ export const PAGES = {
 export const ACTIONS = {
   VIEW: "view",
   CREATE: "create",
-  EDIT: "edit", 
+  EDIT: "edit",
   DELETE: "delete",
   EXPORT: "export",
 } as const;

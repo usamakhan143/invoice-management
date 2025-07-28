@@ -9,11 +9,11 @@ export const usePermissionRefresh = () => {
     if (!user || !userProfile) return;
 
     try {
-      console.log("Manually refreshing permissions...");
-      
+
+
       // Load fresh permissions from role
       const granularPermissions = await PermissionService.loadUserPermissions(userProfile);
-      
+
       // Update user profile
       const updatedProfile = {
         ...userProfile,
@@ -22,11 +22,11 @@ export const usePermissionRefresh = () => {
 
       // Sync to database
       await PermissionService.syncUserPermissions(userProfile.uid, granularPermissions);
-      
+
       // Update local state
       setUserProfile(updatedProfile);
-      
-      console.log("Permissions refreshed successfully");
+
+
     } catch (error) {
       console.error("Error refreshing permissions:", error);
     }
@@ -34,11 +34,11 @@ export const usePermissionRefresh = () => {
 
   const setupRealTimeListeners = () => {
     if (!userProfile) return;
-    
+
     RealTimePermissionService.setupPermissionListeners(
       userProfile,
       (updatedProfile) => {
-        console.log("Real-time permission update received");
+
         setUserProfile(updatedProfile);
       }
     );

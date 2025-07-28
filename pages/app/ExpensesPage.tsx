@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useNavigate } from "react-router-dom";
 import { db, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import type { Expense, BankAccount } from "../../types";
@@ -9,6 +11,8 @@ import Spinner from "../../components/Spinner";
 const ExpensesPage: React.FC = () => {
   usePageTitle("Expenses");
   const { user, userProfile } = useAuth();
+  const { canViewExpenses, canCreateExpense, canEditExpense, canDeleteExpense } = usePermissions();
+  const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +126,14 @@ const ExpensesPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Page access control
+  useEffect(() => {
+    if (!canViewExpenses()) {
+      navigate("/");
+      return;
+    }
+  }, [canViewExpenses, navigate]);
 
   useEffect(() => {
     if (!user || !userProfile) return;
@@ -421,12 +433,14 @@ const ExpensesPage: React.FC = () => {
             </svg>
             {loading ? "Loading..." : "Refresh"}
           </button>
-          <button
-            onClick={() => openModal()}
-            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-          >
-            Add Expense
-          </button>
+          {canCreateExpense() && (
+            <button
+              onClick={() => openModal()}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Add Expense
+            </button>
+          )}
         </div>
       </div>
 
@@ -546,12 +560,14 @@ const ExpensesPage: React.FC = () => {
             <p className="text-gray-600 dark:text-gray-300 mb-4">
               No expenses found.
             </p>
-            <button
-              onClick={() => openModal()}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Add First Expense
-            </button>
+            {canCreateExpense() && (
+              <button
+                onClick={() => openModal()}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Add First Expense
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -596,18 +612,25 @@ const ExpensesPage: React.FC = () => {
                       {expense.amount.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 flex space-x-2">
-                      <button
-                        onClick={() => openModal(expense)}
-                        className="text-yellow-500 hover:text-yellow-700"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(expense.id, expense)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        Delete
-                      </button>
+                      {canEditExpense() && (
+                        <button
+                          onClick={() => openModal(expense)}
+                          className="text-yellow-500 hover:text-yellow-700"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {canDeleteExpense() && (
+                        <button
+                          onClick={() => handleDelete(expense.id, expense)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      )}
+                      {!canEditExpense() && !canDeleteExpense() && (
+                        <span className="text-gray-400">No actions available</span>
+                      )}
                     </td>
                   </tr>
                 ))}

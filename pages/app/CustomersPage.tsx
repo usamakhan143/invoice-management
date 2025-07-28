@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { db } from "../../services/firebase";
@@ -52,7 +53,15 @@ const PaginationControls: React.FC<{
 
 const CustomersPage: React.FC = () => {
   const { user, userProfile } = useAuth();
-  const { isOwner, isAdmin } = usePermissions();
+  const navigate = useNavigate();
+  const {
+    canViewCustomers,
+    canCreateCustomer,
+    canEditCustomer,
+    canDeleteCustomer,
+    isOwner,
+    isAdmin
+  } = usePermissions();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -62,6 +71,17 @@ const CustomersPage: React.FC = () => {
     useState<Partial<Customer> | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const customersPerPage = 20;
+
+  // Check if user has permission to view customers page
+  useEffect(() => {
+    if (!user || !userProfile) return;
+
+    if (!canViewCustomers()) {
+      console.log("User doesn't have permission to view customers, redirecting to dashboard");
+      navigate("/");
+      return;
+    }
+  }, [user, userProfile, canViewCustomers, navigate]);
 
   // Load customers function using centralized CustomerService (same pattern as invoices)
   const loadCustomers = async () => {
@@ -89,6 +109,9 @@ const CustomersPage: React.FC = () => {
   useEffect(() => {
     if (!user || !userProfile) return;
 
+    // Only proceed if user has permission to view customers
+    if (!canViewCustomers()) return;
+
     // Set up real-time listener using CustomerService (same pattern as invoices)
     const unsubscribe = CustomerService.getCustomersRealTime(
       user,
@@ -103,7 +126,7 @@ const CustomersPage: React.FC = () => {
     );
 
     return () => unsubscribe();
-  }, [user, userProfile, isOwner, isAdmin]);
+  }, [user, userProfile, canViewCustomers, isOwner, isAdmin]);
 
   // Filter customers based on search term
   useEffect(() => {
@@ -168,6 +191,12 @@ const CustomersPage: React.FC = () => {
   const handleDelete = async (customerId: string) => {
     if (!user || !userProfile) return;
 
+    // Check permission before allowing delete
+    if (!canDeleteCustomer()) {
+      console.log("User doesn't have permission to delete customers");
+      return;
+    }
+
     const customerToDelete = customers.find((c) => c.id === customerId);
 
     if (window.confirm("Are you sure you want to delete this customer?")) {
@@ -199,6 +228,16 @@ const CustomersPage: React.FC = () => {
   };
 
   const openModal = (customer?: Customer) => {
+    // Check permissions before opening modal
+    if (customer && !canEditCustomer()) {
+      console.log("User doesn't have permission to edit customers");
+      return;
+    }
+    if (!customer && !canCreateCustomer()) {
+      console.log("User doesn't have permission to create customers");
+      return;
+    }
+
     if (customer) {
       setCurrentCustomer(customer);
     } else {
@@ -257,12 +296,14 @@ const CustomersPage: React.FC = () => {
                 />
               </svg>
             </button>
-            <button
-              onClick={() => openModal()}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-            >
-              Add Customer
-            </button>
+            {canCreateCustomer() && (
+              <button
+                onClick={() => openModal()}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+              >
+                Add Customer
+              </button>
+            )}
           </div>
         </div>
 
@@ -375,18 +416,22 @@ const CustomersPage: React.FC = () => {
                   )}
                   <td className="px-6 py-4">
                     <div className="flex space-x-2">
-                      <button
-                        onClick={() => openModal(customer)}
-                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(customer.id)}
-                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                      >
-                        Delete
-                      </button>
+                      {canEditCustomer() && (
+                        <button
+                          onClick={() => openModal(customer)}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {canDeleteCustomer() && (
+                        <button
+                          onClick={() => handleDelete(customer.id)}
+                          className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

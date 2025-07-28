@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { auth } from "../../services/firebase";
+import { auth, db } from "../../services/firebase";
+import { TokenService } from "../../services/tokenService";
 import { usePageTitle } from "../../hooks/usePageTitle";
 
 const LoginPage: React.FC = () => {
@@ -35,8 +36,20 @@ const LoginPage: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError("");
+
     try {
-      await auth.signInWithEmailAndPassword(email, password);
+      const userCredential = await auth.signInWithEmailAndPassword(email, password);
+
+      // Wait a moment to let useAuth validation run
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Check if user is still signed in (wasn't blocked by useAuth)
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setError("You cannot log in due to a system restriction. Please contact the administrator.");
+        return;
+      }
+
       navigate("/");
     } catch (err: any) {
       const errorMessage = getErrorMessage(err.code);

@@ -24,6 +24,7 @@ const DashboardPage: React.FC = () => {
     canViewDashboardBankAccounts,
     canViewRecentInvoices,
     canAccessInvoiceVerification,
+    canViewDebugInfo,
     isOwner,
     isAdmin
   } = usePermissions();
@@ -50,7 +51,6 @@ const DashboardPage: React.FC = () => {
 
     // Failsafe: Stop loading after 10 seconds
     const timeoutId = setTimeout(() => {
-      console.warn("Dashboard loading timeout");
       setLoading(false);
     }, 10000);
 
@@ -247,28 +247,7 @@ const DashboardPage: React.FC = () => {
         Dashboard
       </h1>
 
-      {/* Debug Panel - Remove this after testing */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4 mb-6">
-          <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Debug Info (Real-time):</h4>
-          <div className="text-sm text-yellow-700 dark:text-yellow-300">
-            <p>User: {userProfile?.email}</p>
-            <p>Is Owner: {isOwner ? 'Yes' : 'No'}</p>
-            <p>Role: {userProfile?.role || 'None'}</p>
-            <p>Granular Permissions: {userProfile?.granularPermissions?.length || 0} total</p>
-            <p>Can View Revenue: {canViewTotalRevenue() ? 'Yes' : 'No'}</p>
-            <p>Can View Customers: {canViewTotalCustomers() ? 'Yes' : 'No'}</p>
-            <p>Can View Recent Invoices: {canViewRecentInvoices() ? 'Yes' : 'No'}</p>
-            <p className="mt-2 text-xs">Last updated: {new Date().toLocaleTimeString()}</p>
-            <button
-              onClick={refreshPermissions}
-              className="mt-2 px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
-            >
-              Refresh Permissions
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {!hasAnyDashboardPermission && !isOwner && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">

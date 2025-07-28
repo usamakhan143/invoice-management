@@ -32,7 +32,17 @@ const formatCurrency = (amount: number, currencyCode: string = "USD") => {
 
 const InvoicesListPage: React.FC = () => {
   const { user, userProfile } = useAuth();
-  const { isOwner, isAdmin } = usePermissions();
+  const {
+    canViewInvoices,
+    canCreateInvoice,
+    canEditInvoice,
+    canDeleteInvoice,
+    canViewInvoicePDF,
+    canAccessPaymentTracking,
+    canViewInvoiceStatus,
+    isOwner,
+    isAdmin
+  } = usePermissions();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
@@ -57,8 +67,22 @@ const InvoicesListPage: React.FC = () => {
   const invoicesPerPage = 20;
   const navigate = useNavigate();
 
+  // Check if user has permission to view invoices page
   useEffect(() => {
     if (!user || !userProfile) return;
+
+    if (!canViewInvoices()) {
+      console.log("User doesn't have permission to view invoices, redirecting to dashboard");
+      navigate("/");
+      return;
+    }
+  }, [user, userProfile, canViewInvoices, navigate]);
+
+  useEffect(() => {
+    if (!user || !userProfile) return;
+
+    // Only proceed if user has permission to view invoices
+    if (!canViewInvoices()) return;
 
     setLoading(true);
 
@@ -258,12 +282,14 @@ const InvoicesListPage: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">
           Invoices
         </h1>
-        <Link
-          to="/invoices/new"
-          className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-        >
-          Create Invoice
-        </Link>
+        {canCreateInvoice() && (
+          <Link
+            to="/invoices/new"
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+          >
+            Create Invoice
+          </Link>
+        )}
       </div>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 flex flex-wrap gap-4 items-center">
         <select
@@ -370,9 +396,11 @@ const InvoicesListPage: React.FC = () => {
                 <th scope="col" className="px-6 py-3">
                   Total
                 </th>
-                <th scope="col" className="px-6 py-3">
-                  Status
-                </th>
+                {canViewInvoiceStatus() && (
+                  <th scope="col" className="px-6 py-3">
+                    Status
+                  </th>
+                )}
                 {(isOwner || isAdmin) && (
                   <th scope="col" className="px-6 py-3">
                     Created By
@@ -403,43 +431,45 @@ const InvoicesListPage: React.FC = () => {
                         invoice.bankAccountCurrency || "USD",
                       )}
                     </td>
-                    <td className="px-6 py-4">
-                      <select
-                        value={invoice.status}
-                        onChange={(e) =>
-                          handleStatusChange(
-                            invoice.id,
-                            e.target.value,
-                            invoice,
-                          )
-                        }
-                        className={`px-2 py-1 text-xs font-medium rounded border-0 cursor-pointer w-24 text-center ${
-                          invoice.status === "paid"
-                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                            : invoice.status === "sent"
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
-                              : invoice.status === "overdue"
-                                ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                                : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                        }`}
-                      >
-                        <option value="draft">Draft</option>
-                        <option value="sent">Sent</option>
-                        <option
-                          value="paid"
-                          disabled={
-                            invoice.paymentType === "milestone" ||
-                            invoice.paymentType === "upfront"
+                    {canViewInvoiceStatus() && (
+                      <td className="px-6 py-4">
+                        <select
+                          value={invoice.status}
+                          onChange={(e) =>
+                            handleStatusChange(
+                              invoice.id,
+                              e.target.value,
+                              invoice,
+                            )
                           }
+                          className={`px-2 py-1 text-xs font-medium rounded border-0 cursor-pointer w-24 text-center ${
+                            invoice.status === "paid"
+                              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                              : invoice.status === "sent"
+                                ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                                : invoice.status === "overdue"
+                                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                                  : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                          }`}
                         >
-                          {invoice.paymentType === "milestone" ||
-                          invoice.paymentType === "upfront"
-                            ? "Paid (Auto-tracked)"
-                            : "Paid"}
-                        </option>
-                        <option value="overdue">Overdue</option>
-                      </select>
-                    </td>
+                          <option value="draft">Draft</option>
+                          <option value="sent">Sent</option>
+                          <option
+                            value="paid"
+                            disabled={
+                              invoice.paymentType === "milestone" ||
+                              invoice.paymentType === "upfront"
+                            }
+                          >
+                            {invoice.paymentType === "milestone" ||
+                            invoice.paymentType === "upfront"
+                              ? "Paid (Auto-tracked)"
+                              : "Paid"}
+                          </option>
+                          <option value="overdue">Overdue</option>
+                        </select>
+                      </td>
+                    )}
                     {(isOwner || isAdmin) && (
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
                         {invoice.createdBy || "Unknown User"}
@@ -448,32 +478,34 @@ const InvoicesListPage: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-1">
                         {/* PDF Download */}
-                        <PDFDownloadLink
-                          document={
-                            <InvoicePDF
-                              invoice={invoice}
-                              userProfile={userProfile}
-                            />
-                          }
-                          fileName={`invoice-${invoice.invoiceNumber}.pdf`}
-                          className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-200 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-                          title="Download PDF"
-                        >
-                          {({ blob, url, loading, error }) =>
-                            loading ? (
-                              <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                              </svg>
-                            )
-                          }
-                        </PDFDownloadLink>
+                        {canViewInvoicePDF() && (
+                          <PDFDownloadLink
+                            document={
+                              <InvoicePDF
+                                invoice={invoice}
+                                userProfile={userProfile}
+                              />
+                            }
+                            fileName={`invoice-${invoice.invoiceNumber}.pdf`}
+                            className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-200 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                            title="Download PDF"
+                          >
+                            {({ blob, url, loading, error }) =>
+                              loading ? (
+                                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              )
+                            }
+                          </PDFDownloadLink>
+                        )}
 
                         {/* Payment Tracking Button - Only for milestone/upfront invoices */}
-                        {(invoice.paymentType === "milestone" || invoice.paymentType === "upfront") && (
+                        {canAccessPaymentTracking() && (invoice.paymentType === "milestone" || invoice.paymentType === "upfront") && (
                           <button
                             onClick={() => {
                               setPaymentModal({ isOpen: true, invoice });
@@ -488,26 +520,30 @@ const InvoicesListPage: React.FC = () => {
                         )}
 
                         {/* Edit Button */}
-                        <button
-                          onClick={() => navigate(`/invoices/edit/${invoice.id}`)}
-                          className="p-2 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:text-yellow-200 dark:hover:bg-yellow-900/20 rounded-md transition-colors"
-                          title="Edit Invoice"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
+                        {canEditInvoice() && (
+                          <button
+                            onClick={() => navigate(`/invoices/edit/${invoice.id}`)}
+                            className="p-2 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:text-yellow-200 dark:hover:bg-yellow-900/20 rounded-md transition-colors"
+                            title="Edit Invoice"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                        )}
 
                         {/* Delete Button */}
-                        <button
-                          onClick={() => openDeleteModal(invoice.id)}
-                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-200 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete Invoice"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        {canDeleteInvoice() && (
+                          <button
+                            onClick={() => openDeleteModal(invoice.id)}
+                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-200 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                            title="Delete Invoice"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -515,16 +551,22 @@ const InvoicesListPage: React.FC = () => {
               ) : (
                 <tr>
                   <td
-                    colSpan={isOwner || isAdmin ? 7 : 6}
+                    colSpan={
+                      (isOwner || isAdmin ? 1 : 0) +
+                      (canViewInvoiceStatus() ? 1 : 0) +
+                      5 // Number, Customer, Issue Date, Total, Actions
+                    }
                     className="text-center py-10 text-gray-500 dark:text-gray-400"
                   >
                     No invoices yet.{" "}
-                    <Link
-                      to="/invoices/new"
-                      className="text-primary-600 hover:underline"
-                    >
-                      Create one!
-                    </Link>
+                    {canCreateInvoice() && (
+                      <Link
+                        to="/invoices/new"
+                        className="text-primary-600 hover:underline"
+                      >
+                        Create one!
+                      </Link>
+                    )}
                   </td>
                 </tr>
               )}

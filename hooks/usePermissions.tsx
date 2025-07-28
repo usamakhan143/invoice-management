@@ -31,15 +31,19 @@ export const usePermissions = () => {
   const canViewDashboardBankAccounts = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_BANK_ACCOUNTS);
   const canViewRecentInvoices = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES);
   const canAccessInvoiceVerification = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION);
+  const canViewDebugInfo = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO);
 
   // Invoice permissions
+  const canViewInvoices = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW);
   const canCreateInvoice = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_CREATE);
   const canViewInvoicePDF = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW_PDF);
   const canAccessPaymentTracking = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING);
   const canEditInvoice = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_EDIT);
   const canDeleteInvoice = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_DELETE);
+  const canViewInvoiceStatus = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS);
 
   // Customer permissions
+  const canViewCustomers = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_VIEW);
   const canCreateCustomer = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_CREATE);
   const canEditCustomer = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT);
   const canDeleteCustomer = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DELETE);
@@ -55,6 +59,7 @@ export const usePermissions = () => {
   const canDeleteBankAccount = (): boolean => hasPermission(GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE);
 
   // Expense permissions
+  const canViewExpenses = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_VIEW);
   const canCreateExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CREATE);
   const canEditExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_EDIT);
   const canDeleteExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_DELETE);
@@ -63,13 +68,14 @@ export const usePermissions = () => {
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
 
   // User management permissions
+  const canViewUserManagement = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_VIEW);
   const canCreateUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_CREATE);
   const canLoginAsUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS);
   const canEditUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT);
   const canActivateDeactivateUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE);
-  const canRemoveUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_REMOVE);
 
   // Custom roles permissions
+  const canViewCustomRoles = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOM_ROLES_VIEW);
   const canCreateCustomRole = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOM_ROLES_CREATE);
   const canEditCustomRole = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOM_ROLES_EDIT);
   const canDeleteCustomRole = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOM_ROLES_DELETE);
@@ -85,18 +91,18 @@ export const usePermissions = () => {
         // Dashboard should always be accessible - individual sections will be hidden based on granular permissions
         return true;
       case "invoices":
-        return canCreateInvoice() || canEditInvoice() || canDeleteInvoice() || canViewInvoicePDF();
+        return canViewInvoices();
       case "customers":
-        return canCreateCustomer() || canEditCustomer() || canDeleteCustomer();
+        return canViewCustomers();
       case "products":
         return canCreateProduct() || canEditProduct() || canDeleteProduct();
       case "bank-accounts":
       case "bank-accounts-view":
         return canCreateBankAccount() || canEditBankAccount() || canDeleteBankAccount() || canViewDashboardBankAccounts();
       case "expenses":
-        return canCreateExpense() || canEditExpense() || canDeleteExpense();
+        return canViewExpenses();
       case "user-management":
-        return canCreateUser() || canEditUser() || canRemoveUser();
+        return canViewUserManagement();
       default:
         return false;
     }
@@ -154,14 +160,37 @@ export const usePermissions = () => {
       case "expenses":
         return canDeleteExpense();
       case "user-management":
-        return canRemoveUser();
+        return false; // Remove functionality is disabled
       default:
         return false;
     }
   };
 
+  const canExport = (page: string): boolean => {
+    // For now, export permissions follow the same pattern as view
+    return hasPageAccess(page);
+  };
+
   const isOwner = userProfile?.isOwner === true;
   const isAdmin = isOwner || canViewCompanyActivity(); // Admin is now determined by company activity access
+
+  // Legacy hasAction function for backward compatibility
+  const hasAction = (page: string, action: string): boolean => {
+    switch (action) {
+      case "view":
+        return hasPageAccess(page);
+      case "create":
+        return canCreate(page);
+      case "edit":
+        return canEdit(page);
+      case "delete":
+        return canDelete(page);
+      case "export":
+        return canExport(page);
+      default:
+        return hasPageAccess(page);
+    }
+  };
 
   return {
     // Core permission checker
@@ -175,15 +204,19 @@ export const usePermissions = () => {
     canViewDashboardBankAccounts,
     canViewRecentInvoices,
     canAccessInvoiceVerification,
+    canViewDebugInfo,
 
     // Invoice permissions
+    canViewInvoices,
     canCreateInvoice,
     canViewInvoicePDF,
     canAccessPaymentTracking,
     canEditInvoice,
     canDeleteInvoice,
+    canViewInvoiceStatus,
 
     // Customer permissions
+    canViewCustomers,
     canCreateCustomer,
     canEditCustomer,
     canDeleteCustomer,
@@ -199,6 +232,7 @@ export const usePermissions = () => {
     canDeleteBankAccount,
 
     // Expense permissions
+    canViewExpenses,
     canCreateExpense,
     canEditExpense,
     canDeleteExpense,
@@ -207,13 +241,14 @@ export const usePermissions = () => {
     canViewCompanyActivity,
 
     // User management permissions
+    canViewUserManagement,
     canCreateUser,
     canLoginAsUser,
     canEditUser,
     canActivateDeactivateUser,
-    canRemoveUser,
 
     // Custom roles permissions
+    canViewCustomRoles,
     canCreateCustomRole,
     canEditCustomRole,
     canDeleteCustomRole,
@@ -223,10 +258,12 @@ export const usePermissions = () => {
 
     // Legacy compatibility
     hasPageAccess,
+    hasAction,
     canView,
     canCreate,
     canEdit,
     canDelete,
+    canExport,
 
     // User role info
     isOwner,
