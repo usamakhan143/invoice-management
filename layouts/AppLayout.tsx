@@ -1,6 +1,7 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
+import ImpersonationBanner from "../components/ImpersonationBanner";
 
 const AppLayout: React.FC = () => {
   return (
@@ -8,6 +9,7 @@ const AppLayout: React.FC = () => {
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <main className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8">
+          <ImpersonationBanner />
           <Outlet />
         </main>
         <footer className="bg-white dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 px-4 py-2">

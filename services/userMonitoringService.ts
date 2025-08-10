@@ -9,74 +9,95 @@ class UserMonitoringService {
   static startMonitoring(user: firebase.User) {
     this.cleanup(); // Clean up any existing listeners
 
-    // Monitor user document for deactivation
-    this.unsubscribeUserDoc = db
-      .collection("users")
-      .doc(user.uid)
-      .onSnapshot(
-        (doc) => {
-          if (doc.exists) {
-            const userData = doc.data();
-            if (userData?.isDeactivated === true || userData?.isActive === false) {
-              this.forceLogout();
+    // Only start monitoring if we have a valid user
+    if (!user || !user.uid) {
+      console.warn("Cannot start monitoring: invalid user");
+      return;
+    }
+
+    try {
+      // Monitor user document for deactivation with safer error handling
+      this.unsubscribeUserDoc = db
+        .collection("users")
+        .doc(user.uid)
+        .onSnapshot(
+          (doc) => {
+            if (doc.exists) {
+              const userData = doc.data();
+              if (userData?.isDeactivated === true || userData?.isActive === false) {
+                this.forceLogout();
+              }
             }
+          },
+          (error) => {
+            console.warn("User document monitoring disabled due to permissions:", error.message);
+            // Don't retry if it's a permission error
           }
-        },
-        (error) => {
-          console.error("Error monitoring user document:", error);
-        }
-      );
+        );
+    } catch (error) {
+      console.warn("Failed to setup user document monitoring:", error);
+    }
 
     // Monitor user tokens for revocation
     this.monitorUserTokens(user);
 
-    // Monitor company user document for deactivation
-    this.unsubscribeCompanyUser = db
-      .collection("companyUsers")
-      .where("uid", "==", user.uid)
-      .onSnapshot(
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const companyUserDoc = snapshot.docs[0];
-            const companyUserData = companyUserDoc.data();
+    // Monitor company user document for deactivation - with better error handling
+    try {
+      this.unsubscribeCompanyUser = db
+        .collection("companyUsers")
+        .where("uid", "==", user.uid)
+        .onSnapshot(
+          (snapshot) => {
+            if (!snapshot.empty) {
+              const companyUserDoc = snapshot.docs[0];
+              const companyUserData = companyUserDoc.data();
 
-            if (companyUserData.isActive === false) {
-              this.forceLogout();
+              if (companyUserData.isActive === false) {
+                this.forceLogout();
+              }
             }
+          },
+          (error) => {
+            console.warn("Company user monitoring disabled due to permissions:", error.message);
+            // Don't retry if it's a permission error
           }
-        },
-        (error) => {
-          console.error("Error monitoring company user:", error);
-        }
-      );
+        );
+    } catch (error) {
+      console.warn("Failed to setup company user monitoring:", error);
+    }
   }
 
   static monitorUserTokens(user: firebase.User) {
     // Monitor user tokens for deletion
     const currentToken = localStorage.getItem("userToken");
-    if (currentToken) {
-      this.unsubscribeTokens = db
-        .collection("userTokens")
-        .where("userId", "==", user.uid)
-        .where("token", "==", currentToken)
-        .onSnapshot(
-          (snapshot) => {
-            if (snapshot.empty) {
-              this.forceLogout();
-              return;
-            }
+    if (currentToken && !currentToken.startsWith("impersonation_")) {
+      try {
+        this.unsubscribeTokens = db
+          .collection("userTokens")
+          .where("userId", "==", user.uid)
+          .where("token", "==", currentToken)
+          .onSnapshot(
+            (snapshot) => {
+              if (snapshot.empty) {
+                this.forceLogout();
+                return;
+              }
 
-            const tokenDoc = snapshot.docs[0];
-            const tokenData = tokenDoc.data();
+              const tokenDoc = snapshot.docs[0];
+              const tokenData = tokenDoc.data();
 
-            if (!tokenData.isActive) {
-              this.forceLogout();
+              if (!tokenData.isActive) {
+                this.forceLogout();
+              }
+            },
+            (error) => {
+              console.warn("Token monitoring disabled due to permissions:", error.message);
+              // Don't retry if it's a permission error
             }
-          },
-          (error) => {
-            console.error("Error monitoring user tokens:", error);
-          }
-        );
+          );
+      } catch (error) {
+        console.warn("Failed to setup token monitoring:", error);
+      }
     }
   }
 

@@ -129,15 +129,12 @@ const InvoicesListPage: React.FC = () => {
             : userProfile?.companyId;
           const bankAccountsSnapshot = await db
             .collection("bankAccounts")
+            .where("userId", "==", companyId || user.uid)
             .get();
-          const allBankAccounts = bankAccountsSnapshot.docs.map((doc) => ({
+          const fetchedBankAccounts = bankAccountsSnapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
           }));
-          // Filter for company bank accounts
-          const fetchedBankAccounts = allBankAccounts.filter(
-            (account: any) => account.userId === (companyId || user.uid),
-          );
           setBankAccounts(fetchedBankAccounts);
         } catch (bankError) {
           console.error("Error loading bank accounts:", bankError);

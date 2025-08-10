@@ -494,12 +494,6 @@ const UserManagementPage: React.FC = () => {
       }
       console.log("✅ Target user is active");
 
-      // Store current admin info
-      const currentAdminEmail = user?.email;
-      const currentAdminPassword = userProfile?.tempPassword;
-      console.log("📝 Current admin:", currentAdminEmail);
-      console.log("📝 Admin has password:", !!currentAdminPassword);
-
       // Get target user data from users collection
       console.log("🔍 Fetching target user data...");
       const userDoc = await db.collection("users").doc(targetUser.uid).get();
@@ -519,30 +513,124 @@ const UserManagementPage: React.FC = () => {
         return;
       }
 
-      console.log("🔄 Signing in as target user...");
-      // Sign in as target user directly (no token deletion first)
-      const targetUserCredential = await firebaseAuth.signInWithEmailAndPassword(
-        targetUser.email,
-        userData.tempPassword,
-      );
-      console.log("✅ Firebase sign in successful");
+      // Create an impersonation session token instead of Firebase auth
+      console.log("🎟️ Creating impersonation session...");
+      const sessionToken = await createImpersonationSession(targetUser);
 
-      // Create new token for target user
-      if (targetUserCredential.user) {
-        console.log("🎟️ Creating token for target user...");
-        await TokenService.createUserToken(targetUserCredential.user);
-        console.log("✅ Token created successfully");
+      if (sessionToken) {
+        // Mark current tab as admin tab (protected from impersonation)
+        sessionStorage.setItem('isAdminTab', 'true');
 
-        // Force page reload to trigger useAuth with new user
-        console.log("🔄 Redirecting to dashboard...");
-        window.location.href = `${window.location.origin}${window.location.pathname}#/`;
+        // Open new tab with the session token
+        const baseUrl = `${window.location.origin}${window.location.pathname}`;
+        const timestamp = Date.now();
+        const loginUrl = `${baseUrl}#/impersonate?session=${sessionToken}&t=${timestamp}`;
+
+        const newTab = window.open(loginUrl, '_blank');
+        if (!newTab) {
+          alert("Please allow popups for this site to enable user impersonation.");
+          return;
+        }
+
+        // Log the activity
+        await ActivityLogger.logActivity(
+          user!,
+          userProfile,
+          'login',
+          `Admin initiated login as user: ${targetUser.email}`
+        );
       }
 
     } catch (error: any) {
-      console.error("❌ LOGIN AS ERROR:", error);
-      console.error("Error code:", error.code);
-      console.error("Error message:", error.message);
-      alert("Failed to login as user: " + error.message);
+      let userMessage = "Unable to login as this user. Please try again.";
+
+      if (error.message?.includes("not authenticated")) {
+        userMessage = "Session expired. Please refresh the page and try again.";
+      } else if (error.message?.includes("permission")) {
+        userMessage = "You don't have permission to perform this action.";
+      } else if (error.message?.includes("not found")) {
+        userMessage = "User account not found. Please contact support.";
+      } else if (error.message?.includes("network") || error.message?.includes("connection")) {
+        userMessage = "Network error. Please check your connection and try again.";
+      }
+
+      alert(userMessage);
+    }
+  };
+
+  // Helper function to create impersonation session
+  const createImpersonationSession = async (targetUser: CompanyUser) => {
+    try {
+      // Verify admin permissions before creating session
+      if (!user || !userProfile) {
+        throw new Error("User not authenticated");
+      }
+
+      if (!isOwner && !isAdmin) {
+        throw new Error("Insufficient permissions - admin access required");
+      }
+
+      // Clean up expired sessions first
+      await cleanupExpiredSessions();
+
+      // Get target user's full profile
+      const userDoc = await db.collection("users").doc(targetUser.uid).get();
+      const userData = userDoc.data();
+
+      if (!userData) {
+        throw new Error("Target user data not found");
+      }
+
+      // Create a session token that contains user info without requiring Firebase auth
+      const sessionData = {
+        targetUserId: targetUser.uid,
+        targetUserEmail: targetUser.email,
+        targetUserProfile: {
+          uid: targetUser.uid,
+          email: targetUser.email,
+          displayName: userData.displayName || userData.companyName,
+          role: userData.role,
+          companyId: userData.companyId,
+          isActive: targetUser.isActive,
+          isOwner: userData.isOwner,
+          tempPassword: userData.tempPassword
+        },
+        createdAt: Timestamp.now(),
+        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000), // 10 minutes
+        used: false,
+        createdBy: user?.uid,
+        adminEmail: user?.email
+      };
+
+      // Store in impersonation sessions collection
+      const sessionRef = await db.collection('impersonationSessions').add(sessionData);
+      return sessionRef.id;
+    } catch (error) {
+      console.error("Failed to create impersonation session:", error);
+      return null;
+    }
+  };
+
+  // Clean up expired sessions to prevent database bloat
+  const cleanupExpiredSessions = async () => {
+    try {
+      const expiredSessionsQuery = db
+        .collection('impersonationSessions')
+        .where('expiresAt', '<=', Timestamp.now());
+
+      const expiredSessions = await expiredSessionsQuery.get();
+      const batch = db.batch();
+
+      expiredSessions.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+
+      if (!expiredSessions.empty) {
+        await batch.commit();
+        console.log(`🧹 Cleaned up ${expiredSessions.size} expired impersonation sessions`);
+      }
+    } catch (error) {
+      console.error("Failed to cleanup expired sessions:", error);
     }
   };
 

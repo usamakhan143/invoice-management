@@ -37,6 +37,10 @@ export interface UserProfile {
   isActive?: boolean;
   invitedBy?: string;
   invitedAt?: firebase.firestore.Timestamp;
+  // Impersonation fields
+  isImpersonating?: boolean;
+  originalAdmin?: string;
+  tempPassword?: string;
 }
 
 export interface CompanyUser {

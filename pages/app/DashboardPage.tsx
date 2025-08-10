@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import DashboardCard from "../../components/DashboardCard";
 import { CustomerIcon, InvoiceIcon, RevenueIcon } from "../../constants";
 import { useAuth } from "../../hooks/useAuth";
@@ -7,6 +7,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePermissionRefresh } from "../../hooks/usePermissionRefresh";
 import { db } from "../../services/firebase";
+import { FirestoreWrapper } from "../../services/firestoreWrapper";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
 import type { Invoice, Customer, BankAccount, Expense } from "../../types";
@@ -15,7 +16,18 @@ import InvoiceVerificationSection from "../../components/InvoiceVerificationSect
 
 const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
+  const location = useLocation();
   const { user, userProfile } = useAuth();
+
+  // Check if we arrived via impersonation
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('impersonated') || params.get('test_impersonated')) {
+      console.log('📍 Dashboard loaded via impersonation - checking auth state...');
+      console.log('   Current userProfile:', userProfile?.email);
+      console.log('   Is impersonating:', userProfile?.isImpersonating);
+    }
+  }, [location.search, userProfile]);
   const {
     canViewTotalRevenue,
     canViewOutstandingRevenue,
@@ -96,32 +108,34 @@ const DashboardPage: React.FC = () => {
           customersData = [];
         }
 
-        // Load bank accounts safely
+        // Load bank accounts safely with retry logic
         try {
-          const bankAccountsSnapshot = await db
+          const bankAccountsQuery = db
             .collection("bankAccounts")
-            .get();
-          const allBankAccounts = bankAccountsSnapshot.docs.map(
+            .where("userId", "==", companyId || user.uid);
+          const bankAccountsSnapshot = await FirestoreWrapper.query(bankAccountsQuery, {
+            maxRetries: 2,
+            timeoutMs: 8000
+          });
+          bankAccountsData = bankAccountsSnapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-          );
-          // Filter for user's bank accounts
-          bankAccountsData = allBankAccounts.filter(
-            (account) => account.userId === (companyId || user.uid),
           );
         } catch (bankError) {
           console.error("Error loading bank accounts:", bankError);
           bankAccountsData = [];
         }
 
-        // Load expenses safely
+        // Load expenses safely with retry logic
         try {
-          const expensesSnapshot = await db.collection("expenses").get();
-          const allExpenses = expensesSnapshot.docs.map(
+          const expensesQuery = db
+            .collection("expenses")
+            .where("userId", "==", user.uid);
+          const expensesSnapshot = await FirestoreWrapper.query(expensesQuery, {
+            maxRetries: 2,
+            timeoutMs: 8000
+          });
+          expensesData = expensesSnapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
-          );
-          // Filter for user's expenses
-          expensesData = allExpenses.filter(
-            (expense) => expense.userId === user.uid,
           );
         } catch (expenseError) {
           console.error("Error loading expenses:", expenseError);

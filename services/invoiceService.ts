@@ -1,5 +1,6 @@
 import { db, Timestamp } from "./firebase";
 import { FirebaseHealth } from "./firebaseHealth";
+import { isEmergencyOfflineMode, mockInvoices, offlineServices } from "./offlineMode";
 import type { Invoice } from "../types";
 
 export class InvoiceService {

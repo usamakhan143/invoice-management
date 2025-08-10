@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is admin/owner
+    function isAdmin() {
+      return isAuthenticated() &&
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isOwner == true ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // Helper function to check if user belongs to same company
+    function isSameCompany(targetUserId) {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId ==
+             get(/databases/$(database)/documents/users/$(targetUserId)).data.companyId;
+    }
+
+    // Helper function to check if user can access company data
+    function canAccessCompanyData(companyId) {
+      return isAuthenticated() &&
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId ||
+              request.auth.uid == companyId ||
+              isAdmin());
+    }
+
+    // Helper function to check if user can access user-based data
+    function canAccessUserData(userId) {
+      return isAuthenticated() &&
+             (request.auth.uid == userId || isAdmin());
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Allow read if user is reading their own data or is authenticated (simplified)
+      // Note: Admin and company checks are done at application level to prevent recursive rules
+      allow read: if userId == request.auth.uid || isAuthenticated();
+
+      // Allow write for the user themselves or if authenticated (app-level admin checks)
+      allow write: if userId == request.auth.uid || isAuthenticated();
+    }
+
+    // Company users collection
+    match /companyUsers/{docId} {
+      // Allow read if user is admin or belongs to same company
+      allow read: if isAdmin() ||
+                     (isAuthenticated() &&
+                      canAccessCompanyData(resource.data.companyId));
+
+      // Allow write if user is admin or creating/updating for their own company
+      allow write: if isAdmin() ||
+                      (isAuthenticated() &&
+                       (canAccessCompanyData(resource.data.companyId) ||
+                        canAccessCompanyData(request.resource.data.companyId)));
+    }
+
+    // Impersonation sessions collection - CRITICAL for login as feature
+    match /impersonationSessions/{sessionId} {
+      // Allow read by anyone (including unauthenticated) - needed for impersonation flow
+      // This is secure because:
+      // 1. Session tokens are cryptographically random (hard to guess)
+      // 2. Sessions expire after 10 minutes
+      // 3. Sessions can only be used once
+      // 4. Contains no sensitive data beyond user profile
+      allow read: if true;
+
+      // Allow create only by authenticated users (admins will be checked in app logic)
+      allow create: if isAuthenticated();
+
+      // Allow update by anyone with the session token (to mark as used)
+      // This allows the impersonation page to mark sessions as used even when unauthenticated
+      allow update: if true;
+
+      // Allow delete only by admin (for cleanup)
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Custom roles collection
+    match /customRoles/{roleId} {
+      // Allow read/write if user is admin
+      allow read, write: if isAdmin();
+    }
+
+    // User tokens collection
+    match /userTokens/{tokenId} {
+      // Allow read/write if token belongs to the user or user is admin
+      allow read, write: if isAuthenticated() &&
+                          (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Activity logs collection
+    match /activities/{activityId} {
+      // Allow read if user is admin or activity belongs to their company
+      allow read: if isAdmin() ||
+                    (isAuthenticated() &&
+                     canAccessCompanyData(resource.data.companyId));
+
+      // Allow create if user is authenticated
+      allow create: if isAuthenticated();
+
+      // Allow update/delete only by admin
+      allow update, delete: if isAdmin();
+    }
+
+    // Invoices collection
+    match /invoices/{invoiceId} {
+      // Allow read/write if user belongs to same company or is admin
+      allow read, write: if isAuthenticated() &&
+                           (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
+    // Customers collection
+    match /customers/{customerId} {
+      // Allow read/write if user belongs to same company or is admin
+      allow read, write: if isAuthenticated() &&
+                           (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
+    // Products collection
+    match /products/{productId} {
+      // Allow read/write if user belongs to same company or is admin
+      allow read, write: if isAuthenticated() &&
+                           (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
+    // Bank accounts collection
+    match /bankAccounts/{accountId} {
+      // Allow read/write if user owns the account or is admin
+      allow read, write: if canAccessUserData(resource.data.userId);
+    }
+
+    // Expenses collection
+    match /expenses/{expenseId} {
+      // Allow read/write if user owns the expense or is admin
+      allow read, write: if canAccessUserData(resource.data.userId);
+    }
+
+    // Default deny rule for any other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

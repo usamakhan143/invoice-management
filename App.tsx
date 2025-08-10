@@ -3,9 +3,13 @@ import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import { usePageTitle } from "./hooks/usePageTitle";
 import { FirebaseHealthChecker } from "./services/firebaseHealth";
-import { enableOfflineSupport } from "./services/firebase";
+import { enableOfflineSupport, connectToFirebase, checkNetworkConnectivity } from "./services/firebase";
+import { isEmergencyOfflineMode, enableEmergencyOfflineMode } from "./services/offlineMode";
+
 import Spinner from "./components/Spinner";
 import NetworkStatus from "./components/NetworkStatus";
+import ConnectionStatus from "./components/ConnectionStatus";
+import OfflineModeIndicator from "./components/OfflineModeIndicator";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
 
@@ -25,9 +29,12 @@ const CompanyActivityPage = lazy(
 const ProfilePage = lazy(() => import("./pages/app/ProfilePage"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const SignUpPage = lazy(() => import("./pages/auth/SignUpPage"));
+const AutoLoginPage = lazy(() => import("./pages/auth/AutoLoginPage"));
+const ImpersonationPage = lazy(() => import("./pages/auth/ImpersonationPage"));
+
 
 const ProtectedRoute: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading } = useAuth();
   const [showTimeout, setShowTimeout] = React.useState(false);
 
   // Show timeout message after 5 seconds, force load after 8 seconds
@@ -64,7 +71,10 @@ const ProtectedRoute: React.FC = () => {
       </div>
     );
   }
-  return user ? <Outlet /> : <Navigate to="/login" />;
+
+  // Allow access if either Firebase user exists OR there's an impersonation session
+  const isAuthenticated = user || (userProfile?.isImpersonating === true);
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" />;
 };
 
 const App: React.FC = () => {
@@ -75,20 +85,41 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeFirebase = async () => {
       try {
+        // Check if we're already in emergency offline mode
+        if (isEmergencyOfflineMode()) {
+          setFirebaseError('Running in emergency offline mode');
+          setFirebaseReady(true);
+          return;
+        }
+
+        // Check network connectivity first
+        const hasNetwork = await checkNetworkConnectivity();
+        if (!hasNetwork) {
+          setFirebaseError('No network connection detected');
+          // Don't auto-enable emergency mode yet - let's see the real error
+        }
+
         // Enable offline support first
         await enableOfflineSupport();
 
-        // Check Firebase connection
-        const healthCheck = await FirebaseHealthChecker.checkConnection();
+        // Try to connect to Firebase with retries - SHOW REAL ERRORS
+        const isConnected = await connectToFirebase(3); // More retries for better debugging
 
-        if (!healthCheck.isConnected) {
-          setFirebaseError(healthCheck.error || 'Connection issues');
+        if (!isConnected) {
+          // Check if it's a permission error by looking at recent console messages
+          setTimeout(() => {
+            // If error contains permission-denied, show rules helper
+            setFirebaseError('Firebase permission error - update Firestore rules');
+          }, 1000);
+        } else {
+          setFirebaseError(null); // Clear any previous errors
         }
 
         setFirebaseReady(true);
       } catch (error) {
-        setFirebaseError(`Initialization failed: ${error}`);
-        setFirebaseReady(true); // Still allow app to load in offline mode
+        setFirebaseError(`Firebase initialization failed: ${error}`);
+        setFirebaseReady(true);
+        // Don't auto-enable emergency mode - let's see the real issue
       }
     };
 
@@ -110,7 +141,9 @@ const App: React.FC = () => {
 
   return (
     <>
+      <OfflineModeIndicator />
       <NetworkStatus />
+      <ConnectionStatus />
       <HashRouter>
         <Suspense
           fallback={
@@ -145,7 +178,11 @@ const App: React.FC = () => {
             <Route element={<AuthLayout />}>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignUpPage />} />
+              <Route path="/auto-login" element={<AutoLoginPage />} />
             </Route>
+            {/* Impersonate route needs to be outside auth layout */}
+            <Route path="/impersonate" element={<ImpersonationPage />} />
+
           </Routes>
         </Suspense>
       </HashRouter>
