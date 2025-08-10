@@ -129,12 +129,7 @@ const App: React.FC = () => {
   if (!firebaseReady) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <Spinner />
-          <p className="mt-4 text-gray-600 dark:text-gray-300">
-            Connecting to Firebase...
-          </p>
-        </div>
+        <Spinner />
       </div>
     );
   }

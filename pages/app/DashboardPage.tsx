@@ -256,8 +256,8 @@ const DashboardPage: React.FC = () => {
   });
 
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
+    <div className="mobile-p-4 p-4 sm:p-6">
+      <h1 className="mobile-text-2xl text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white mb-4 sm:mb-6">
         Dashboard
       </h1>
 
@@ -276,7 +276,7 @@ const DashboardPage: React.FC = () => {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div className="grid mobile-grid-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-4 sm:mb-6">
         {canViewTotalRevenue() && (
           <DashboardCard
             title="Total Revenue (Paid)"
@@ -344,7 +344,7 @@ const DashboardPage: React.FC = () => {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid mobile-grid-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {bankBalances.map((account) => (
                 <div
                   key={account.id}
@@ -401,7 +401,7 @@ const DashboardPage: React.FC = () => {
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-responsive">
             <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
               <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
                 <tr>

@@ -659,13 +659,13 @@ const UserManagementPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+    <div className="mobile-p-4 p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 sm:mb-6 gap-4">
+        <h1 className="mobile-text-2xl text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
           User Management
         </h1>
         {activeTab === "users" && (
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <button
               onClick={() => loadUsers()}
               disabled={loading}
@@ -809,7 +809,7 @@ const UserManagementPage: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid mobile-grid-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4 sm:mb-6">
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Total Users</h3>
           <p className="text-2xl font-bold">{users.length}</p>
@@ -857,7 +857,7 @@ const UserManagementPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-responsive">
             <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
               <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
                 <tr>
