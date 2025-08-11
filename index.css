@@ -59,8 +59,8 @@
   background: rgba(59, 130, 246, 0.5);
 }
 
-/* Mobile Responsiveness Fixes */
-@media (max-width: 640px) {
+/* Mobile Responsiveness Fixes - All mobile devices */
+@media (max-width: 768px) {
   /* Ensure all containers respect mobile viewport */
   * {
     box-sizing: border-box;
@@ -90,6 +90,33 @@
   main > div > div {
     max-width: 100% !important;
     overflow-x: hidden !important;
+  }
+
+  /* Mobile-specific adjustments while keeping same-line layout */
+  .page-header h1, .page-header h2 {
+    font-size: 1.5rem !important;
+  }
+
+  .mobile-btn {
+    padding: 0.375rem 0.75rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .mobile-btn-icon {
+    padding: 0.375rem !important;
+  }
+
+  /* Make buttons smaller on mobile */
+  .mobile-btn {
+    padding: 0.5rem !important;
+    font-size: 0.875rem !important;
+  }
+
+  .mobile-btn-icon {
+    padding: 0.5rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
 
   /* Fix all tables to be mobile-friendly */
@@ -129,22 +156,15 @@
     font-size: 0.75rem !important;
   }
 
-  /* Mobile button groups */
-  .flex.gap-3,
-  .flex.gap-2 {
-    flex-direction: column !important;
+  /* Mobile button groups - only for page content, not sidebar */
+  .page-header .flex.gap-3,
+  .page-header .flex.gap-2 {
+    flex-direction: row !important;
     gap: 0.5rem !important;
   }
 
-  /* Mobile header adjustments */
-  .flex.justify-between.items-center {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 1rem !important;
-  }
-
-  /* Mobile search and filter bars */
-  .bg-white.rounded-lg.shadow-md.p-4 {
+  /* Mobile search and filter bars - exclude sidebar */
+  main .bg-white.rounded-lg.shadow-md.p-4 {
     margin-left: 0 !important;
     margin-right: 0 !important;
     padding: 1rem !important;
@@ -183,13 +203,29 @@
 }
 
 /* Tablet responsiveness */
-@media (min-width: 641px) and (max-width: 1024px) {
+@media (min-width: 769px) and (max-width: 1024px) {
   .tablet-grid-2 {
     grid-template-columns: repeat(2, 1fr) !important;
   }
-  
+
   .tablet-grid-3 {
     grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* Extra small mobile devices */
+@media (max-width: 480px) {
+  .page-header h1, .page-header h2 {
+    font-size: 1.5rem !important;
+  }
+
+  .mobile-btn {
+    padding: 0.375rem 0.75rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .mobile-btn-icon {
+    padding: 0.375rem !important;
   }
 }
 
@@ -211,6 +247,28 @@ html, body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+}
+
+/* Universal page header layout - works on ALL screen sizes */
+.page-header {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 1rem !important;
+}
+
+.page-header h1, .page-header h2 {
+  margin: 0 !important;
+  flex-shrink: 1 !important;
+}
+
+.page-header .button-group {
+  display: flex !important;
+  gap: 0.5rem !important;
+  flex-shrink: 0 !important;
+  align-items: center !important;
 }
 
 @media (max-width: 640px) {

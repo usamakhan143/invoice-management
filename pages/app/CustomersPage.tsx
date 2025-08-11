@@ -269,17 +269,17 @@ const CustomersPage: React.FC = () => {
   return (
     <div>
       <div className="mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+        <div className="page-header mb-4">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
             Customers
           </h1>
-          <div className="flex space-x-2">
+          <div className="button-group">
             <button
               onClick={() => {
                 setLoading(true);
                 loadCustomers();
               }}
-              className="px-3 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 flex items-center"
+              className="mobile-btn-icon p-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
               title="Refresh customer list"
             >
               <svg
@@ -299,7 +299,7 @@ const CustomersPage: React.FC = () => {
             {canCreateCustomer() && (
               <button
                 onClick={() => openModal()}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                className="mobile-btn px-3 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 whitespace-nowrap"
               >
                 Add Customer
               </button>

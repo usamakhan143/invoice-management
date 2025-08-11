@@ -408,15 +408,16 @@ const ExpensesPage: React.FC = () => {
   return (
     <div className="p-6">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+      <div className="page-header mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
           Expenses Management
         </h1>
-        <div className="flex gap-3">
+        <div className="button-group">
           <button
             onClick={() => loadData()}
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="mobile-btn-icon p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={loading ? "Loading..." : "Refresh"}
           >
             <svg
               className="w-4 h-4"
@@ -431,14 +432,26 @@ const ExpensesPage: React.FC = () => {
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
-            {loading ? "Loading..." : "Refresh"}
           </button>
           {canCreateExpense() && (
             <button
               onClick={() => openModal()}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              className="mobile-btn-icon p-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              title="Add Expense"
             >
-              Add Expense
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
             </button>
           )}
         </div>

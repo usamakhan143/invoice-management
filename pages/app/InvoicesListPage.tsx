@@ -275,18 +275,20 @@ const InvoicesListPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">
+      <div className="mb-6 page-header">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
           Invoices
         </h1>
-        {canCreateInvoice() && (
-          <Link
-            to="/invoices/new"
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-          >
-            Create Invoice
-          </Link>
-        )}
+        <div className="button-group">
+          {canCreateInvoice() && (
+            <Link
+              to="/invoices/new"
+              className="mobile-btn px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 whitespace-nowrap"
+            >
+              Create Invoice
+            </Link>
+          )}
+        </div>
       </div>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 flex flex-wrap gap-4 items-center">
         <select

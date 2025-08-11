@@ -319,9 +319,33 @@ const BankAccountsPage: React.FC = () => {
         </div>
       </form>
 
-      <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">
-        Your Bank Accounts
-      </h2>
+      <div className="page-header mb-4">
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-white">
+          Your Bank Accounts
+        </h2>
+        <div className="button-group">
+          <button
+            onClick={() => loadBankAccounts()}
+            disabled={loading}
+            className="mobile-btn-icon p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={loading ? "Loading..." : "Refresh"}
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
       {bankAccounts.length === 0 ? (
         <div className="text-center py-8">
           <p className="text-gray-600 dark:text-gray-300 mb-4">

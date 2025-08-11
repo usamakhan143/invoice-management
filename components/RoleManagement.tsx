@@ -255,18 +255,20 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+      <div className="page-header mb-6">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
           Custom Roles
         </h2>
-        {canCreateCustomRole() && (
-          <button
-            onClick={() => openModal()}
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-          >
-            Create Custom Role
-          </button>
-        )}
+        <div className="button-group">
+          {canCreateCustomRole() && (
+            <button
+              onClick={() => openModal()}
+              className="mobile-btn px-3 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 whitespace-nowrap"
+            >
+              Create Custom Role
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Roles List */}

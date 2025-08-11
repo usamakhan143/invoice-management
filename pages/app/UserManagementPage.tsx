@@ -660,16 +660,17 @@ const UserManagementPage: React.FC = () => {
 
   return (
     <div className="mobile-p-4 p-4 sm:p-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 sm:mb-6 gap-4">
-        <h1 className="mobile-text-2xl text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
+      <div className="page-header mb-4 sm:mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
           User Management
         </h1>
         {activeTab === "users" && (
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <div className="button-group">
             <button
               onClick={() => loadUsers()}
               disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="mobile-btn-icon p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={loading ? "Loading..." : "Refresh"}
             >
               <svg
                 className="w-4 h-4"
@@ -684,12 +685,11 @@ const UserManagementPage: React.FC = () => {
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              {loading ? "Loading..." : "Refresh"}
             </button>
             {canCreateUser() && (
               <button
                 onClick={() => setIsCreateModalOpen(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                className="mobile-btn px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 whitespace-nowrap"
               >
                 Create User
               </button>
