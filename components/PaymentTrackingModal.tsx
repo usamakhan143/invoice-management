@@ -19,6 +19,27 @@ const PaymentTrackingModal: React.FC<PaymentTrackingModalProps> = ({
   const { user, userProfile } = useAuth();
   const [currentInvoice, setCurrentInvoice] = useState<Invoice>(invoice);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+
+  // Set up real-time listener for this specific invoice
+  useEffect(() => {
+    if (!invoice.id) return;
+
+    const unsubscribe = db.collection("invoices").doc(invoice.id).onSnapshot(
+      (doc) => {
+        if (doc.exists) {
+          const updatedInvoice = { id: doc.id, ...doc.data() } as Invoice;
+          setCurrentInvoice(updatedInvoice);
+        }
+      },
+      (error) => {
+        console.error("Error listening to invoice updates:", error);
+        // Fallback to prop invoice if listener fails
+        setCurrentInvoice(invoice);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [invoice.id]);
   const [newPayment, setNewPayment] = useState({
     amount: 0,
     date: new Date().toISOString().split("T")[0],

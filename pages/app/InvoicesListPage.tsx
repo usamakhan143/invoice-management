@@ -7,8 +7,7 @@ import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
 import type { Invoice } from "../../types";
 import Spinner from "../../components/Spinner";
-import { PDFDownloadLink } from "@react-pdf/renderer";
-import InvoicePDF from "../../components/InvoicePDF";
+import PDFDownloadWrapper from "../../components/PDFDownloadWrapper";
 import PaymentTrackingModal from "../../components/PaymentTrackingModal";
 
 const currencySymbols: { [key: string]: string } = {
@@ -478,29 +477,13 @@ const InvoicesListPage: React.FC = () => {
                       <div className="flex items-center space-x-1">
                         {/* PDF Download */}
                         {canViewInvoicePDF() && (
-                          <PDFDownloadLink
-                            document={
-                              <InvoicePDF
-                                invoice={invoice}
-                                userProfile={userProfile}
-                              />
-                            }
-                            fileName={`invoice-${invoice.invoiceNumber}.pdf`}
+                          <PDFDownloadWrapper
+                            invoiceId={invoice.id}
+                            invoiceNumber={invoice.invoiceNumber}
+                            userProfile={userProfile}
                             className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-200 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                             title="Download PDF"
-                          >
-                            {({ blob, url, loading, error }) =>
-                              loading ? (
-                                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                </svg>
-                              )
-                            }
-                          </PDFDownloadLink>
+                          />
                         )}
 
                         {/* Payment Tracking Button - Only for milestone/upfront invoices */}
@@ -613,8 +596,21 @@ const InvoicesListPage: React.FC = () => {
           invoice={paymentModal.invoice}
           onClose={() => setPaymentModal({ isOpen: false, invoice: null })}
           onPaymentUpdate={() => {
-            // Reload invoices to reflect payment changes
-            loadInvoices();
+            // Force a fresh fetch from the service to get latest data immediately
+            const fetchLatestInvoices = async () => {
+              try {
+                const latestInvoices = await InvoiceService.getInvoices(
+                  user,
+                  userProfile,
+                  isOwner,
+                  isAdmin
+                );
+                setInvoices(latestInvoices);
+              } catch (error) {
+                console.error("Error fetching latest invoices:", error);
+              }
+            };
+            fetchLatestInvoices();
           }}
         />
       )}
