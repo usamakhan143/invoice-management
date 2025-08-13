@@ -21,7 +21,6 @@ const AutoLoginPage: React.FC = () => {
           return;
         }
 
-        console.log("🚀 AUTO-LOGIN - Processing token:", token);
         setMessage("Verifying login token...");
 
         // Get the token data from Firebase
@@ -55,7 +54,6 @@ const AutoLoginPage: React.FC = () => {
           return;
         }
 
-        console.log("✅ Token is valid, signing in user:", tokenData.email);
         setMessage("Authenticating user...");
 
         // Sign in the user with Firebase
@@ -65,7 +63,6 @@ const AutoLoginPage: React.FC = () => {
         );
 
         if (userCredential.user) {
-          console.log("✅ Firebase authentication successful");
           setMessage("Creating user session...");
 
           // Create a new token for the user session
@@ -77,7 +74,6 @@ const AutoLoginPage: React.FC = () => {
             usedAt: new Date()
           });
 
-          console.log("✅ Auto-login successful, redirecting to dashboard");
           setStatus("success");
           setMessage("Login successful! Redirecting...");
 

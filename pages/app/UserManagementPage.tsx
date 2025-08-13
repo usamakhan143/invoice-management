@@ -223,35 +223,51 @@ const UserManagementPage: React.FC = () => {
         granularPermissions = customRole.granularPermissions || [];
       }
 
-      console.log("🚀 Starting user creation process...");
 
-      // 🔥 SOLUTION: Use secondary Firebase app instance to avoid logout
-      // Create a new Firebase app instance for user creation
-      const secondaryApp = await import('firebase/compat/app').then(firebase => {
-        return firebase.default.initializeApp({
-          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-        }, `secondary-${Date.now()}`);
-      });
+      // Helper function for timeout operations
+      const withTimeout = (promise: any, timeoutMs: number, operation: string) => {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)), timeoutMs)
+          )
+        ]);
+      };
 
-      const secondaryAuth = secondaryApp.auth();
+      let secondaryApp: any = null;
+      let secondaryAuth: any = null;
 
       try {
-        console.log("📝 Creating Firebase Auth user with secondary app...");
 
-        // Create user with secondary auth instance (won't affect main auth)
-        const newUserCredential = await secondaryAuth.createUserWithEmailAndPassword(
-          createForm.email,
-          createForm.password
+        // 🔥 SOLUTION: Use secondary Firebase app instance with timeout
+        secondaryApp = await withTimeout(
+          import('firebase/compat/app').then(firebase => {
+            return firebase.default.initializeApp({
+              apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+              authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+              projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+            }, `secondary-${Date.now()}`);
+          }),
+          10000,
+          "Secondary Firebase app creation"
         );
+
+        secondaryAuth = secondaryApp.auth();
+
+
+        // Create user with timeout
+        const newUserCredential = await withTimeout(
+          secondaryAuth.createUserWithEmailAndPassword(createForm.email, createForm.password),
+          15000,
+          "Firebase Auth user creation"
+        );
+
         const newFirebaseUser = newUserCredential.user;
 
         if (!newFirebaseUser) {
           throw new Error("Failed to create Firebase Auth account");
         }
 
-        console.log("✅ Firebase Auth user created:", newFirebaseUser.uid);
 
         // Step 1: Encrypt password for Login As functionality
         const encryptPassword = (password: string): string => {
@@ -261,72 +277,84 @@ const UserManagementPage: React.FC = () => {
         };
 
         const encryptedPassword = encryptPassword(createForm.password);
-        console.log("🔐 Password encrypted for Login As functionality");
 
-        // Step 2: Create user profile in users collection with REAL Firebase UID
-        await db.collection("users").doc(newFirebaseUser.uid).set({
-          uid: newFirebaseUser.uid,
-          email: createForm.email,
-          companyName: userProfile.companyName,
-          displayName: createForm.displayName,
-          createdAt: Timestamp.now(),
-          invoiceCounter: 0,
-          role: createForm.role,
-          isOwner: false,
-          companyId: companyId,
-          granularPermissions: granularPermissions,
-          isActive: true,
-          // Store encrypted password for Login As functionality
-          tempPassword: encryptedPassword,
-        });
-
-        console.log("✅ User profile created in users collection");
-
-        // Step 2: Create company user record
-        await db.collection("companyUsers").add({
-          uid: newFirebaseUser.uid,
-          email: createForm.email,
-          displayName: createForm.displayName,
-          role: createForm.role,
-          granularPermissions: granularPermissions,
-          isActive: true,
-          companyId,
-          invitedBy: user.uid,
-          createdAt: Timestamp.now(),
-        });
-
-        console.log("✅ Company user record created");
-
-        // Step 3: Sign out from secondary auth and delete the app
-        await secondaryAuth.signOut();
-        await secondaryApp.delete();
-
-        console.log("✅ Secondary Firebase app cleaned up");
-
-        // Step 4: Log user creation activity
-        await ActivityLogger.logActivity(
-          user,
-          userProfile,
-          "user_created",
-          `Created new user: ${createForm.displayName} (${createForm.email})`,
-          {
-            entityId: newFirebaseUser.uid,
-            entityType: "user",
-            newValue: {
-              email: createForm.email,
-              displayName: createForm.displayName,
-              role: createForm.role,
-            },
-          },
+        // Step 2: Create user profile in users collection with timeout
+        await withTimeout(
+          db.collection("users").doc(newFirebaseUser.uid).set({
+            uid: newFirebaseUser.uid,
+            email: createForm.email,
+            companyName: userProfile.companyName,
+            displayName: createForm.displayName,
+            createdAt: Timestamp.now(),
+            invoiceCounter: 0,
+            role: createForm.role,
+            isOwner: false,
+            companyId: companyId,
+            granularPermissions: granularPermissions,
+            isActive: true,
+            // Store encrypted password for Login As functionality
+            tempPassword: encryptedPassword,
+          }),
+          10000,
+          "User profile creation"
         );
 
-        console.log("✅ Activity logged");
+
+        // Step 3: Create company user record with timeout
+        await withTimeout(
+          db.collection("companyUsers").add({
+            uid: newFirebaseUser.uid,
+            email: createForm.email,
+            displayName: createForm.displayName,
+            role: createForm.role,
+            granularPermissions: granularPermissions,
+            isActive: true,
+            companyId,
+            invitedBy: user.uid,
+            createdAt: Timestamp.now(),
+          }),
+          10000,
+          "Company user record creation"
+        );
+
+
+        // Step 4: Sign out from secondary auth and delete the app with timeout
+        await withTimeout(
+          Promise.all([
+            secondaryAuth.signOut(),
+            secondaryApp.delete()
+          ]),
+          5000,
+          "Secondary Firebase app cleanup"
+        );
+
+
+        // Step 5: Log user creation activity with timeout
+        await withTimeout(
+          ActivityLogger.logActivity(
+            user,
+            userProfile,
+            "user_created",
+            `Created new user: ${createForm.displayName} (${createForm.email})`,
+            {
+              entityId: newFirebaseUser.uid,
+              entityType: "user",
+              newValue: {
+                email: createForm.email,
+                displayName: createForm.displayName,
+                role: createForm.role,
+              },
+            },
+          ),
+          8000,
+          "Activity logging"
+        );
+
 
         // Step 5: Close modal and reset form
         setIsCreateModalOpen(false);
         resetCreateForm();
 
-        console.log("🎉 User creation completed successfully - Admin still logged in!");
 
         // Step 6: Show success message
         alert(
@@ -335,19 +363,49 @@ const UserManagementPage: React.FC = () => {
 
       } catch (authError) {
         console.error("❌ Auth error:", authError);
-        // Clean up secondary app on error
-        try {
-          await secondaryAuth.signOut();
-          await secondaryApp.delete();
-        } catch (cleanupError) {
-          console.error("Error cleaning up secondary app:", cleanupError);
+
+        // Enhanced cleanup on error with timeout handling
+        if (secondaryAuth && secondaryApp) {
+          try {
+            await withTimeout(
+              Promise.all([
+                secondaryAuth.signOut().catch(() => {}), // Silent fail
+                secondaryApp.delete().catch(() => {})     // Silent fail
+              ]),
+              3000,
+              "Emergency cleanup"
+            );
+          } catch (cleanupError) {
+            console.error("❌ Emergency cleanup failed:", cleanupError);
+            // Continue anyway - don't block user creation failure
+          }
         }
+
+        // Provide user-friendly error messages for timeout errors
+        if (authError.message && authError.message.includes('timed out')) {
+          throw new Error("User creation timed out. Please check your connection and try again.");
+        }
+
         throw authError;
       }
 
     } catch (error: any) {
       console.error("❌ User creation error:", error);
-      setError(error.message || "Failed to create user");
+
+      // Provide user-friendly error messages
+      let errorMessage = "Failed to create user";
+
+      if (error.message && error.message.includes('timed out')) {
+        errorMessage = "User creation timed out. Please check your internet connection and try again.";
+      } else if (error.message && error.message.includes('network')) {
+        errorMessage = "Network error. Please check your connection and try again.";
+      } else if (error.message && error.message.includes('permission')) {
+        errorMessage = "Permission denied. Please contact your administrator.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -553,31 +611,23 @@ const UserManagementPage: React.FC = () => {
 
   const handleDirectLogin = async (targetUser: CompanyUser) => {
     try {
-      console.log("🚀 LOGIN AS DEBUG - Starting login as:", targetUser.email);
 
       // Check if target user is active
       if (!targetUser.isActive) {
-        console.log("❌ Target user is not active");
         alert("Cannot login as deactivated user.");
         return;
       }
-      console.log("✅ Target user is active");
 
       // Get target user data from users collection
-      console.log("🔍 Fetching target user data...");
       const userDoc = await db.collection("users").doc(targetUser.uid).get();
       const userData = userDoc.data();
-      console.log("📄 User data exists:", !!userData);
 
       if (!userData) {
-        console.log("❌ No user data found");
         alert("User data not found. This user may need to be recreated.");
         return;
       }
 
-      console.log("🔑 Target user has password:", !!userData.tempPassword);
       if (!userData.tempPassword) {
-        console.log("❌ No temp password found");
         alert("User does not have login credentials. Please create them first.");
         return;
       }
@@ -585,15 +635,11 @@ const UserManagementPage: React.FC = () => {
       // Test decrypt functionality
       const decryptedPassword = decryptPassword(userData.tempPassword);
       if (!decryptedPassword) {
-        console.log("❌ Failed to decrypt password");
         alert("Invalid login credentials. Please contact administrator.");
         return;
       }
 
-      console.log("✅ Password successfully decrypted for impersonation");
-
       // Create an impersonation session token instead of Firebase auth
-      console.log("🎟️ Creating impersonation session...");
       const sessionToken = await createImpersonationSession(targetUser);
 
       if (sessionToken) {
@@ -724,7 +770,6 @@ const UserManagementPage: React.FC = () => {
 
       if (!expiredSessions.empty) {
         await batch.commit();
-        console.log(`🧹 Cleaned up ${expiredSessions.size} expired impersonation sessions`);
       }
     } catch (error) {
       console.error("Failed to cleanup expired sessions:", error);

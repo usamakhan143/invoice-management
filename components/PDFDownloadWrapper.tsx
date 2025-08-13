@@ -26,7 +26,6 @@ const PDFDownloadWrapper: React.FC<PDFDownloadWrapperProps> = ({
 
     setIsLoading(true);
     try {
-      console.log("Fetching fresh invoice data for PDF...");
 
       // Fetch fresh invoice data directly from Firestore
       const doc = await db.collection("invoices").doc(invoiceId).get();
@@ -35,10 +34,8 @@ const PDFDownloadWrapper: React.FC<PDFDownloadWrapperProps> = ({
       }
 
       const fresh = { id: doc.id, ...doc.data() } as Invoice;
-      console.log("Fresh invoice data:", fresh);
 
       // Create PDF blob
-      console.log("Generating PDF...");
       const blob = await pdf(<InvoicePDF invoice={fresh} userProfile={userProfile} />).toBlob();
 
       // Create download link and trigger download
@@ -51,7 +48,6 @@ const PDFDownloadWrapper: React.FC<PDFDownloadWrapperProps> = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      console.log("PDF download triggered successfully");
     } catch (error) {
       console.error("Error generating PDF:", error);
       alert("Failed to generate PDF. Please try again.");

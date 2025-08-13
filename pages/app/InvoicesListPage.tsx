@@ -71,7 +71,7 @@ const InvoicesListPage: React.FC = () => {
     if (!user || !userProfile) return;
 
     if (!canViewInvoices()) {
-      console.log("User doesn't have permission to view invoices, redirecting to dashboard");
+
       navigate("/");
       return;
     }

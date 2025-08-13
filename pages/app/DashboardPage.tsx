@@ -23,9 +23,6 @@ const DashboardPage: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('impersonated') || params.get('test_impersonated')) {
-      console.log('📍 Dashboard loaded via impersonation - checking auth state...');
-      console.log('   Current userProfile:', userProfile?.email);
-      console.log('   Is impersonating:', userProfile?.isImpersonating);
     }
   }, [location.search, userProfile]);
   const {

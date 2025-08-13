@@ -45,12 +45,10 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ className = '' }) =
 
     // Listen for online/offline events
     const handleOnline = () => {
-      console.log('📶 Network back online');
       checkConnectivity();
     };
 
     const handleOffline = () => {
-      console.log('📵 Network went offline');
       setNetworkStatus('offline');
       setFirebaseStatus('disconnected');
     };

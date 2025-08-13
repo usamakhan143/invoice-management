@@ -54,7 +54,6 @@ export class ActivityLogger {
     limit: number = 50,
   ): Promise<Activity[]> {
     try {
-      console.log("Loading activities for userId:", userId); // Debug log
       const snapshot = await db
         .collection("activities")
         .where("userId", "==", userId)

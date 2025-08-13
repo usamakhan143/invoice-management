@@ -67,13 +67,7 @@ const retryOperation = async <T>(
   
   for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
     try {
-      console.log(`🔄 Firestore operation attempt ${attempt}/${config.maxRetries}`);
-      
       const result = await withTimeout(operation(), config.timeoutMs);
-      
-      if (attempt > 1) {
-        console.log(`✅ Firestore operation succeeded on attempt ${attempt}`);
-      }
       
       return result;
     } catch (error) {

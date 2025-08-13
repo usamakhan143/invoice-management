@@ -77,7 +77,6 @@ const CustomersPage: React.FC = () => {
     if (!user || !userProfile) return;
 
     if (!canViewCustomers()) {
-      console.log("User doesn't have permission to view customers, redirecting to dashboard");
       navigate("/");
       return;
     }
@@ -193,7 +192,6 @@ const CustomersPage: React.FC = () => {
 
     // Check permission before allowing delete
     if (!canDeleteCustomer()) {
-      console.log("User doesn't have permission to delete customers");
       return;
     }
 
@@ -230,11 +228,9 @@ const CustomersPage: React.FC = () => {
   const openModal = (customer?: Customer) => {
     // Check permissions before opening modal
     if (customer && !canEditCustomer()) {
-      console.log("User doesn't have permission to edit customers");
       return;
     }
     if (!customer && !canCreateCustomer()) {
-      console.log("User doesn't have permission to create customers");
       return;
     }
 

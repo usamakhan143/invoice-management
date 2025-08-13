@@ -22,7 +22,6 @@ const ActivityPage: React.FC = () => {
     try {
       // Use the actual user ID from userProfile (handles admin-created users)
       const actualUserId = userProfile.uid || user.uid;
-      console.log("Loading activities for user:", actualUserId, "email:", userProfile.email);
 
       const userActivities = await ActivityLogger.getUserActivities(
         actualUserId,
@@ -31,7 +30,6 @@ const ActivityPage: React.FC = () => {
 
       // If no activities found with userProfile.uid, try with user.uid as fallback
       if (userActivities.length === 0 && userProfile.uid !== user.uid) {
-        console.log("No activities found with userProfile.uid, trying user.uid:", user.uid);
         const fallbackActivities = await ActivityLogger.getUserActivities(
           user.uid,
           100,
@@ -73,7 +71,6 @@ const ActivityPage: React.FC = () => {
               ...doc.data(),
             })) as Activity[];
 
-            console.log(`Real-time: Loaded ${activitiesData.length} activities for user ${actualUserId}`);
             setActivities(activitiesData);
             setFilteredActivities(activitiesData);
             setLoading(false);

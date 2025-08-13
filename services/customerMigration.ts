@@ -14,12 +14,9 @@ export class CustomerMigration {
     totalMigrated: number;
     errors: string[];
   }> {
-    console.log("Starting customer migration from subcollections to centralized collection...");
-    
     const result = await CustomerService.migrateAllCustomers();
     
     if (result.success) {
-      console.log(`✅ Successfully migrated ${result.totalMigrated} customers`);
     } else {
       console.error(`❌ Migration completed with errors. Migrated ${result.totalMigrated} customers`);
       result.errors.forEach(error => console.error(`  - ${error}`));
@@ -33,12 +30,9 @@ export class CustomerMigration {
     migratedCount: number;
     errors: string[];
   }> {
-    console.log(`Starting customer migration for user ${userId}...`);
-    
     const result = await CustomerService.migrateUserCustomers(userId);
     
     if (result.success) {
-      console.log(`✅ Successfully migrated ${result.migratedCount} customers for user ${userId}`);
     } else {
       console.error(`❌ Migration for user ${userId} completed with errors. Migrated ${result.migratedCount} customers`);
       result.errors.forEach(error => console.error(`  - ${error}`));
@@ -56,8 +50,6 @@ export class CustomerMigration {
     centralizedCount: number;
     details: { [userId: string]: { subcollection: number; migrated: number } };
   }> {
-    console.log("Verifying customer migration...");
-    
     const details: { [userId: string]: { subcollection: number; migrated: number } } = {};
     let totalSubcollectionCount = 0;
     
@@ -88,10 +80,6 @@ export class CustomerMigration {
             subcollection: subcollectionCount,
             migrated: migratedCount,
           };
-          
-          if (subcollectionCount > 0) {
-            console.log(`User ${userId}: ${subcollectionCount} in subcollection, ${migratedCount} migrated`);
-          }
         } catch (error) {
           console.error(`Error checking migration for user ${userId}:`, error);
           details[userId] = { subcollection: 0, migrated: 0 };
@@ -105,11 +93,6 @@ export class CustomerMigration {
       const success = Object.values(details).every(
         detail => detail.subcollection === 0 || detail.migrated >= detail.subcollection
       );
-      
-      console.log(`📊 Migration verification:`);
-      console.log(`  - Total customers in subcollections: ${totalSubcollectionCount}`);
-      console.log(`  - Total customers in centralized collection: ${centralizedCount}`);
-      console.log(`  - Migration status: ${success ? "✅ Complete" : "❌ Incomplete"}`);
       
       return {
         success,
@@ -137,9 +120,6 @@ export class CustomerMigration {
     deletedCount: number;
     errors: string[];
   }> {
-    console.log("⚠️  Starting cleanup of customer subcollections...");
-    console.log("This will permanently delete customers from user subcollections");
-    
     const errors: string[] = [];
     let deletedCount = 0;
     
@@ -171,7 +151,6 @@ export class CustomerMigration {
           
           if (subcollectionSnapshot.docs.length > 0) {
             await batch.commit();
-            console.log(`Deleted ${subcollectionSnapshot.docs.length} customers from user ${userId} subcollection`);
           }
         } catch (error) {
           const errorMsg = `Failed to cleanup subcollection for user ${userId}: ${error}`;
@@ -179,8 +158,6 @@ export class CustomerMigration {
           errors.push(errorMsg);
         }
       }
-      
-      console.log(`🧹 Cleanup complete. Deleted ${deletedCount} customer records from subcollections`);
       
       return {
         success: errors.length === 0,

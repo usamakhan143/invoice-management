@@ -26,12 +26,9 @@ try {
     // Check if Firebase app already exists (avoid re-initialization)
     try {
         app = firebase.app(); // Get default app if it exists
-        console.log('🔄 Using existing Firebase app instance');
     } catch (noAppError) {
         // No app exists, create new one
-        console.log('🚀 Initializing new Firebase app...');
         app = firebase.initializeApp(firebaseConfig);
-        console.log('✅ Firebase app initialized successfully');
     }
 } catch (error: any) {
     console.error('❌ Firebase app initialization failed:', error);
@@ -50,12 +47,6 @@ export const db = app.firestore()
 const isDevelopment = import.meta.env.DEV;
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-console.log('🔧 Configuring Firebase for environment:', {
-    isDevelopment,
-    isLocalhost,
-    hostname: window.location.hostname,
-    protocol: window.location.protocol
-});
 
 try {
     db.settings({
@@ -68,14 +59,12 @@ try {
         // Ignore undefined properties to avoid errors
         ignoreUndefinedProperties: true,
     });
-    console.log('✅ Firebase settings configured successfully');
 } catch (settingsError) {
-    console.warn('⚠️ Firebase settings configuration warning:', settingsError);
 }
 
 // Check if we should force offline mode for development
 if (import.meta.env.VITE_FIREBASE_OFFLINE_MODE === 'true') {
-    console.log('🔄 Firebase forced offline mode enabled');
+
     db.disableNetwork();
 }
 
@@ -95,15 +84,12 @@ export const checkNetworkConnectivity = async (): Promise<boolean> => {
         clearTimeout(timeoutId);
         return true;
     } catch (error) {
-        console.warn('🌐 Network connectivity issue detected:', error);
         return false;
     }
 };
 
 // Enhanced Firebase connection with better debugging
 export const connectToFirebase = async (retries = 3): Promise<boolean> => {
-    console.log('🔥 FIREBASE CONNECTION DIAGNOSTICS');
-    console.log('================================');
 
     // First, validate Firebase configuration
     const config = {
@@ -118,38 +104,27 @@ export const connectToFirebase = async (retries = 3): Promise<boolean> => {
         console.error('❌ Missing Firebase config keys:', missingKeys.map(([key]) => key));
         return false;
     }
-    console.log('✅ Firebase configuration validated');
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            console.log(`🔄 Firebase connection attempt ${attempt}/${retries}`);
-            console.log(`   Project ID: ${config.projectId}`);
-            console.log(`   Auth Domain: ${config.authDomain}`);
 
             // Test basic network first
-            console.log('🌐 Testing basic network...');
             const hasNetwork = await checkNetworkConnectivity();
             if (!hasNetwork) {
-                console.warn(`❌ Network test failed on attempt ${attempt}`);
                 if (attempt === retries) {
                     console.error('❌ No network connectivity available after all retries');
                     return false;
                 }
                 continue;
             }
-            console.log('✅ Network connectivity confirmed');
 
             // Test Firebase Firestore directly
-            console.log('🔥 Testing Firebase Firestore connection...');
             const testPromise = db.collection('_connection_test').limit(1).get();
             const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('Firebase connection timeout after 8 seconds')), 8000)
             );
 
             const result = await Promise.race([testPromise, timeoutPromise]);
-            console.log('✅ Firebase Firestore responded successfully');
-            console.log(`   Response metadata:`, result.metadata);
-            console.log('================================');
             return true;
 
         } catch (error: any) {
@@ -161,7 +136,6 @@ export const connectToFirebase = async (retries = 3): Promise<boolean> => {
 
             if (attempt < retries) {
                 const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-                console.log(`⏳ Retrying in ${delay}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
@@ -173,7 +147,6 @@ export const connectToFirebase = async (retries = 3): Promise<boolean> => {
     console.error('   2. Firebase project configuration issues');
     console.error('   3. Firestore security rules blocking access');
     console.error('   4. Firebase service outage');
-    console.log('================================');
     return false;
 };
 
@@ -193,24 +166,15 @@ export const enableOfflineSupport = async () => {
             synchronizeTabs: true,
             experimentalTabSynchronization: true
         });
-        console.log('✅ Firebase offline persistence enabled successfully');
         return true;
     } catch (err: any) {
-        console.warn('⚠️ Firebase persistence setup issue:');
-        console.warn(`   Error code: ${err.code}`);
-        console.warn(`   Error message: ${err.message}`);
 
         if (err.code === 'failed-precondition') {
-            console.warn('   → Multiple tabs may be open, or already initialized');
         } else if (err.code === 'unimplemented') {
-            console.warn('   → Browser does not support offline persistence');
         } else if (err.code === 'invalid-state') {
-            console.warn('   → Firestore has already been started');
         } else {
-            console.warn('   → Unknown persistence error');
         }
 
-        console.log('📱 Continuing without offline persistence...');
         return false;
     }
 };

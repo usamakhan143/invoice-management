@@ -30,10 +30,6 @@ export class BankAccountService {
       await db.collection("bankAccounts").doc(bankAccountId).update({
         currentBalance: newBalance,
       });
-
-      console.log(
-        `Bank account ${bankAccountId} balance updated: ${currentBalance} -> ${newBalance}`,
-      );
     } catch (error) {
       console.error("Error updating bank account balance:", error);
     }

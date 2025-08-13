@@ -29,12 +29,10 @@ const InvoiceFormPage: React.FC = () => {
     // Check if user has permission to access this form
     const isEditMode = !!id;
     if (isEditMode && !canEditInvoice()) {
-      console.log("User doesn't have permission to edit invoices, redirecting to dashboard");
       navigate("/");
       return;
     }
     if (!isEditMode && !canCreateInvoice()) {
-      console.log("User doesn't have permission to create invoices, redirecting to dashboard");
       navigate("/");
       return;
     }

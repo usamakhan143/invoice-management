@@ -49,7 +49,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       const storedToken = localStorage.getItem("userToken");
 
       if (impersonationData && storedToken?.startsWith("impersonation_")) {
-        console.log("🚀 MOUNT IMPERSONATION CHECK - Found session immediately");
 
         try {
           const impersonation = JSON.parse(impersonationData);
@@ -59,7 +58,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           const maxSessionAge = 24 * 60 * 60 * 1000; // 24 hours
 
           if (sessionAge > maxSessionAge) {
-            console.log("🎭 Session expired, cleaning up...");
             localStorage.removeItem("impersonationSession");
             localStorage.removeItem("userToken");
             localStorage.removeItem("tokenUserId");
@@ -74,7 +72,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           targetProfile.isImpersonating = true;
           targetProfile.originalAdmin = impersonation.originalAdmin;
 
-          console.log("✅ MOUNT IMPERSONATION - Profile set immediately:", targetProfile.email);
           setUserProfile(targetProfile);
           setLoading(false);
           return;
@@ -157,7 +154,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         }
 
         try {
-          console.log("🎭 MANUAL IMPERSONATION CHECK - Processing session...");
           const impersonation = JSON.parse(impersonationData);
 
           // Mark current session as processed to prevent loops
@@ -169,7 +165,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           const maxSessionAge = 24 * 60 * 60 * 1000; // 24 hours
 
           if (sessionAge > maxSessionAge) {
-            console.log("🎭 Session expired, cleaning up...");
             localStorage.removeItem("impersonationSession");
             localStorage.removeItem("userToken");
             localStorage.removeItem("tokenUserId");
@@ -185,7 +180,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           targetProfile.isImpersonating = true;
           targetProfile.originalAdmin = impersonation.originalAdmin;
 
-          console.log("✅ MANUAL IMPERSONATION - Setting user profile:", targetProfile.email);
           setUserProfile(targetProfile);
           setLoading(false);
         } catch (error) {
@@ -201,12 +195,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     // Check for impersonation redirect flag and force reload if needed
     const impersonationRedirect = sessionStorage.getItem('impersonationRedirect');
     if (impersonationRedirect) {
-      console.log("🔄 IMPERSONATION REDIRECT detected - clearing flag");
       sessionStorage.removeItem('impersonationRedirect');
 
       // Force one more reload to ensure auth state is completely fresh
       setTimeout(() => {
-        console.log("🔄 Final impersonation reload to ensure fresh auth state");
         window.location.reload();
       }, 100);
       return () => {}; // Return early cleanup
@@ -216,7 +208,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
     // Check if we're in emergency offline mode
     if (isEmergencyOfflineMode()) {
-      console.log('🚨 Emergency offline mode: Using mock auth');
       setUser(offlineServices.auth.currentUser as any);
       setUserProfile(mockUserProfile as UserProfile);
       setLoading(false);
@@ -245,10 +236,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       const impersonationData = localStorage.getItem("impersonationSession");
       const storedToken = localStorage.getItem("userToken");
 
-      console.log("🔍 AUTH STATE CHANGE - Checking for impersonation...");
-      console.log("  - impersonationData exists:", !!impersonationData);
-      console.log("  - storedToken:", storedToken);
-      console.log("  - firebaseUser:", !!firebaseUser);
 
       if (impersonationData && storedToken?.startsWith("impersonation_")) {
         // PROTECT ADMIN TAB: Don't process impersonation if this is marked as admin tab
@@ -262,21 +249,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         }
 
         try {
-          console.log("�� IMPERSONATION - Processing impersonation session...");
-          console.log("🎭 IMPERSONATION - Raw data:", impersonationData);
-
           // Handle impersonation session
           const impersonation = JSON.parse(impersonationData);
-          console.log("🎭 IMPERSONATION - Parsed data:", impersonation);
 
           // Validate impersonation session is still valid (24 hours max)
           const sessionAge = Date.now() - impersonation.createdAt;
           const maxSessionAge = 24 * 60 * 60 * 1000; // 24 hours
 
-          console.log("🎭 IMPERSONATION - Session age:", sessionAge, "ms");
-
           if (sessionAge > maxSessionAge) {
-            console.log("🎭 IMPERSONATION - Session expired, cleaning up...");
             // Session expired, clean up
             localStorage.removeItem("impersonationSession");
             localStorage.removeItem("userToken");
@@ -286,11 +266,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
             return;
           }
 
-          console.log("🎭 IMPERSONATION - Setting up target user profile...");
-
           // Use the target user profile from impersonation data
           const targetProfile = impersonation.targetUserProfile as UserProfile;
-          console.log("🎭 IMPERSONATION - Target profile:", targetProfile);
 
           // Load fresh permissions for the target user
           const granularPermissions = await PermissionService.loadUserPermissions(targetProfile);
@@ -303,8 +280,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           // Mark current session as processed to prevent loops
           const sessionKey = `${impersonation.sessionToken}_${impersonation.createdAt}`;
           currentImpersonationProcessed = sessionKey;
-
-          console.log("✅ IMPERSONATION - Target user profile set:", targetProfile.email);
 
           setUserProfile(targetProfile);
           setLoading(false);
