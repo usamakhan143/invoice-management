@@ -47,6 +47,24 @@ const UserManagementPage: React.FC = () => {
   const [customRoles, setCustomRoles] = useState<any[]>([]);
   const [error, setError] = useState("");
 
+  // Decrypt password function for Login As functionality
+  const decryptPassword = (encryptedPassword: string): string | null => {
+    try {
+      if (encryptedPassword && encryptedPassword.startsWith("enc_")) {
+        const encoded = encryptedPassword.substring(4); // Remove "enc_" prefix
+        const decoded = atob(encoded);
+        const [password, email] = decoded.split(":");
+
+        // Return password without email verification here since we'll verify in caller
+        return password;
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to decrypt password:", error);
+      return null;
+    }
+  };
+
   // Page access control
   useEffect(() => {
     if (!canViewUserManagement()) {
@@ -205,80 +223,131 @@ const UserManagementPage: React.FC = () => {
         granularPermissions = customRole.granularPermissions || [];
       }
 
-      // Generate a unique user ID (in production, this should be done via Firebase Admin SDK)
-      const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log("🚀 Starting user creation process...");
 
-      // Create user profile in users collection (without Firebase Auth to avoid logout)
-      await db.collection("users").doc(newUserId).set({
-        uid: newUserId,
-        email: createForm.email,
-        companyName: userProfile.companyName,
-        displayName: createForm.displayName,
-        createdAt: Timestamp.now(),
-        invoiceCounter: 0,
-        role: createForm.role,
-        isOwner: false,
-        companyId: companyId,
-        granularPermissions: granularPermissions,
-        isActive: true,
-        // Add password for manual login (in production, use proper hashing)
-        tempPassword: createForm.password,
+      // 🔥 SOLUTION: Use secondary Firebase app instance to avoid logout
+      // Create a new Firebase app instance for user creation
+      const secondaryApp = await import('firebase/compat/app').then(firebase => {
+        return firebase.default.initializeApp({
+          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        }, `secondary-${Date.now()}`);
       });
 
-      // Create company user record
-      await db.collection("companyUsers").add({
-        uid: newUserId,
-        email: createForm.email,
-        displayName: createForm.displayName,
-        role: createForm.role,
-        granularPermissions: granularPermissions,
-        isActive: true,
-        companyId,
-        invitedBy: user.uid,
-        createdAt: Timestamp.now(),
-      });
+      const secondaryAuth = secondaryApp.auth();
 
-      // Log user creation activity
-      await ActivityLogger.logActivity(
-        user,
-        userProfile,
-        "user_created",
-        `Created new user: ${createForm.displayName} (${createForm.email})`,
-        {
-          entityId: newUserId,
-          entityType: "user",
-          newValue: {
-            email: createForm.email,
-            displayName: createForm.displayName,
-            role: createForm.role,
-          },
-        },
-      );
+      try {
+        console.log("📝 Creating Firebase Auth user with secondary app...");
 
-      setIsCreateModalOpen(false);
-      resetCreateForm();
+        // Create user with secondary auth instance (won't affect main auth)
+        const newUserCredential = await secondaryAuth.createUserWithEmailAndPassword(
+          createForm.email,
+          createForm.password
+        );
+        const newFirebaseUser = newUserCredential.user;
 
-      // Auto refresh data after successful operation
-      await loadUsers();
-
-      alert(
-        `User ${createForm.email} created successfully! They can now login using the "Login As" button or manually with email: ${createForm.email} and the password you provided.`,
-      );
-    } catch (error: any) {
-      setError(error.message);
-      // If error occurred, try to sign back in as admin
-      if (user?.email) {
-        try {
-          const password = prompt(
-            "Please enter your password to restore your session:",
-          );
-          if (password) {
-            await firebaseAuth.signInWithEmailAndPassword(user.email, password);
-          }
-        } catch (authError) {
-          console.error("Failed to restore admin session:", authError);
+        if (!newFirebaseUser) {
+          throw new Error("Failed to create Firebase Auth account");
         }
+
+        console.log("✅ Firebase Auth user created:", newFirebaseUser.uid);
+
+        // Step 1: Encrypt password for Login As functionality
+        const encryptPassword = (password: string): string => {
+          // Simple encryption - in production use proper encryption library
+          const encoded = btoa(password + ":" + createForm.email);
+          return `enc_${encoded}`;
+        };
+
+        const encryptedPassword = encryptPassword(createForm.password);
+        console.log("🔐 Password encrypted for Login As functionality");
+
+        // Step 2: Create user profile in users collection with REAL Firebase UID
+        await db.collection("users").doc(newFirebaseUser.uid).set({
+          uid: newFirebaseUser.uid,
+          email: createForm.email,
+          companyName: userProfile.companyName,
+          displayName: createForm.displayName,
+          createdAt: Timestamp.now(),
+          invoiceCounter: 0,
+          role: createForm.role,
+          isOwner: false,
+          companyId: companyId,
+          granularPermissions: granularPermissions,
+          isActive: true,
+          // Store encrypted password for Login As functionality
+          tempPassword: encryptedPassword,
+        });
+
+        console.log("✅ User profile created in users collection");
+
+        // Step 2: Create company user record
+        await db.collection("companyUsers").add({
+          uid: newFirebaseUser.uid,
+          email: createForm.email,
+          displayName: createForm.displayName,
+          role: createForm.role,
+          granularPermissions: granularPermissions,
+          isActive: true,
+          companyId,
+          invitedBy: user.uid,
+          createdAt: Timestamp.now(),
+        });
+
+        console.log("✅ Company user record created");
+
+        // Step 3: Sign out from secondary auth and delete the app
+        await secondaryAuth.signOut();
+        await secondaryApp.delete();
+
+        console.log("✅ Secondary Firebase app cleaned up");
+
+        // Step 4: Log user creation activity
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "user_created",
+          `Created new user: ${createForm.displayName} (${createForm.email})`,
+          {
+            entityId: newFirebaseUser.uid,
+            entityType: "user",
+            newValue: {
+              email: createForm.email,
+              displayName: createForm.displayName,
+              role: createForm.role,
+            },
+          },
+        );
+
+        console.log("✅ Activity logged");
+
+        // Step 5: Close modal and reset form
+        setIsCreateModalOpen(false);
+        resetCreateForm();
+
+        console.log("🎉 User creation completed successfully - Admin still logged in!");
+
+        // Step 6: Show success message
+        alert(
+          `User ${createForm.email} created successfully! They can now login normally at /login with their email and password.`,
+        );
+
+      } catch (authError) {
+        console.error("❌ Auth error:", authError);
+        // Clean up secondary app on error
+        try {
+          await secondaryAuth.signOut();
+          await secondaryApp.delete();
+        } catch (cleanupError) {
+          console.error("Error cleaning up secondary app:", cleanupError);
+        }
+        throw authError;
       }
+
+    } catch (error: any) {
+      console.error("❌ User creation error:", error);
+      setError(error.message || "Failed to create user");
     } finally {
       setLoading(false);
     }
@@ -513,6 +582,16 @@ const UserManagementPage: React.FC = () => {
         return;
       }
 
+      // Test decrypt functionality
+      const decryptedPassword = decryptPassword(userData.tempPassword);
+      if (!decryptedPassword) {
+        console.log("❌ Failed to decrypt password");
+        alert("Invalid login credentials. Please contact administrator.");
+        return;
+      }
+
+      console.log("✅ Password successfully decrypted for impersonation");
+
       // Create an impersonation session token instead of Firebase auth
       console.log("🎟️ Creating impersonation session...");
       const sessionToken = await createImpersonationSession(targetUser);
@@ -581,6 +660,24 @@ const UserManagementPage: React.FC = () => {
         throw new Error("Target user data not found");
       }
 
+      // Decrypt password for session data
+      const decryptedPassword = decryptPassword(userData.tempPassword);
+
+      // Verify email matches for security (reconstruct original encrypted data for verification)
+      if (userData.tempPassword && userData.tempPassword.startsWith("enc_")) {
+        try {
+          const encoded = userData.tempPassword.substring(4);
+          const decoded = atob(encoded);
+          const [, storedEmail] = decoded.split(":");
+          if (storedEmail !== targetUser.email) {
+            throw new Error("Email verification failed for decrypted password");
+          }
+        } catch (verifyError) {
+          console.error("Password verification failed:", verifyError);
+          throw new Error("Invalid login credentials");
+        }
+      }
+
       // Create a session token that contains user info without requiring Firebase auth
       const sessionData = {
         targetUserId: targetUser.uid,
@@ -593,7 +690,7 @@ const UserManagementPage: React.FC = () => {
           companyId: userData.companyId,
           isActive: targetUser.isActive,
           isOwner: userData.isOwner,
-          tempPassword: userData.tempPassword
+          tempPassword: decryptedPassword // Store decrypted password for impersonation
         },
         createdAt: Timestamp.now(),
         expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000), // 10 minutes
