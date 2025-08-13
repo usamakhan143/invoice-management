@@ -7,7 +7,6 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePermissionRefresh } from "../../hooks/usePermissionRefresh";
 import { db } from "../../services/firebase";
-import { FirestoreWrapper } from "../../services/firestoreWrapper";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
 import type { Invoice, Customer, BankAccount, Expense } from "../../types";
@@ -25,6 +24,7 @@ const DashboardPage: React.FC = () => {
     if (params.get('impersonated') || params.get('test_impersonated')) {
     }
   }, [location.search, userProfile]);
+
   const {
     canViewTotalRevenue,
     canViewOutstandingRevenue,
@@ -38,14 +38,13 @@ const DashboardPage: React.FC = () => {
     isAdmin
   } = usePermissions();
   const { refreshPermissions, setupRealTimeListeners } = usePermissionRefresh();
+  
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(
-    {},
-  );
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!user || !userProfile) return;
@@ -63,121 +62,119 @@ const DashboardPage: React.FC = () => {
       setLoading(false);
     }, 10000);
 
-    // Set up real-time listeners for invoices using the service
-    let invoicesUnsubscribe: () => void;
+    const unsubscribers: Array<() => void> = [];
 
+    // Set up real-time listeners for invoices
     try {
-      invoicesUnsubscribe = InvoiceService.getInvoicesRealTime(
+      const invoicesUnsubscribe = InvoiceService.getInvoicesRealTime(
         user,
         userProfile,
         isOwner,
         isAdmin,
         (invoicesData) => {
           setInvoices(invoicesData);
-          // Stop loading when invoice data is received (even if empty)
-          if (!loading) setLoading(false);
+          setLoading(false);
         },
       );
+      unsubscribers.push(invoicesUnsubscribe);
     } catch (error) {
       console.error("Error setting up invoice listener:", error);
       setInvoices([]);
-      setLoading(false);
     }
 
-    // Load other data with safer approach
-    const loadOtherData = async () => {
-      try {
-        // Load data one by one with individual error handling
-        let customersData: Customer[] = [];
-        let bankAccountsData: BankAccount[] = [];
-        let expensesData: Expense[] = [];
+    // Set up real-time listeners for customers
+    try {
+      const customersUnsubscribe = CustomerService.getCustomersRealTime(
+        user,
+        userProfile,
+        isOwner,
+        isAdmin,
+        (customersData) => {
+          setCustomers(customersData);
+        },
+      );
+      unsubscribers.push(customersUnsubscribe);
+    } catch (error) {
+      console.error("Error setting up customers listener:", error);
+      setCustomers([]);
+    }
 
-        // Load customers safely
-        try {
-          customersData = await CustomerService.getCustomers(
-            user,
-            userProfile,
-            isOwner,
-            isAdmin,
-          );
-        } catch (customerError) {
-          console.error("Error loading customers:", customerError);
-          customersData = [];
-        }
-
-        // Load bank accounts safely with retry logic
-        try {
-          const bankAccountsQuery = db
-            .collection("bankAccounts")
-            .where("userId", "==", companyId || user.uid);
-          const bankAccountsSnapshot = await FirestoreWrapper.query(bankAccountsQuery, {
-            maxRetries: 2,
-            timeoutMs: 8000
-          });
-          bankAccountsData = bankAccountsSnapshot.docs.map(
+    // Set up real-time listener for bank accounts
+    try {
+      const bankAccountsQuery = db
+        .collection("bankAccounts")
+        .where("userId", "==", companyId || user.uid);
+      
+      const bankAccountsUnsubscribe = bankAccountsQuery.onSnapshot(
+        (snapshot) => {
+          const bankAccountsData = snapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
           );
-        } catch (bankError) {
-          console.error("Error loading bank accounts:", bankError);
-          bankAccountsData = [];
+          setBankAccounts(bankAccountsData);
+        },
+        (error) => {
+          console.error("Error in bank accounts real-time listener:", error);
+          setBankAccounts([]);
         }
+      );
+      unsubscribers.push(bankAccountsUnsubscribe);
+    } catch (error) {
+      console.error("Error setting up bank accounts listener:", error);
+      setBankAccounts([]);
+    }
 
-        // Load expenses safely with retry logic
-        try {
-          const expensesQuery = db
-            .collection("expenses")
-            .where("userId", "==", user.uid);
-          const expensesSnapshot = await FirestoreWrapper.query(expensesQuery, {
-            maxRetries: 2,
-            timeoutMs: 8000
-          });
-          expensesData = expensesSnapshot.docs.map(
+    // Set up real-time listener for expenses
+    try {
+      const expensesQuery = db
+        .collection("expenses")
+        .where("userId", "==", user.uid);
+      
+      const expensesUnsubscribe = expensesQuery.onSnapshot(
+        (snapshot) => {
+          const expensesData = snapshot.docs.map(
             (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
           );
-        } catch (expenseError) {
-          console.error("Error loading expenses:", expenseError);
-          expensesData = [];
+          setExpenses(expensesData);
+        },
+        (error) => {
+          console.error("Error in expenses real-time listener:", error);
+          setExpenses([]);
         }
+      );
+      unsubscribers.push(expensesUnsubscribe);
+    } catch (error) {
+      console.error("Error setting up expenses listener:", error);
+      setExpenses([]);
+    }
 
-        // Set the data
-        setCustomers(customersData);
-        setBankAccounts(bankAccountsData);
-        setExpenses(expensesData);
-
-        // Load exchange rates separately
-        try {
-          const exchangeRatesResponse = await fetch(
-            "https://open.er-api.com/v6/latest/USD",
-          );
-          const data = await exchangeRatesResponse.json();
-          if (data && data.rates) {
-            setExchangeRates(data.rates);
-          } else {
-            setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
-          }
-        } catch (ratesError) {
-          console.error("Error loading exchange rates:", ratesError);
+    // Load exchange rates (not real-time, updated periodically)
+    const loadExchangeRates = async () => {
+      try {
+        const exchangeRatesResponse = await fetch(
+          "https://open.er-api.com/v6/latest/USD",
+        );
+        const data = await exchangeRatesResponse.json();
+        if (data && data.rates) {
+          setExchangeRates(data.rates);
+        } else {
           setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
         }
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-        setCustomers([]);
-        setBankAccounts([]);
-        setExpenses([]);
+      } catch (ratesError) {
+        console.error("Error loading exchange rates:", ratesError);
         setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
-      } finally {
-        setLoading(false);
       }
     };
 
-    loadOtherData();
+    loadExchangeRates();
+
+    // Refresh exchange rates every 5 minutes
+    const exchangeRatesInterval = setInterval(loadExchangeRates, 5 * 60 * 1000);
 
     // Cleanup function
     return () => {
       clearTimeout(timeoutId);
-      if (invoicesUnsubscribe) {
-        invoicesUnsubscribe();
-      }
+      clearInterval(exchangeRatesInterval);
+      unsubscribers.forEach(unsubscribe => unsubscribe());
     };
   }, [user, userProfile, isOwner, isAdmin]);
 
@@ -193,6 +190,7 @@ const DashboardPage: React.FC = () => {
     return symbol + formattedAmount;
   };
 
+  // Calculate real-time totals
   const totalRevenue = invoices
     .filter((inv) => inv.status === "paid")
     .reduce((sum, inv) => {
@@ -203,11 +201,15 @@ const DashboardPage: React.FC = () => {
 
   const outstandingRevenue = invoices
     .filter((inv) => inv.status === "sent" || inv.status === "overdue")
-    .reduce((sum, inv) => sum + inv.total, 0);
+    .reduce((sum, inv) => {
+      const rate = exchangeRates[inv.bankAccountCurrency || "USD"] || 1;
+      const convertedTotal = inv.total / rate;
+      return sum + convertedTotal;
+    }, 0);
 
   const thisMonthExpenses = expenses
     .filter((exp) => {
-      const expenseDate = exp.date.toDate();
+      const expenseDate = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date);
       const now = new Date();
       return (
         expenseDate.getMonth() === now.getMonth() &&
@@ -233,6 +235,7 @@ const DashboardPage: React.FC = () => {
     canViewMonthlyExpenses() || canViewTotalCustomers() || canViewDashboardBankAccounts() ||
     canViewRecentInvoices() || canAccessInvoiceVerification();
 
+  // Calculate real-time bank balances
   const bankBalances = bankAccounts.map((account) => {
     const paidInvoicesTotal = invoices
       .filter(
@@ -254,11 +257,11 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div className="mobile-p-4 p-4 sm:p-6">
-      <h1 className="mobile-text-2xl text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white mb-4 sm:mb-6">
-        Dashboard
-      </h1>
-
-
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
+        <h1 className="mobile-text-2xl text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
+          Dashboard
+        </h1>
+      </div>
 
       {!hasAnyDashboardPermission && !isOwner && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
@@ -272,62 +275,72 @@ const DashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* Stats Cards */}
+      {/* Stats Cards - All now update in real-time */}
       <div className="grid mobile-grid-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-4 sm:mb-6">
         {canViewTotalRevenue() && (
-          <DashboardCard
-            title="Total Revenue (Paid)"
-            value={formatCurrency(totalRevenue)}
-            icon={<RevenueIcon />}
-            color="bg-green-500"
-          />
+          <div className="relative">
+            <DashboardCard
+              title="Total Revenue (Paid)"
+              value={formatCurrency(totalRevenue)}
+              icon={<RevenueIcon />}
+              color="bg-green-500"
+            />
+          </div>
         )}
         {canViewOutstandingRevenue() && (
-          <DashboardCard
-            title="Outstanding Revenue"
-            value={formatCurrency(outstandingRevenue)}
-            icon={<InvoiceIcon />}
-            color="bg-yellow-500"
-          />
+          <div className="relative">
+            <DashboardCard
+              title="Outstanding Revenue"
+              value={formatCurrency(outstandingRevenue)}
+              icon={<InvoiceIcon />}
+              color="bg-yellow-500"
+            />
+          </div>
         )}
         {canViewMonthlyExpenses() && (
-          <DashboardCard
-            title="This Month Expenses"
-            value={formatCurrency(thisMonthExpenses)}
-            icon={
-              <svg
-                className="h-8 w-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
-            }
-            color="bg-red-500"
-          />
+          <div className="relative">
+            <DashboardCard
+              title="This Month Expenses"
+              value={formatCurrency(thisMonthExpenses)}
+              icon={
+                <svg
+                  className="h-8 w-8 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
+                </svg>
+              }
+              color="bg-red-500"
+            />
+          </div>
         )}
         {canViewTotalCustomers() && (
-          <DashboardCard
-            title="Total Customers"
-            value={customers.length.toString()}
-            icon={<CustomerIcon />}
-            color="bg-blue-500"
-          />
+          <div className="relative">
+            <DashboardCard
+              title="Total Customers"
+              value={customers.length.toString()}
+              icon={<CustomerIcon />}
+              color="bg-blue-500"
+            />
+          </div>
         )}
       </div>
 
-      {/* Bank Accounts Overview */}
+      {/* Bank Accounts Overview - Now updates in real-time */}
       {canViewDashboardBankAccounts() && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4">
-            Bank Accounts
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
+              Bank Accounts
+            </h2>
+          </div>
           {bankBalances.length === 0 ? (
             <div className="text-center py-4">
               <p className="text-gray-600 dark:text-gray-300 mb-4">
@@ -370,106 +383,108 @@ const DashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* Recent Invoices */}
+      {/* Recent Invoices - Already has real-time updates */}
       {canViewRecentInvoices() && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-            Recent Invoices
-          </h2>
-          <Link
-            to="/invoices"
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            View All
-          </Link>
-        </div>
-
-        {invoices.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-gray-600 dark:text-gray-300 mb-4">
-              No invoices found.
-            </p>
-            <Link
-              to="/invoices/new"
-              className="inline-block px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-            >
-              Create First Invoice
-            </Link>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
+              Recent Invoices
+            </h2>
+            <div className="flex items-center gap-4">
+              <Link
+                to="/invoices"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View All
+              </Link>
+            </div>
           </div>
-        ) : (
-          <div className="table-responsive">
-            <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                <tr>
-                  <th scope="col" className="px-6 py-3">
-                    Invoice #
-                  </th>
-                  <th scope="col" className="px-6 py-3">
-                    Customer
-                  </th>
-                  <th scope="col" className="px-6 py-3">
-                    Amount
-                  </th>
-                  <th scope="col" className="px-6 py-3">
-                    Status
-                  </th>
-                  {(isOwner || isAdmin) && (
+
+          {invoices.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                No invoices found.
+              </p>
+              <Link
+                to="/invoices/new"
+                className="inline-block px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Create First Invoice
+              </Link>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                  <tr>
                     <th scope="col" className="px-6 py-3">
-                      Created By
+                      Invoice #
                     </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.slice(0, 5).map((invoice) => (
-                  <tr
-                    key={invoice.id}
-                    className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
-                  >
-                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
-                      {invoice.invoiceNumber}
-                    </td>
-                    <td className="px-6 py-4">{invoice.customerName}</td>
-                    <td className="px-6 py-4">
-                      {(() => {
-                        const bankAccount = bankAccounts.find(
-                          (b) => b.id === invoice.bankAccountId,
-                        );
-                        return formatCurrency(
-                          invoice.total,
-                          invoice.bankAccountCurrency || "USD",
-                          bankAccount?.currencySymbol || "$",
-                        );
-                      })()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          invoice.status === "paid"
-                            ? "bg-green-100 text-green-800"
-                            : invoice.status === "sent"
-                              ? "bg-blue-100 text-blue-800"
-                              : invoice.status === "overdue"
-                                ? "bg-red-100 text-red-800"
-                                : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {invoice.status.charAt(0).toUpperCase() +
-                          invoice.status.slice(1)}
-                      </span>
-                    </td>
+                    <th scope="col" className="px-6 py-3">
+                      Customer
+                    </th>
+                    <th scope="col" className="px-6 py-3">
+                      Amount
+                    </th>
+                    <th scope="col" className="px-6 py-3">
+                      Status
+                    </th>
                     {(isOwner || isAdmin) && (
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        {invoice.createdBy || "Unknown User"}
-                      </td>
+                      <th scope="col" className="px-6 py-3">
+                        Created By
+                      </th>
                     )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {invoices.slice(0, 5).map((invoice) => (
+                    <tr
+                      key={invoice.id}
+                      className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                    >
+                      <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                        {invoice.invoiceNumber}
+                      </td>
+                      <td className="px-6 py-4">{invoice.customerName}</td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const bankAccount = bankAccounts.find(
+                            (b) => b.id === invoice.bankAccountId,
+                          );
+                          return formatCurrency(
+                            invoice.total,
+                            invoice.bankAccountCurrency || "USD",
+                            bankAccount?.currencySymbol || "$",
+                          );
+                        })()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            invoice.status === "paid"
+                              ? "bg-green-100 text-green-800"
+                              : invoice.status === "sent"
+                                ? "bg-blue-100 text-blue-800"
+                                : invoice.status === "overdue"
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {invoice.status.charAt(0).toUpperCase() +
+                            invoice.status.slice(1)}
+                        </span>
+                      </td>
+                      {(isOwner || isAdmin) && (
+                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                          {invoice.createdBy || "Unknown User"}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

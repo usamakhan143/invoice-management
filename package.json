@@ -7,7 +7,8 @@
     "dev": "vite",
     "start": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cleanup-db": "node scripts/cleanup-database.js --confirm"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.0",
@@ -20,6 +21,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "firebase-admin": "^12.0.0",
     "typescript": "~5.7.2",
     "vite": "^6.2.0"
   }

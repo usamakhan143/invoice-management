@@ -93,7 +93,7 @@ export class InvoiceService {
     }
   }
 
-  // Get invoices based on user role with safer polling approach
+  // Real-time invoices listener with proper Firebase onSnapshot
   static getInvoicesRealTime(
     user: any,
     userProfile: any,
@@ -102,41 +102,56 @@ export class InvoiceService {
     callback: (invoices: Invoice[]) => void,
   ): () => void {
     const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
-    let isActive = true;
 
-    // Function to fetch invoices safely
-    const fetchInvoices = async () => {
-      if (!isActive) return;
+    // Build Firestore query based on user role
+    let query;
+    if (isOwner || isAdmin) {
+      // Admin sees all company invoices
+      query = db
+        .collection("invoices")
+        .where("companyId", "==", companyId || user.uid)
+        .orderBy("issueDate", "desc");
+    } else {
+      // Regular user sees their own invoices
+      query = db
+        .collection("invoices")
+        .where("createdById", "==", user.uid)
+        .orderBy("issueDate", "desc");
+    }
 
-      try {
-        const invoicesData = await this.getInvoices(
-          user,
-          userProfile,
-          isOwner,
-          isAdmin,
-        );
-        if (isActive) {
+    // Set up real-time listener
+    const unsubscribe = query.onSnapshot(
+      (snapshot) => {
+        try {
+          const invoicesData = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              // Ensure required fields exist with defaults
+              issueDate: data.issueDate || { toDate: () => new Date() },
+              createdBy: data.createdBy || "Unknown User",
+              companyId: data.companyId || "",
+              createdById: data.createdById || "",
+              status: data.status || "draft",
+              total: data.total || 0,
+              customerName: data.customerName || "Unknown Customer",
+            } as Invoice;
+          });
+
           callback(invoicesData);
-        }
-      } catch (error) {
-        console.error("Error fetching invoices:", error);
-        if (isActive) {
+        } catch (error) {
+          console.error("Error processing invoices snapshot:", error);
           callback([]);
         }
+      },
+      (error) => {
+        console.error("Error in invoices real-time listener:", error);
+        callback([]);
       }
-    };
+    );
 
-    // Initial fetch
-    fetchInvoices();
-
-    // Set up polling every 5 seconds for updates (safer than real-time listeners)
-    const intervalId = setInterval(fetchInvoices, 5000);
-
-    // Return cleanup function
-    return () => {
-      isActive = false;
-      clearInterval(intervalId);
-    };
+    return unsubscribe;
   }
 
   // Get invoices based on user role (static method - safer approach)

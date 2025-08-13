@@ -117,7 +117,7 @@ export class CustomerService {
     }
   }
 
-  // Real-time customers listener (same pattern as invoices)
+  // Real-time customers listener with proper Firebase onSnapshot
   static getCustomersRealTime(
     user: any,
     userProfile: any,
@@ -125,41 +125,58 @@ export class CustomerService {
     isAdmin: boolean,
     callback: (customers: Customer[]) => void,
   ): () => void {
-    let isActive = true;
+    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
 
-    // Function to fetch customers safely
-    const fetchCustomers = async () => {
-      if (!isActive) return;
+    // Build Firestore query based on user role
+    let query;
+    if (isOwner || isAdmin) {
+      // Admin sees all company customers
+      query = db
+        .collection("customers")
+        .where("companyId", "==", companyId || user.uid)
+        .orderBy("createdAt", "desc");
+    } else {
+      // Regular user sees their own customers
+      query = db
+        .collection("customers")
+        .where("createdById", "==", user.uid)
+        .orderBy("createdAt", "desc");
+    }
 
-      try {
-        const customersData = await this.getCustomers(
-          user,
-          userProfile,
-          isOwner,
-          isAdmin,
-        );
-        if (isActive) {
+    // Set up real-time listener
+    const unsubscribe = query.onSnapshot(
+      (snapshot) => {
+        try {
+          const customersData = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              // Ensure required fields exist with defaults
+              name: data.name || "Unknown Customer",
+              email: data.email || "",
+              phone: data.phone || "",
+              address: data.address || "",
+              createdBy: data.createdBy || "Unknown User",
+              companyId: data.companyId || "",
+              createdById: data.createdById || "",
+              createdAt: data.createdAt || Timestamp.now(),
+            } as Customer;
+          });
+
           callback(customersData);
-        }
-      } catch (error) {
-        console.error("Error fetching customers:", error);
-        if (isActive) {
+        } catch (error) {
+          console.error("Error processing customers snapshot:", error);
           callback([]);
         }
+      },
+      (error) => {
+        console.error("Error in customers real-time listener:", error);
+        callback([]);
       }
-    };
+    );
 
-    // Initial fetch
-    fetchCustomers();
-
-    // Set up polling every 5 seconds for updates (same as invoices)
-    const intervalId = setInterval(fetchCustomers, 5000);
-
-    // Return cleanup function
-    return () => {
-      isActive = false;
-      clearInterval(intervalId);
-    };
+    return unsubscribe;
   }
 
   // Delete customer from centralized collection

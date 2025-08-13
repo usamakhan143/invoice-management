@@ -27,3 +27,5 @@ dist-ssr
 .env
 
 .config/
+scripts
+SESSION_MEMORY.md

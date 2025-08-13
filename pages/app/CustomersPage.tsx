@@ -70,6 +70,7 @@ const CustomersPage: React.FC = () => {
   const [currentCustomer, setCurrentCustomer] =
     useState<Partial<Customer> | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const customersPerPage = 20;
 
   // Check if user has permission to view customers page
@@ -82,49 +83,38 @@ const CustomersPage: React.FC = () => {
     }
   }, [user, userProfile, canViewCustomers, navigate]);
 
-  // Load customers function using centralized CustomerService (same pattern as invoices)
-  const loadCustomers = async () => {
-    if (!user || !userProfile) return;
-
-    setLoading(true);
-    try {
-      const customersData = await CustomerService.getCustomers(
-        user,
-        userProfile,
-        isOwner,
-        isAdmin,
-      );
-
-      setCustomers(customersData);
-      setFilteredCustomers(customersData);
-      setCurrentPage(1);
-    } catch (error) {
-      console.error("Error loading customers:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Set up real-time listener for customers
   useEffect(() => {
     if (!user || !userProfile) return;
 
     // Only proceed if user has permission to view customers
     if (!canViewCustomers()) return;
 
-    // Set up real-time listener using CustomerService (same pattern as invoices)
-    const unsubscribe = CustomerService.getCustomersRealTime(
-      user,
-      userProfile,
-      isOwner,
-      isAdmin,
-      (customersData) => {
-        setCustomers(customersData);
-        setFilteredCustomers(customersData);
-        setLoading(false);
-      },
-    );
+    let unsubscribe: () => void;
 
-    return () => unsubscribe();
+    try {
+      // Set up real-time listener using CustomerService
+      unsubscribe = CustomerService.getCustomersRealTime(
+        user,
+        userProfile,
+        isOwner,
+        isAdmin,
+        (customersData) => {
+          setCustomers(customersData);
+          setFilteredCustomers(customersData);
+          setLoading(false);
+        },
+      );
+    } catch (error) {
+      console.error("Error setting up customers real-time listener:", error);
+      setLoading(false);
+    }
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [user, userProfile, canViewCustomers, isOwner, isAdmin]);
 
   // Filter customers based on search term
@@ -145,17 +135,28 @@ const CustomersPage: React.FC = () => {
   }, [searchTerm, customers]);
 
   const handleSubmit = async () => {
-    if (!user || !userProfile || !currentCustomer) return;
+    if (!user || !userProfile || !currentCustomer || isSubmitting) return;
 
+    setIsSubmitting(true);
     try {
       const isUpdate = "id" in currentCustomer && currentCustomer.id;
 
+      // Validate required fields
+      if (!currentCustomer.name?.trim()) {
+        alert("Name is required");
+        return;
+      }
+      if (!currentCustomer.email?.trim()) {
+        alert("Email is required");
+        return;
+      }
+
       // Prepare customer data
       const customerData = {
-        name: currentCustomer.name || "",
-        email: currentCustomer.email || "",
-        phone: currentCustomer.phone || "",
-        address: currentCustomer.address || "",
+        name: currentCustomer.name.trim(),
+        email: currentCustomer.email.trim(),
+        phone: currentCustomer.phone?.trim() || "",
+        address: currentCustomer.address?.trim() || "",
       };
 
       // Use CustomerService to save (handles creator tracking automatically)
@@ -184,6 +185,8 @@ const CustomersPage: React.FC = () => {
     } catch (error) {
       console.error("Error saving customer:", error);
       alert("Failed to save customer. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -245,6 +248,7 @@ const CustomersPage: React.FC = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setCurrentCustomer(null);
+    setIsSubmitting(false);
   };
 
   if (loading) {
@@ -270,28 +274,6 @@ const CustomersPage: React.FC = () => {
             Customers
           </h1>
           <div className="button-group">
-            <button
-              onClick={() => {
-                setLoading(true);
-                loadCustomers();
-              }}
-              className="mobile-btn-icon p-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
-              title="Refresh customer list"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button>
             {canCreateCustomer() && (
               <button
                 onClick={() => openModal()}
@@ -443,7 +425,7 @@ const CustomersPage: React.FC = () => {
         onPageChange={setCurrentPage}
       />
 
-      {/* Modal - Match Product Popup Design Exactly */}
+      {/* Modal */}
       {isModalOpen && currentCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
@@ -453,8 +435,8 @@ const CustomersPage: React.FC = () => {
             <div className="space-y-4">
               <input
                 type="text"
-                placeholder="Name"
-                value={currentCustomer.name}
+                placeholder="Name *"
+                value={currentCustomer.name || ""}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -462,11 +444,12 @@ const CustomersPage: React.FC = () => {
                   })
                 }
                 className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                required
               />
               <input
                 type="email"
-                placeholder="Email"
-                value={currentCustomer.email}
+                placeholder="Email *"
+                value={currentCustomer.email || ""}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -474,11 +457,12 @@ const CustomersPage: React.FC = () => {
                   })
                 }
                 className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                required
               />
               <input
                 type="tel"
                 placeholder="Phone"
-                value={currentCustomer.phone}
+                value={currentCustomer.phone || ""}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -489,7 +473,7 @@ const CustomersPage: React.FC = () => {
               />
               <textarea
                 placeholder="Address (optional)"
-                value={currentCustomer.address}
+                value={currentCustomer.address || ""}
                 onChange={(e) =>
                   setCurrentCustomer({
                     ...currentCustomer,
@@ -502,15 +486,32 @@ const CustomersPage: React.FC = () => {
             <div className="mt-6 flex justify-end space-x-3">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                disabled={isSubmitting || !currentCustomer?.name?.trim() || !currentCustomer?.email?.trim()}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Save
+                {isSubmitting && (
+                  <svg
+                    className="w-4 h-4 animate-spin"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                )}
+                {isSubmitting ? "Saving..." : "Save"}
               </button>
             </div>
           </div>
