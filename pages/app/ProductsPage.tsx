@@ -3,8 +3,8 @@ import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PAGES } from "../../config/permissions";
-import { db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
+import { ProductService } from "../../services/productService";
 import type { Product } from "../../types";
 import Spinner from "../../components/Spinner";
 
@@ -25,17 +25,19 @@ const ProductsPage: React.FC = () => {
     null,
   );
 
+  // Set up real-time listener for products
   useEffect(() => {
     if (!user || !userProfile) return;
 
-    // Set up real-time listener for current user's products
-    const unsubscribe = db.collection(`users/${user.uid}/products`).onSnapshot(
-      () => {
-        // Reload all products when user's products change
-        loadProducts();
-      },
-      (error) => {
-        console.error("Error in products listener:", error);
+    // Set up real-time listener using ProductService
+    const unsubscribe = ProductService.getProductsRealTime(
+      user,
+      userProfile,
+      isOwner,
+      isAdmin,
+      (productsData) => {
+        setProducts(productsData);
+        setLoading(false);
       },
     );
 
@@ -43,7 +45,7 @@ const ProductsPage: React.FC = () => {
     loadProducts();
 
     return () => unsubscribe();
-  }, [user, userProfile]);
+  }, [user, userProfile, isOwner, isAdmin]);
 
   const openModal = (product: Partial<Product> | null = null) => {
     setCurrentProduct(
@@ -63,56 +65,12 @@ const ProductsPage: React.FC = () => {
     if (!user || !userProfile) return;
     setLoading(true);
     try {
-      let productsData: Product[] = [];
-
-      if (isOwner || isAdmin) {
-        // Admin sees all company products across all users
-        const companyId = userProfile.isOwner
-          ? user.uid
-          : userProfile.companyId;
-        if (companyId) {
-          const allUsersSnapshot = await db
-            .collection("users")
-            .where("companyId", "==", companyId)
-            .get();
-
-          const userIds = allUsersSnapshot.docs.map((doc) => doc.id);
-          userIds.push(companyId); // Include owner's products
-
-          // Get products from all company users
-          const productsPromises = userIds.map((userId) =>
-            db.collection(`users/${userId}/products`).get(),
-          );
-
-          const productsSnapshots = await Promise.all(productsPromises);
-
-          productsSnapshots.forEach((snapshot) => {
-            snapshot.docs.forEach((doc) => {
-              productsData.push({ id: doc.id, ...doc.data() } as Product);
-            });
-          });
-        }
-      } else {
-        // Regular user sees only their products
-        const snapshot = await db
-          .collection(`users/${user.uid}/products`)
-          .get();
-        productsData = snapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Product,
-        );
-      }
-
-      // Sort products by creation date (most recent first) - Issue #8
-      productsData.sort((a, b) => {
-        const dateA = (a as any).createdAt
-          ? new Date((a as any).createdAt).getTime()
-          : 0;
-        const dateB = (b as any).createdAt
-          ? new Date((b as any).createdAt).getTime()
-          : 0;
-        return dateB - dateA;
-      });
-
+      const productsData = await ProductService.getProducts(
+        user,
+        userProfile,
+        isOwner,
+        isAdmin,
+      );
       setProducts(productsData);
     } catch (error) {
       console.error("Error loading products:", error);
@@ -135,26 +93,18 @@ const ProductsPage: React.FC = () => {
 
       // Prepare product data for saving, handle undefined price
       const productData = {
-        ...currentProduct,
+        name: currentProduct.name,
+        description: currentProduct.description || "",
         price: currentProduct.price || 0, // Convert undefined/null to 0
-        ...(isUpdate
-          ? {
-              updatedBy: userProfile.companyName || user.email,
-              updatedById: user.uid,
-              updatedAt: new Date(),
-            }
-          : {
-              createdBy: userProfile.companyName || user.email,
-              createdById: user.uid,
-              createdAt: new Date(),
-            }),
       };
 
       if (isUpdate) {
-        await db
-          .collection(`users/${user.uid}/products`)
-          .doc(currentProduct.id)
-          .update(productData);
+        await ProductService.saveProduct(
+          productData,
+          user,
+          userProfile,
+          currentProduct.id,
+        );
 
         // Log update activity
         await ActivityLogger.logActivity(
@@ -169,9 +119,11 @@ const ProductsPage: React.FC = () => {
           },
         );
       } else {
-        const docRef = await db
-          .collection(`users/${user.uid}/products`)
-          .add(productData);
+        const productId = await ProductService.saveProduct(
+          productData,
+          user,
+          userProfile,
+        );
 
         // Log create activity
         await ActivityLogger.logActivity(
@@ -180,7 +132,7 @@ const ProductsPage: React.FC = () => {
           "product_created",
           `Created new product: ${productData.name}`,
           {
-            entityId: docRef.id,
+            entityId: productId,
             entityType: "product",
             newValue: productData,
           },
@@ -203,10 +155,7 @@ const ProductsPage: React.FC = () => {
 
     if (window.confirm("Are you sure you want to delete this product?")) {
       try {
-        await db
-          .collection(`users/${user.uid}/products`)
-          .doc(productId)
-          .delete();
+        await ProductService.deleteProduct(productId);
 
         // Log delete activity
         await ActivityLogger.logActivity(
@@ -339,11 +288,11 @@ const ProductsPage: React.FC = () => {
                         <div className="text-gray-500 text-xs">
                           {(product as any).createdAt
                             ? new Date(
-                                (product as any).createdAt,
+                                (product as any).createdAt.toDate(),
                               ).toLocaleDateString()
                             : (product as any).updatedAt
                               ? new Date(
-                                  (product as any).updatedAt,
+                                  (product as any).updatedAt.toDate(),
                                 ).toLocaleDateString()
                               : ""}
                         </div>

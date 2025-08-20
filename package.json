@@ -8,7 +8,8 @@
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "cleanup-db": "node scripts/cleanup-database.js --confirm"
+    "cleanup-db": "node scripts/cleanup-database.js --confirm",
+    "migrate-products": "node scripts/migrate-products.js --confirm"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.0",

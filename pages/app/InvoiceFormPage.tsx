@@ -5,6 +5,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { db, FieldValue, Timestamp } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
+import { ProductService } from "../../services/productService";
 import type {
   Invoice,
   InvoiceItem,
@@ -91,32 +92,13 @@ const InvoiceFormPage: React.FC = () => {
       );
       setCustomers(customersData);
 
-      // Load products: user's own + company products if authorized
-      let productsData: Product[] = [];
-
-      // User's own products
-      const userProductsSnap = await db
-        .collection(`users/${user.uid}/products`)
-        .get();
-      productsData = userProductsSnap.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() }) as Product,
+      // Load products using ProductService
+      const productsData = await ProductService.getProductsForInvoice(
+        user,
+        userProfile,
+        userProfile?.isOwner || false,
+        userProfile?.role === "admin" || false,
       );
-
-      // Company products (if user has access and it's different from user)
-      if (companyId && companyId !== user.uid) {
-        const companyProductsSnap = await db
-          .collection(`users/${companyId}/products`)
-          .get();
-        const companyProducts = companyProductsSnap.docs.map(
-          (doc) =>
-            ({
-              id: doc.id,
-              ...doc.data(),
-              _isCompanyProduct: true,
-            }) as Product,
-        );
-        productsData = [...productsData, ...companyProducts];
-      }
 
       setProducts(productsData);
 

@@ -80,6 +80,14 @@ export interface Product {
   name: string;
   description: string;
   price: number;
+  // Creator tracking (same pattern as Customer and Invoice)
+  createdBy?: string;
+  createdById?: string;
+  companyId?: string;
+  createdAt?: firebase.firestore.Timestamp;
+  updatedBy?: string;
+  updatedById?: string;
+  updatedAt?: firebase.firestore.Timestamp;
 }
 
 export interface InvoiceItem {
