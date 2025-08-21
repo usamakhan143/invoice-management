@@ -20,6 +20,8 @@ const ExpensesPage: React.FC = () => {
   const [currentExpense, setCurrentExpense] = useState<Partial<Expense> | null>(
     null,
   );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [amountError, setAmountError] = useState("");
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>(
     {},
   );
@@ -45,86 +47,28 @@ const ExpensesPage: React.FC = () => {
     "Other",
   ];
 
-  const loadData = async () => {
-    if (!user || !userProfile) return;
-
-    setLoading(true);
-
+  const loadExchangeRates = async () => {
     try {
-      // Determine company ID for bank accounts access
-      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-
-      // Load exchange rates first
-      try {
-        const response = await fetch("https://open.er-api.com/v6/latest/USD", {
-          signal: AbortSignal.timeout(5000),
-        });
-        const data = await response.json();
-        if (data && data.rates) {
-          setExchangeRates(data.rates);
-        } else {
-          throw new Error("Invalid exchange rate data");
-        }
-      } catch (error) {
-        console.error("Failed to load exchange rates:", error);
-        setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
-      }
-
-      // Load bank accounts and expenses in parallel using get() instead of onSnapshot
-      const [bankAccountsSnapshot, expensesSnapshot] = await Promise.allSettled(
-        [
-          // Load all company bank accounts for users with permission
-          companyId
-            ? db
-                .collection("bankAccounts")
-                .where("userId", "==", companyId)
-                .get()
-            : db
-                .collection("bankAccounts")
-                .where("userId", "==", user.uid)
-                .get(),
-          db.collection("expenses").where("userId", "==", user.uid).get(), // Removed .orderBy("date", "desc")
-        ],
-      );
-
-      // Process bank accounts
-      if (bankAccountsSnapshot.status === "fulfilled") {
-        const bankAccountsData = bankAccountsSnapshot.value.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-        );
-        setBankAccounts(bankAccountsData);
+      const response = await fetch("https://open.er-api.com/v6/latest/USD", {
+        signal: AbortSignal.timeout(5000),
+      });
+      const data = await response.json();
+      if (data && data.rates) {
+        setExchangeRates(data.rates);
       } else {
-        console.error(
-          "Error loading bank accounts:",
-          bankAccountsSnapshot.reason,
-        );
-        setBankAccounts([]);
+        throw new Error("Invalid exchange rate data");
       }
-
-      // Process expenses
-      if (expensesSnapshot.status === "fulfilled") {
-        const expensesData = expensesSnapshot.value.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
-        );
-
-        // Sort manually to avoid Firestore index requirement
-        expensesData.sort((a, b) => {
-          const aTime = a.date?.toDate?.() || new Date();
-          const bTime = b.date?.toDate?.() || new Date();
-          return bTime.getTime() - aTime.getTime();
-        });
-
-        setExpenses(expensesData);
-      } else {
-        console.error("Error loading expenses:", expensesSnapshot.reason);
-        setExpenses([]);
-      }
-
-      setLoading(false);
     } catch (error) {
-      console.error("Error loading data:", error);
-      setLoading(false);
+      console.error("Failed to load exchange rates:", error);
+      setExchangeRates({ USD: 1, PKR: 278, EUR: 0.85 });
     }
+  };
+
+  const refreshData = async () => {
+    setLoading(true);
+    await loadExchangeRates();
+    // Real-time listeners will handle the data updates
+    setTimeout(() => setLoading(false), 1000);
   };
 
   // Page access control
@@ -139,23 +83,66 @@ const ExpensesPage: React.FC = () => {
     if (!user || !userProfile) return;
 
     // Set up real-time listener for user's expenses
-    const unsubscribe = db
+    const expensesUnsubscribe = db
       .collection("expenses")
       .where("userId", "==", user.uid)
       .onSnapshot(
-        () => {
-          // Reload data when expenses change
-          loadData();
+        (snapshot) => {
+          try {
+            const expensesData = snapshot.docs.map(
+              (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
+            );
+
+            // Sort manually to avoid Firestore index requirement
+            expensesData.sort((a, b) => {
+              const aTime = a.date?.toDate?.() || new Date();
+              const bTime = b.date?.toDate?.() || new Date();
+              return bTime.getTime() - aTime.getTime();
+            });
+
+            setExpenses(expensesData);
+            setLoading(false);
+          } catch (error) {
+            console.error("Error processing expenses snapshot:", error);
+            setExpenses([]);
+            setLoading(false);
+          }
         },
         (error) => {
-          console.error("Error in expenses listener:", error);
+          console.error("Error in expenses real-time listener:", error);
+          setLoading(false);
         },
       );
 
-    // Initial load
-    loadData();
+    // Set up real-time listener for bank accounts
+    const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
+    const bankAccountsUnsubscribe = db
+      .collection("bankAccounts")
+      .where("userId", "==", companyId || user.uid)
+      .onSnapshot(
+        (snapshot) => {
+          try {
+            const bankAccountsData = snapshot.docs.map(
+              (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
+            );
+            setBankAccounts(bankAccountsData);
+          } catch (error) {
+            console.error("Error processing bank accounts snapshot:", error);
+            setBankAccounts([]);
+          }
+        },
+        (error) => {
+          console.error("Error in bank accounts real-time listener:", error);
+        },
+      );
 
-    return () => unsubscribe();
+    // Load exchange rates once
+    loadExchangeRates();
+
+    return () => {
+      expensesUnsubscribe();
+      bankAccountsUnsubscribe();
+    };
   }, [user, userProfile]);
 
   const getFilteredExpenses = () => {
@@ -264,23 +251,96 @@ const ExpensesPage: React.FC = () => {
         date: Timestamp.now(),
       });
     }
+    setAmountError("");
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setCurrentExpense(null);
+    setAmountError("");
+  };
+
+  const validateAmount = (amount: number, bankAccountId: string) => {
+    if (!bankAccountId) {
+      setAmountError("Please select a bank account first");
+      return false;
+    }
+
+    if (!amount || amount <= 0) {
+      setAmountError("Please enter a valid amount greater than 0");
+      return false;
+    }
+
+    const selectedBank = bankAccounts.find(b => b.id === bankAccountId);
+    if (selectedBank) {
+      const availableBalance = selectedBank.currentBalance || selectedBank.initialBalance || 0;
+      if (amount > availableBalance) {
+        setAmountError(`Insufficient balance. Available: ${selectedBank.currencySymbol}${availableBalance.toFixed(2)}`);
+        return false;
+      }
+    }
+
+    setAmountError("");
+    return true;
+  };
+
+  const handleAmountChange = (value: string) => {
+    const amount = parseFloat(value) || 0;
+    setCurrentExpense({
+      ...currentExpense,
+      amount: amount,
+    });
+
+    // Validate amount if bank account is selected
+    if (currentExpense?.bankAccountId) {
+      validateAmount(amount, currentExpense.bankAccountId);
+    }
+  };
+
+  const handleBankAccountChange = (bankAccountId: string) => {
+    setCurrentExpense({
+      ...currentExpense,
+      bankAccountId: bankAccountId,
+    });
+
+    // Clear amount error when bank account changes
+    setAmountError("");
+
+    // Re-validate amount if there's an amount entered
+    if (currentExpense?.amount) {
+      validateAmount(currentExpense.amount, bankAccountId);
+    }
   };
 
   const handleSave = async () => {
     if (!user || !currentExpense || !userProfile) return;
+
+    // Validate required fields
+    if (!currentExpense.title?.trim()) {
+      alert("Please enter a title");
+      return;
+    }
+    if (!currentExpense.category) {
+      alert("Please select a category");
+      return;
+    }
+    if (!currentExpense.bankAccountId) {
+      alert("Please select a bank account");
+      return;
+    }
+    if (!validateAmount(currentExpense.amount || 0, currentExpense.bankAccountId)) {
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
       const selectedBank = bankAccounts.find(
         (b) => b.id === currentExpense.bankAccountId,
       );
       if (!selectedBank) {
-        alert("Please select a bank account");
+        alert("Selected bank account not found");
         return;
       }
 
@@ -342,11 +402,12 @@ const ExpensesPage: React.FC = () => {
       }
 
       closeModal();
-      // Auto refresh data after successful operation
-      await loadData();
+      // Real-time listener will automatically update the expenses list
     } catch (error) {
       console.error("Error saving expense:", error);
       alert("Failed to save expense");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -385,8 +446,7 @@ const ExpensesPage: React.FC = () => {
           },
         );
 
-        // Auto refresh data after successful deletion
-        await loadData();
+        // Real-time listener will automatically update the expenses list
       } catch (error) {
         console.error("Error deleting expense:", error);
         alert("Failed to delete expense");
@@ -414,7 +474,7 @@ const ExpensesPage: React.FC = () => {
         </h1>
         <div className="button-group">
           <button
-            onClick={() => loadData()}
+            onClick={() => refreshData()}
             disabled={loading}
             className="mobile-btn-icon p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             title={loading ? "Loading..." : "Refresh"}
@@ -686,43 +746,30 @@ const ExpensesPage: React.FC = () => {
                 className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 rows={3}
               />
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Amount"
-                  value={currentExpense.amount || ""}
-                  onChange={(e) =>
-                    setCurrentExpense({
-                      ...currentExpense,
-                      amount: parseFloat(e.target.value) || 0,
-                    })
-                  }
+
+              {/* Bank Account Selection - Moved after description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Bank Account *
+                </label>
+                <select
+                  value={currentExpense.bankAccountId}
+                  onChange={(e) => handleBankAccountChange(e.target.value)}
                   className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   required
-                />
-                <input
-                  type="date"
-                  value={
-                    currentExpense.date
-                      ? currentExpense.date instanceof Date
-                        ? currentExpense.date.toISOString().split("T")[0]
-                        : currentExpense.date
-                            .toDate()
-                            .toISOString()
-                            .split("T")[0]
-                      : ""
-                  }
-                  onChange={(e) =>
-                    setCurrentExpense({
-                      ...currentExpense,
-                      date: Timestamp.fromDate(new Date(e.target.value)),
-                    })
-                  }
-                  className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  required
-                />
+                >
+                  <option value="">Select Bank Account</option>
+                  {bankAccounts.map((bank) => {
+                    const balance = bank.currentBalance || bank.initialBalance || 0;
+                    return (
+                      <option key={bank.id} value={bank.id}>
+                        {bank.accountName} - {bank.bankName} ({bank.currencySymbol}) - Balance: {bank.currencySymbol}{balance.toFixed(2)}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
+
               <select
                 value={currentExpense.category}
                 onChange={(e) =>
@@ -741,24 +788,69 @@ const ExpensesPage: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <select
-                value={currentExpense.bankAccountId}
-                onChange={(e) =>
-                  setCurrentExpense({
-                    ...currentExpense,
-                    bankAccountId: e.target.value,
-                  })
-                }
-                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                required
-              >
-                <option value="">Select Bank Account</option>
-                {bankAccounts.map((bank) => (
-                  <option key={bank.id} value={bank.id}>
-                    {bank.accountName} - {bank.bankName} ({bank.currencySymbol})
-                  </option>
-                ))}
-              </select>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Amount *
+                    {currentExpense.bankAccountId && (() => {
+                      const selectedBank = bankAccounts.find(b => b.id === currentExpense.bankAccountId);
+                      return selectedBank ? (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                          (Available: {selectedBank.currencySymbol}{(selectedBank.currentBalance || selectedBank.initialBalance || 0).toFixed(2)})
+                        </span>
+                      ) : null;
+                    })()}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder={currentExpense.bankAccountId ? "Enter amount" : "Select bank account first"}
+                    value={currentExpense.amount || ""}
+                    onChange={(e) => handleAmountChange(e.target.value)}
+                    disabled={!currentExpense.bankAccountId}
+                    className={`w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
+                      !currentExpense.bankAccountId
+                        ? 'bg-gray-100 dark:bg-gray-600 cursor-not-allowed opacity-50'
+                        : amountError
+                          ? 'border-red-500 dark:border-red-400'
+                          : ''
+                    }`}
+                    required
+                  />
+                  {amountError && (
+                    <p className="text-red-500 dark:text-red-400 text-xs mt-1">
+                      {amountError}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={
+                      currentExpense.date
+                        ? currentExpense.date instanceof Date
+                          ? currentExpense.date.toISOString().split("T")[0]
+                          : currentExpense.date
+                              .toDate()
+                              .toISOString()
+                              .split("T")[0]
+                        : ""
+                    }
+                    onChange={(e) =>
+                      setCurrentExpense({
+                        ...currentExpense,
+                        date: Timestamp.fromDate(new Date(e.target.value)),
+                      })
+                    }
+                    className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    required
+                  />
+                </div>
+              </div>
             </div>
             <div className="mt-6 flex justify-end space-x-3">
               <button
@@ -769,9 +861,36 @@ const ExpensesPage: React.FC = () => {
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[80px]"
               >
-                Save
+                {isSubmitting ? (
+                  <>
+                    <svg
+                      className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
               </button>
             </div>
           </div>
