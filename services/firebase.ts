@@ -185,5 +185,6 @@ export const enableOfflineSupport = async () => {
 
 export const FieldValue = firebase.firestore.FieldValue
 export const Timestamp = firebase.firestore.Timestamp
+export const FieldPath = firebase.firestore.FieldPath
 
 export default app
