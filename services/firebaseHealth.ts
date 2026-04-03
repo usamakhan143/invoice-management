@@ -3,7 +3,12 @@ import { shouldUseOfflineData, sampleInvoices, sampleCustomers, sampleProducts, 
 
 export class FirebaseHealth {
   private static cache = new Map<string, { data: any[], timestamp: number }>();
-  private static readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  /** Shorter TTL in production so lists stay fresher; dev keeps longer cache for fewer reads while testing. */
+  private static getCacheDurationMs(): number {
+    return import.meta.env.PROD ? 90 * 1000 : 5 * 60 * 1000;
+  }
+  /** Avoid caching entire huge collections in memory. */
+  private static readonly MAX_CACHE_DOCUMENTS = 400;
 
   /**
    * Safely get a collection with retry logic, caching, and timeout handling
@@ -27,8 +32,9 @@ export class FirebaseHealth {
         const snapshot = await Promise.race([promise, timeoutPromise]);
         const data = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
 
-        // Cache successful result
-        this.setCachedData(collectionName, data);
+        if (data.length <= this.MAX_CACHE_DOCUMENTS) {
+          this.setCachedData(collectionName, data);
+        }
 
         return data;
       } catch (error) {
@@ -67,7 +73,8 @@ export class FirebaseHealth {
    */
   private static getCachedData(collectionName: string): any[] | null {
     const cached = this.cache.get(collectionName);
-    if (cached && (Date.now() - cached.timestamp) < this.CACHE_DURATION) {
+    const ttl = this.getCacheDurationMs();
+    if (cached && (Date.now() - cached.timestamp) < ttl) {
       return cached.data;
     }
     return null;
@@ -77,6 +84,9 @@ export class FirebaseHealth {
    * Cache data with timestamp
    */
   private static setCachedData(collectionName: string, data: any[]): void {
+    if (data.length > this.MAX_CACHE_DOCUMENTS) {
+      return;
+    }
     this.cache.set(collectionName, {
       data: [...data], // Clone to prevent mutations
       timestamp: Date.now()
@@ -142,33 +152,23 @@ export class FirebaseHealth {
    */
   static async isFirebaseReachable(): Promise<boolean> {
     try {
-      // First check basic network connectivity
       if (!navigator.onLine) {
-        console.log('🌐 No network connection');
         return false;
       }
 
-      // Quick network test
-      try {
-        await fetch('https://www.google.com/favicon.ico', {
-          mode: 'no-cors',
-          cache: 'no-cache',
-          signal: AbortSignal.timeout(2000)
-        });
-      } catch (networkError) {
-        console.log('🌐 Network connectivity issue');
-        return false;
+      // Production: avoid extra RTT before every query; Firestore calls fail fast if unreachable.
+      if (import.meta.env.PROD) {
+        return true;
       }
 
-      // Try a simple Firebase read operation with short timeout
       const testPromise = db.collection('_connection_test').limit(1).get();
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection test timeout')), 2000)
+        setTimeout(() => reject(new Error('Connection test timeout')), 2500)
       );
 
       await Promise.race([testPromise, timeoutPromise]);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

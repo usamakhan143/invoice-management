@@ -1,7 +1,35 @@
 import React, { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { db } from "../services/firebase";
+import {
+  generateInvoiceAuthCode,
+  normalizeVerificationCode,
+} from "../utils/invoiceAuthCode";
 import type { Invoice } from "../types";
+
+const verifyByLegacyScan = async (
+  companyId: string,
+  code: string,
+): Promise<Invoice | null> => {
+  const invoicesSnapshot = await db
+    .collection("invoices")
+    .where("companyId", "==", companyId)
+    .get();
+
+  for (const doc of invoicesSnapshot.docs) {
+    const invoice = { id: doc.id, ...doc.data() } as Invoice;
+    const expectedCode = generateInvoiceAuthCode(
+      invoice.id,
+      invoice.invoiceNumber,
+      companyId,
+      invoice.createdById || "unknown",
+    );
+    if (expectedCode === code) {
+      return invoice;
+    }
+  }
+  return null;
+};
 
 const InvoiceVerificationSection: React.FC = () => {
   const { user, userProfile } = useAuth();
@@ -12,26 +40,6 @@ const InvoiceVerificationSection: React.FC = () => {
     invoiceData?: any;
   } | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
-
-  // Generate expected auth code for comparison
-  const generateInvoiceAuthCode = (invoice: Invoice, companyId: string, creatorId: string): string => {
-    const invoiceData = `${invoice.id}-${invoice.invoiceNumber}-${companyId}-${creatorId}`;
-    
-    // Simple hash function (same as in PDF)
-    let hash = 0;
-    for (let i = 0; i < invoiceData.length; i++) {
-      const char = invoiceData.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    
-    const positiveHash = Math.abs(hash);
-    const company = companyId?.substring(0, 3).toUpperCase() || "UNK";
-    const invoice_short = invoice.invoiceNumber?.replace(/[^0-9]/g, "").substring(0, 3) || "001";
-    const hash_short = positiveHash.toString().substring(0, 6);
-    
-    return `${company}-${invoice_short}-${hash_short}`;
-  };
 
   const verifyInvoiceCode = async () => {
     if (!verificationCode.trim()) {
@@ -47,7 +55,7 @@ const InvoiceVerificationSection: React.FC = () => {
 
     try {
       const companyId = userProfile?.isOwner ? user?.uid : userProfile?.companyId;
-      
+
       if (!companyId) {
         setVerificationResult({
           success: false,
@@ -56,40 +64,50 @@ const InvoiceVerificationSection: React.FC = () => {
         return;
       }
 
-      // Get all invoices for this company
-      const invoicesSnapshot = await db
-        .collection("invoices")
-        .where("companyId", "==", companyId)
-        .get();
+      const code = normalizeVerificationCode(verificationCode);
 
-      let foundInvoice = null;
-      let isAuthentic = false;
+      let foundInvoice: Invoice | null = null;
 
-      // Check each invoice to see if the code matches
-      for (const doc of invoicesSnapshot.docs) {
-        const invoice = { id: doc.id, ...doc.data() } as Invoice;
-        const expectedCode = generateInvoiceAuthCode(
-          invoice,
-          companyId,
-          invoice.createdById || "unknown"
-        );
+      try {
+        const indexed = await db
+          .collection("invoices")
+          .where("companyId", "==", companyId)
+          .where("authVerificationCode", "==", code)
+          .limit(1)
+          .get();
 
-        if (expectedCode === verificationCode.trim()) {
-          foundInvoice = invoice;
-          isAuthentic = true;
-          break;
+        if (!indexed.empty) {
+          const doc = indexed.docs[0];
+          foundInvoice = { id: doc.id, ...doc.data() } as Invoice;
+        }
+      } catch (err: any) {
+        // Missing composite index or rules: fall back to legacy scan
+        if (err?.code === "failed-precondition") {
+          console.warn(
+            "Invoice verification: add Firestore index on invoices (companyId + authVerificationCode), using legacy scan.",
+          );
         }
       }
 
-      if (isAuthentic && foundInvoice) {
-        // Get creator information
+      if (!foundInvoice) {
+        foundInvoice = await verifyByLegacyScan(companyId, code);
+      }
+
+      if (foundInvoice) {
         let creatorName = "Unknown User";
         if (foundInvoice.createdById) {
           try {
-            const creatorDoc = await db.collection("users").doc(foundInvoice.createdById).get();
+            const creatorDoc = await db
+              .collection("users")
+              .doc(foundInvoice.createdById)
+              .get();
             if (creatorDoc.exists) {
               const creatorData = creatorDoc.data();
-              creatorName = creatorData?.displayName || creatorData?.companyName || creatorData?.email || "Unknown User";
+              creatorName =
+                creatorData?.displayName ||
+                creatorData?.companyName ||
+                creatorData?.email ||
+                "Unknown User";
             }
           } catch (error) {
             console.error("Error fetching creator info:", error);
@@ -104,7 +122,8 @@ const InvoiceVerificationSection: React.FC = () => {
             customerName: foundInvoice.customerName,
             total: foundInvoice.total,
             status: foundInvoice.status,
-            issueDate: foundInvoice.issueDate?.toDate?.()?.toLocaleDateString() || "N/A",
+            issueDate:
+              foundInvoice.issueDate?.toDate?.()?.toLocaleDateString() || "N/A",
             createdBy: creatorName,
             currency: foundInvoice.bankAccountCurrency || "USD",
           },
@@ -112,7 +131,8 @@ const InvoiceVerificationSection: React.FC = () => {
       } else {
         setVerificationResult({
           success: false,
-          message: "❌ Invalid authentication code. This invoice was NOT generated by your system or the code is incorrect.",
+          message:
+            "❌ Invalid authentication code. This invoice was NOT generated by your system or the code is incorrect.",
         });
       }
     } catch (error) {
@@ -129,9 +149,9 @@ const InvoiceVerificationSection: React.FC = () => {
   const formatCurrency = (amount: number, currencyCode: string = "USD") => {
     const symbols: { [key: string]: string } = {
       USD: "$",
-      EUR: "€", 
+      EUR: "€",
       GBP: "£",
-      PKR: "₨"
+      PKR: "₨",
     };
     const symbol = symbols[currencyCode] || currencyCode;
     return `${symbol}${amount?.toFixed(2) || "0.00"}`;
@@ -144,8 +164,18 @@ const InvoiceVerificationSection: React.FC = () => {
           Invoice Authentication Verification
         </h2>
         <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg
+            className="w-4 h-4 mr-1"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
           Verify PDF authenticity
         </div>
@@ -153,8 +183,9 @@ const InvoiceVerificationSection: React.FC = () => {
 
       <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4">
         <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
-          <strong>How to verify:</strong> Look for the authentication code at the bottom-right corner of any invoice PDF generated by your system. 
-          Enter that code below to verify if the invoice is authentic.
+          <strong>How to verify:</strong> Look for the authentication code at the
+          bottom-right corner of any invoice PDF generated by your system. Enter
+          that code below to verify if the invoice is authentic.
         </p>
         <p className="text-xs text-blue-600 dark:text-blue-300">
           Format: ABC-123-456789 (Company-Invoice-Hash)
@@ -185,21 +216,24 @@ const InvoiceVerificationSection: React.FC = () => {
           </div>
         </div>
 
-        {/* Verification Result */}
         {verificationResult && (
-          <div className={`p-4 rounded-lg border-l-4 ${
-            verificationResult.success 
-              ? "bg-green-50 border-green-400 dark:bg-green-900/20 dark:border-green-500" 
-              : "bg-red-50 border-red-400 dark:bg-red-900/20 dark:border-red-500"
-          }`}>
-            <div className={`font-medium ${
-              verificationResult.success 
-                ? "text-green-800 dark:text-green-200" 
-                : "text-red-800 dark:text-red-200"
-            }`}>
+          <div
+            className={`p-4 rounded-lg border-l-4 ${
+              verificationResult.success
+                ? "bg-green-50 border-green-400 dark:bg-green-900/20 dark:border-green-500"
+                : "bg-red-50 border-red-400 dark:bg-red-900/20 dark:border-red-500"
+            }`}
+          >
+            <div
+              className={`font-medium ${
+                verificationResult.success
+                  ? "text-green-800 dark:text-green-200"
+                  : "text-red-800 dark:text-red-200"
+              }`}
+            >
               {verificationResult.message}
             </div>
-            
+
             {verificationResult.success && verificationResult.invoiceData && (
               <div className="mt-3 space-y-2">
                 <div className="text-sm text-green-700 dark:text-green-300">
@@ -207,40 +241,65 @@ const InvoiceVerificationSection: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div>
-                    <span className="text-gray-600 dark:text-gray-400">Invoice #:</span>
-                    <div className="font-medium text-gray-900 dark:text-white">{verificationResult.invoiceData.invoiceNumber}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 dark:text-gray-400">Customer:</span>
-                    <div className="font-medium text-gray-900 dark:text-white">{verificationResult.invoiceData.customerName}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 dark:text-gray-400">Amount:</span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Invoice #:
+                    </span>
                     <div className="font-medium text-gray-900 dark:text-white">
-                      {formatCurrency(verificationResult.invoiceData.total, verificationResult.invoiceData.currency)}
+                      {verificationResult.invoiceData.invoiceNumber}
                     </div>
                   </div>
                   <div>
-                    <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Customer:
+                    </span>
                     <div className="font-medium text-gray-900 dark:text-white">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        verificationResult.invoiceData.status === "paid"
-                          ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
-                          : verificationResult.invoiceData.status === "sent"
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100"
-                            : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                      }`}>
+                      {verificationResult.invoiceData.customerName}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Amount:
+                    </span>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {formatCurrency(
+                        verificationResult.invoiceData.total,
+                        verificationResult.invoiceData.currency,
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Status:
+                    </span>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs ${
+                          verificationResult.invoiceData.status === "paid"
+                            ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
+                            : verificationResult.invoiceData.status === "sent"
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100"
+                              : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                        }`}
+                      >
                         {verificationResult.invoiceData.status}
                       </span>
                     </div>
                   </div>
                   <div>
-                    <span className="text-gray-600 dark:text-gray-400">Issue Date:</span>
-                    <div className="font-medium text-gray-900 dark:text-white">{verificationResult.invoiceData.issueDate}</div>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Issue Date:
+                    </span>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {verificationResult.invoiceData.issueDate}
+                    </div>
                   </div>
                   <div>
-                    <span className="text-gray-600 dark:text-gray-400">Created By:</span>
-                    <div className="font-medium text-gray-900 dark:text-white">{verificationResult.invoiceData.createdBy}</div>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Created By:
+                    </span>
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {verificationResult.invoiceData.createdBy}
+                    </div>
                   </div>
                 </div>
               </div>

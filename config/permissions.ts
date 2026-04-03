@@ -13,6 +13,7 @@ export const PERMISSION_CATEGORIES = {
   USER_MANAGEMENT: "user-management",
   CUSTOM_ROLES: "custom-roles",
   COMPANY_ACTIVITY: "company-activity",
+  DATA_MANAGEMENT: "data-management",
   SIDEBAR: "sidebar",
 } as const;
 
@@ -77,6 +78,11 @@ export const GRANULAR_PERMISSIONS = {
 
   // Sidebar Permissions
   SIDEBAR_EDIT_PROFILE: "sidebar_edit_profile",
+
+  // Data Management Permissions
+  DATA_BACKUP_EXPORT: "data_backup_export",
+  DATA_BACKUP_IMPORT: "data_backup_import",
+  DATA_BACKUP_VIEW_HISTORY: "data_backup_view_history",
 } as const;
 
 // Permission descriptions for the role management UI
@@ -140,6 +146,11 @@ export const PERMISSION_DESCRIPTIONS = {
 
   // Sidebar
   [GRANULAR_PERMISSIONS.SIDEBAR_EDIT_PROFILE]: "Show/Edit profile icon in sidebar",
+
+  // Data Management
+  [GRANULAR_PERMISSIONS.DATA_BACKUP_EXPORT]: "Export company data for backup",
+  [GRANULAR_PERMISSIONS.DATA_BACKUP_IMPORT]: "Import company data from backup",
+  [GRANULAR_PERMISSIONS.DATA_BACKUP_VIEW_HISTORY]: "View backup history and logs",
 };
 
 // Group permissions by category for better organization in UI
@@ -200,6 +211,11 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_CREATE,
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_EDIT,
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_DELETE,
+  ],
+  [PERMISSION_CATEGORIES.DATA_MANAGEMENT]: [
+    GRANULAR_PERMISSIONS.DATA_BACKUP_EXPORT,
+    GRANULAR_PERMISSIONS.DATA_BACKUP_IMPORT,
+    GRANULAR_PERMISSIONS.DATA_BACKUP_VIEW_HISTORY,
   ],
   [PERMISSION_CATEGORIES.SIDEBAR]: [
     GRANULAR_PERMISSIONS.SIDEBAR_EDIT_PROFILE,

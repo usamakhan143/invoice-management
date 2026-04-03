@@ -15,7 +15,6 @@ const currencySymbols: { [key: string]: string } = {
   EUR: "€",
   GBP: "£",
   PKR: "₨",
-  INR: "₹",
   JPY: "¥",
   CNY: "¥",
   AUD: "A$",

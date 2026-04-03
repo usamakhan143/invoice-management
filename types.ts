@@ -139,6 +139,8 @@ export interface Invoice {
   updatedBy?: string;
   updatedById?: string;
   updatedAt?: firebase.firestore.Timestamp;
+  /** Stored for O(1) Firestore verification lookup (see utils/invoiceAuthCode) */
+  authVerificationCode?: string;
 }
 
 export interface BankAccount {

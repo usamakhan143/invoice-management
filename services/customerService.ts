@@ -73,43 +73,34 @@ export class CustomerService {
         console.log("🔄 Firebase offline, using cached data for customers");
       }
 
-      // Use FirebaseHealth for robust data fetching
-      const customersRaw = await FirebaseHealth.safeGetCollection("customers");
+      const query =
+        isOwner || isAdmin
+          ? db
+              .collection("customers")
+              .where("companyId", "==", companyId || user.uid)
+              .orderBy("createdAt", "desc")
+          : db
+              .collection("customers")
+              .where("createdById", "==", user.uid)
+              .orderBy("createdAt", "desc");
 
-      let customersData = customersRaw.map((data) => ({
-        ...data,
-        // Ensure required fields exist with defaults
-        name: data.name || "Unknown Customer",
-        email: data.email || "",
-        phone: data.phone || "",
-        address: data.address || "",
-        createdBy: data.createdBy || "Unknown User",
-        companyId: data.companyId || "",
-        createdById: data.createdById || "",
-        createdAt: data.createdAt || Timestamp.now(),
-      })) as Customer[];
+      const snapshot = await query.get();
 
-      // Filter based on user role (same logic as invoices)
-      if (isOwner || isAdmin) {
-        // Admin sees all company customers
-        customersData = customersData.filter(
-          (customer) => (customer as any).companyId === (companyId || user.uid),
-        );
-      } else {
-        // Regular user sees their own customers
-        customersData = customersData.filter(
-          (customer) => (customer as any).createdById === user.uid,
-        );
-      }
-
-      // Sort by creation date (newest first)
-      customersData.sort((a, b) => {
-        const dateA = (a as any).createdAt?.toDate?.() || new Date(0);
-        const dateB = (b as any).createdAt?.toDate?.() || new Date(0);
-        return dateB.getTime() - dateA.getTime();
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          name: data.name || "Unknown Customer",
+          email: data.email || "",
+          phone: data.phone || "",
+          address: data.address || "",
+          createdBy: data.createdBy || "Unknown User",
+          companyId: data.companyId || "",
+          createdById: data.createdById || "",
+          createdAt: data.createdAt || Timestamp.now(),
+        } as Customer;
       });
-
-      return customersData;
     } catch (error) {
       console.error("Error loading customers:", error);
       // Return empty array instead of throwing

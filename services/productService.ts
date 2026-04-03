@@ -73,42 +73,33 @@ export class ProductService {
         console.log("🔄 Firebase offline, using cached data for products");
       }
 
-      // Use FirebaseHealth for robust data fetching
-      const productsRaw = await FirebaseHealth.safeGetCollection("products");
+      const query =
+        isOwner || isAdmin
+          ? db
+              .collection("products")
+              .where("companyId", "==", companyId || user.uid)
+              .orderBy("createdAt", "desc")
+          : db
+              .collection("products")
+              .where("createdById", "==", user.uid)
+              .orderBy("createdAt", "desc");
 
-      let productsData = productsRaw.map((data) => ({
-        ...data,
-        // Ensure required fields exist with defaults
-        name: data.name || "Unknown Product",
-        description: data.description || "",
-        price: data.price || 0,
-        createdBy: data.createdBy || "Unknown User",
-        companyId: data.companyId || "",
-        createdById: data.createdById || "",
-        createdAt: data.createdAt || Timestamp.now(),
-      })) as Product[];
+      const snapshot = await query.get();
 
-      // Filter based on user role (same logic as customers)
-      if (isOwner || isAdmin) {
-        // Admin sees all company products
-        productsData = productsData.filter(
-          (product) => (product as any).companyId === (companyId || user.uid),
-        );
-      } else {
-        // Regular user sees their own products
-        productsData = productsData.filter(
-          (product) => (product as any).createdById === user.uid,
-        );
-      }
-
-      // Sort by creation date (newest first)
-      productsData.sort((a, b) => {
-        const dateA = (a as any).createdAt?.toDate?.() || new Date(0);
-        const dateB = (b as any).createdAt?.toDate?.() || new Date(0);
-        return dateB.getTime() - dateA.getTime();
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          name: data.name || "Unknown Product",
+          description: data.description || "",
+          price: data.price || 0,
+          createdBy: data.createdBy || "Unknown User",
+          companyId: data.companyId || "",
+          createdById: data.createdById || "",
+          createdAt: data.createdAt || Timestamp.now(),
+        } as Product;
       });
-
-      return productsData;
     } catch (error) {
       console.error("Error loading products:", error);
       // Return empty array instead of throwing

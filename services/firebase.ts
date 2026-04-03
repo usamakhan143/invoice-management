@@ -70,10 +70,12 @@ if (import.meta.env.VITE_FIREBASE_OFFLINE_MODE === 'true') {
 
 // Network connectivity checker
 export const checkNetworkConnectivity = async (): Promise<boolean> => {
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+        return true;
+    }
     try {
-        // Quick network test with timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
 
         await fetch('https://www.google.com/favicon.ico', {
             mode: 'no-cors',
@@ -83,13 +85,15 @@ export const checkNetworkConnectivity = async (): Promise<boolean> => {
 
         clearTimeout(timeoutId);
         return true;
-    } catch (error) {
+    } catch {
         return false;
     }
 };
 
 // Enhanced Firebase connection with better debugging
-export const connectToFirebase = async (retries = 3): Promise<boolean> => {
+export const connectToFirebase = async (
+    retries = import.meta.env.PROD ? 1 : 3,
+): Promise<boolean> => {
 
     // First, validate Firebase configuration
     const config = {

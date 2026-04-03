@@ -129,10 +129,59 @@ const Sidebar: React.FC = () => {
       page: PAGES.USER_MANAGEMENT,
       adminOnly: true,
     },
+    {
+      to: "/data-management",
+      icon: (
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M4 7v10c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V7M4 7l2-3h12l2 3M4 7h16M10 11v6M14 11v6"
+          />
+        </svg>
+      ),
+      label: "Data Management",
+      page: PAGES.DASHBOARD,
+      adminOnly: true,
+    },
+    {
+      to: "/super-admin",
+      icon: (
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+          />
+        </svg>
+      ),
+      label: "Super Admin",
+      page: PAGES.DASHBOARD,
+      superAdminOnly: true,
+    },
   ];
+
+  // Check if user is super admin (IT VEINS LLC owner)
+  const isSuperAdmin = isOwner && userProfile?.companyName?.toLowerCase().includes('it veins');
 
   // Filter navigation items based on permissions
   const navItems = allNavItems.filter((item) => {
+    // For super admin items, only show to IT VEINS LLC owners
+    if ((item as any).superAdminOnly && !isSuperAdmin) {
+      return false;
+    }
     // For user management, check specific permission instead of adminOnly
     if (item.to === "/users") {
       return hasPageAccess(item.page);

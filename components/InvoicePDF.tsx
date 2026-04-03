@@ -7,11 +7,13 @@ import {
   StyleSheet,
   Font,
 } from "@react-pdf/renderer";
+import openSansBold from "@fontsource/open-sans/files/open-sans-latin-700-normal.woff2?url";
+import { generateInvoiceAuthCode } from "../utils/invoiceAuthCode";
 import type { Invoice, UserProfile } from "../types";
 
 Font.register({
   family: "Helvetica-Bold",
-  src: "https://cdn.jsdelivr.net/npm/helvetical/helvetical-bold.ttf",
+  src: openSansBold,
 });
 
 const styles = StyleSheet.create({
@@ -105,7 +107,6 @@ const formatCurrency = (amount: number, currency?: string) => {
     EUR: "€",
     GBP: "£",
     PKR: "₨",
-    INR: "₹",
     JPY: "¥",
     CNY: "¥",
     AUD: "A$",
@@ -138,6 +139,19 @@ interface InvoicePDFProps {
   invoice: Invoice;
   userProfile: UserProfile;
 }
+
+const pdfAuthCode = (invoice: Invoice, userProfile: UserProfile): string => {
+  if (!userProfile) return "AUTH-ERROR";
+  const companyId = userProfile.isOwner
+    ? userProfile.uid
+    : userProfile.companyId || "";
+  return generateInvoiceAuthCode(
+    invoice.id,
+    invoice.invoiceNumber,
+    companyId,
+    invoice.createdById || "unknown",
+  );
+};
 
 const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, userProfile }) => (
   <Document>
@@ -300,7 +314,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, userProfile }) => (
       }}>
         <Text>Invoice Authentication Code:</Text>
         <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 9 }}>
-          {generateInvoiceAuthCode(invoice, userProfile)}
+          {pdfAuthCode(invoice, userProfile)}
         </Text>
         <Text style={{ fontSize: 7, marginTop: 2 }}>
           Verify authenticity at your company portal
@@ -309,31 +323,5 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, userProfile }) => (
     </Page>
   </Document>
 );
-
-// Generate unique authentication code for invoice verification
-const generateInvoiceAuthCode = (invoice: Invoice, userProfile: UserProfile | null): string => {
-  if (!userProfile) return "AUTH-ERROR";
-
-  // Create a unique code based on invoice data, company, and user
-  const companyId = userProfile.isOwner ? userProfile.uid : userProfile.companyId;
-  const creatorId = invoice.createdById || "unknown";
-  const invoiceData = `${invoice.id}-${invoice.invoiceNumber}-${companyId}-${creatorId}`;
-
-  // Simple hash function for generating a readable code
-  let hash = 0;
-  for (let i = 0; i < invoiceData.length; i++) {
-    const char = invoiceData.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-
-  // Convert to positive number and format as readable code
-  const positiveHash = Math.abs(hash);
-  const company = companyId?.substring(0, 3).toUpperCase() || "UNK";
-  const invoice_short = invoice.invoiceNumber?.replace(/[^0-9]/g, "").substring(0, 3) || "001";
-  const hash_short = positiveHash.toString().substring(0, 6);
-
-  return `${company}-${invoice_short}-${hash_short}`;
-};
 
 export default InvoicePDF;

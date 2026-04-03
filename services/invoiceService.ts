@@ -1,6 +1,6 @@
 import { db, Timestamp } from "./firebase";
 import { FirebaseHealth } from "./firebaseHealth";
-import { isEmergencyOfflineMode, mockInvoices, offlineServices } from "./offlineMode";
+import { generateInvoiceAuthCode } from "../utils/invoiceAuthCode";
 import type { Invoice } from "../types";
 
 export class InvoiceService {
@@ -42,13 +42,16 @@ export class InvoiceService {
   ): Promise<string> {
     const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
 
-    const finalInvoiceData = {
+    const effectiveCompanyId = companyId || user.uid;
+    const creatorIdForCode = user.uid;
+
+    const finalInvoiceData: Record<string, unknown> = {
       ...invoiceData,
       // Add creator and company information
       createdBy:
         userProfile?.displayName || userProfile?.companyName || user.email,
       createdById: user.uid,
-      companyId: companyId || user.uid,
+      companyId: effectiveCompanyId,
       ...(invoiceId
         ? {
             updatedBy:
@@ -64,7 +67,34 @@ export class InvoiceService {
     };
 
     if (invoiceId) {
-      // Update existing invoice
+      let invoiceNumberForCode =
+        (typeof finalInvoiceData.invoiceNumber === "string" &&
+          finalInvoiceData.invoiceNumber) ||
+        (typeof invoiceData.invoiceNumber === "string" &&
+          invoiceData.invoiceNumber) ||
+        "";
+      let creatorForAuth =
+        (finalInvoiceData.createdById as string) || creatorIdForCode;
+
+      const existingSnap = await db.collection("invoices").doc(invoiceId).get();
+      if (existingSnap.exists) {
+        const ex = existingSnap.data();
+        if (!invoiceNumberForCode) {
+          invoiceNumberForCode = (ex?.invoiceNumber as string) || "";
+        }
+        if (ex?.createdById) {
+          creatorForAuth = ex.createdById as string;
+        }
+      }
+
+      if (invoiceNumberForCode) {
+        finalInvoiceData.authVerificationCode = generateInvoiceAuthCode(
+          invoiceId,
+          invoiceNumberForCode,
+          effectiveCompanyId,
+          creatorForAuth,
+        );
+      }
       const success = await FirebaseHealth.safeSetDocument(
         "invoices",
         invoiceId,
@@ -74,23 +104,33 @@ export class InvoiceService {
         throw new Error("Failed to update invoice");
       }
       return invoiceId;
-    } else {
-      // Create new invoice with company-wide numbering
-      if (!finalInvoiceData.invoiceNumber) {
-        finalInvoiceData.invoiceNumber = await this.generateInvoiceNumber(
-          companyId || user.uid,
-        );
-      }
-
-      const docId = await FirebaseHealth.safeAddDocument(
-        "invoices",
-        finalInvoiceData,
-      );
-      if (!docId) {
-        throw new Error("Failed to create invoice");
-      }
-      return docId;
     }
+
+    if (!finalInvoiceData.invoiceNumber) {
+      finalInvoiceData.invoiceNumber = await this.generateInvoiceNumber(
+        effectiveCompanyId,
+      );
+    }
+
+    const docId = await FirebaseHealth.safeAddDocument(
+      "invoices",
+      finalInvoiceData,
+    );
+    if (!docId) {
+      throw new Error("Failed to create invoice");
+    }
+
+    const invNum = String(finalInvoiceData.invoiceNumber);
+    await FirebaseHealth.safeSetDocument("invoices", docId, {
+      authVerificationCode: generateInvoiceAuthCode(
+        docId,
+        invNum,
+        effectiveCompanyId,
+        creatorIdForCode,
+      ),
+    });
+
+    return docId;
   }
 
   // Real-time invoices listener with proper Firebase onSnapshot
@@ -164,48 +204,38 @@ export class InvoiceService {
     const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
 
     try {
-      // Check connection before fetching
       const isConnected = await FirebaseHealth.isFirebaseReachable();
       if (!isConnected) {
         console.log("🔄 Firebase offline, using cached data for invoices");
       }
 
-      // Use FirebaseHealth for robust data fetching
-      const invoicesRaw = await FirebaseHealth.safeGetCollection("invoices");
+      const query =
+        isOwner || isAdmin
+          ? db
+              .collection("invoices")
+              .where("companyId", "==", companyId || user.uid)
+              .orderBy("issueDate", "desc")
+          : db
+              .collection("invoices")
+              .where("createdById", "==", user.uid)
+              .orderBy("issueDate", "desc");
 
-      let invoicesData = invoicesRaw.map((data) => ({
-        ...data,
-        // Ensure required fields exist with defaults
-        issueDate: data.issueDate || { toDate: () => new Date() },
-        createdBy: data.createdBy || "Unknown User",
-        companyId: data.companyId || "",
-        createdById: data.createdById || "",
-        status: data.status || "draft",
-        total: data.total || 0,
-        customerName: data.customerName || "Unknown Customer",
-      })) as Invoice[];
+      const snapshot = await query.get();
 
-      // Filter based on user role
-      if (isOwner || isAdmin) {
-        // Admin sees all company invoices
-        invoicesData = invoicesData.filter(
-          (invoice) => invoice.companyId === (companyId || user.uid),
-        );
-      } else {
-        // Regular user sees their own invoices
-        invoicesData = invoicesData.filter(
-          (invoice) => invoice.createdById === user.uid,
-        );
-      }
-
-      // Sort manually by issue date (newest first)
-      invoicesData.sort((a, b) => {
-        const dateA = a.issueDate?.toDate?.() || new Date(0);
-        const dateB = b.issueDate?.toDate?.() || new Date(0);
-        return dateB.getTime() - dateA.getTime();
+      return snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          issueDate: data.issueDate || { toDate: () => new Date() },
+          createdBy: data.createdBy || "Unknown User",
+          companyId: data.companyId || "",
+          createdById: data.createdById || "",
+          status: data.status || "draft",
+          total: data.total || 0,
+          customerName: data.customerName || "Unknown Customer",
+        } as Invoice;
       });
-
-      return invoicesData;
     } catch (error) {
       console.error("Error loading invoices:", error);
       // Return empty array instead of throwing

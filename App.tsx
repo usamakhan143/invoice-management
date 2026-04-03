@@ -2,7 +2,6 @@ import React, { Suspense, lazy, useEffect, useState } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import { usePageTitle } from "./hooks/usePageTitle";
-import { FirebaseHealthChecker } from "./services/firebaseHealth";
 import { enableOfflineSupport, connectToFirebase, checkNetworkConnectivity } from "./services/firebase";
 import { isEmergencyOfflineMode, enableEmergencyOfflineMode } from "./services/offlineMode";
 
@@ -27,6 +26,8 @@ const CompanyActivityPage = lazy(
   () => import("./pages/app/CompanyActivityPage"),
 );
 const ProfilePage = lazy(() => import("./pages/app/ProfilePage"));
+const DataManagementPage = lazy(() => import("./pages/app/DataManagementPage"));
+const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const SignUpPage = lazy(() => import("./pages/auth/SignUpPage"));
 const AutoLoginPage = lazy(() => import("./pages/auth/AutoLoginPage"));
@@ -103,7 +104,7 @@ const App: React.FC = () => {
         await enableOfflineSupport();
 
         // Try to connect to Firebase with retries - SHOW REAL ERRORS
-        const isConnected = await connectToFirebase(3); // More retries for better debugging
+        const isConnected = await connectToFirebase();
 
         if (!isConnected) {
           // Check if it's a permission error by looking at recent console messages
@@ -168,6 +169,8 @@ const App: React.FC = () => {
                   element={<CompanyActivityPage />}
                 />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/data-management" element={<DataManagementPage />} />
+                <Route path="/super-admin" element={<SuperAdminDashboard />} />
               </Route>
             </Route>
             <Route element={<AuthLayout />}>

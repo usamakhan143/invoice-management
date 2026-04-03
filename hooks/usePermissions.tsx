@@ -83,6 +83,11 @@ export const usePermissions = () => {
   // Sidebar permissions
   const canEditProfile = (): boolean => hasPermission(GRANULAR_PERMISSIONS.SIDEBAR_EDIT_PROFILE);
 
+  // Data Management permissions
+  const canExportBackup = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DATA_BACKUP_EXPORT);
+  const canImportBackup = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DATA_BACKUP_IMPORT);
+  const canViewBackupHistory = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DATA_BACKUP_VIEW_HISTORY);
+
   // Legacy compatibility functions (to be gradually removed)
   const hasPageAccess = (page: string): boolean => {
     // Map legacy page access to new permissions
@@ -255,6 +260,11 @@ export const usePermissions = () => {
 
     // Sidebar permissions
     canEditProfile,
+
+    // Data Management permissions
+    canExportBackup,
+    canImportBackup,
+    canViewBackupHistory,
 
     // Legacy compatibility
     hasPageAccess,

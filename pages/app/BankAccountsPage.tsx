@@ -276,7 +276,7 @@ const BankAccountsPage: React.FC = () => {
               name="currencySymbol"
               value={form.currencySymbol}
               onChange={handleInputChange}
-              placeholder="e.g., $, €, ₨, ₹"
+              placeholder="e.g., $, €, ₨"
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               required
               maxLength={5}
