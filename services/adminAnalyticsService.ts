@@ -1,3 +1,7 @@
+/**
+ * Read-only analytics for Super Admin. No Firestore writes — safe for production tenant data.
+ * (Platform catalog writes belong in SubscriptionPlansManager behind config/superAdmin.ts.)
+ */
 import { db } from './firebase';
 import type firebase from 'firebase/compat/app';
 import type { Invoice, UserProfile, BankAccount } from '../types';
