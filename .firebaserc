@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "invoice-pro-8f65b",
+    "prod": "invoice-pro-8f65b"
+  },
+  "targets": {},
+  "etags": {}
+}

@@ -23,10 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment files
+# Environment files & secrets (never commit)
 .env
+*.pem
+service-account-key.json
+
+# Firebase: commit firebase.json, .firebaserc, firestore.rules, firestore.indexes.json
+# so the team can run: firebase.cmd deploy --only firestore:indexes (or rules)
 
 .config/
 scripts
 SESSION_MEMORY.md
-service-account-key.json
