@@ -140,10 +140,13 @@ service cloud.firestore {
       allow read, write: if canAccessUserData(resource.data.userId);
     }
 
-    // Leads (CRM) — company boundary matches customers/invoices; granular permissions enforced in the app
+    // Leads (CRM) — company boundary matches customers/invoices; granular permissions enforced in the app.
+    // Also allow assignee / creator to read so team members still see assigned leads if users.companyId was missing/wrong.
     match /leads/{leadId} {
       allow get, list: if isAuthenticated() &&
-        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+        (canAccessCompanyData(resource.data.companyId) || isAdmin() ||
+         resource.data.assignedUserId == request.auth.uid ||
+         resource.data.createdById == request.auth.uid);
       allow create: if isAuthenticated() &&
         (canAccessCompanyData(request.resource.data.companyId) || isAdmin());
       allow update, delete: if isAuthenticated() &&

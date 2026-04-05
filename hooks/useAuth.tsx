@@ -370,6 +370,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                   return;
                 }
 
+                // Non-owners need companyId = owner uid for leads/invoices queries; backfill if users doc is missing it
+                if (userData.isOwner !== true && !(userData.companyId || "").toString().trim()) {
+                  try {
+                    const cu = await db
+                      .collection("companyUsers")
+                      .where("uid", "==", firebaseUser.uid)
+                      .limit(1)
+                      .get();
+                    if (!cu.empty) {
+                      const cid = cu.docs[0].data()?.companyId;
+                      if (typeof cid === "string" && cid.trim()) {
+                        userData.companyId = cid.trim();
+                      }
+                    }
+                  } catch (backfillErr) {
+                    console.warn("Could not backfill companyId from companyUsers", backfillErr);
+                  }
+                }
+
                 // Check if this user is a company owner (original account)
                 if (!userData.companyId && !userData.role) {
                   userData.isOwner = true;
@@ -427,6 +446,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                       setUserProfile(null);
                       setLoading(false);
                       return;
+                    }
+
+                    if (userData.isOwner !== true && !(userData.companyId || "").toString().trim()) {
+                      try {
+                        const cu = await db
+                          .collection("companyUsers")
+                          .where("uid", "==", firebaseUser.uid)
+                          .limit(1)
+                          .get();
+                        if (!cu.empty) {
+                          const cid = cu.docs[0].data()?.companyId;
+                          if (typeof cid === "string" && cid.trim()) {
+                            userData.companyId = cid.trim();
+                          }
+                        }
+                      } catch (backfillErr) {
+                        console.warn("Could not backfill companyId from companyUsers", backfillErr);
+                      }
                     }
 
                     // Load granular permissions from role if needed

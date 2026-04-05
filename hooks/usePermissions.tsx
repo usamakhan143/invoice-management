@@ -32,6 +32,8 @@ export const usePermissions = () => {
   const canViewRecentInvoices = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES);
   const canAccessInvoiceVerification = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION);
   const canViewDebugInfo = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO);
+  const canViewDashboardMyAssignedLeads = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS);
 
   // Invoice permissions
   const canViewInvoices = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW);
@@ -98,9 +100,22 @@ export const usePermissions = () => {
   const canDeleteLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE);
   const canAssignLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_ASSIGN);
   const canLogLeadCalls = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_LOG_CALLS);
+  const canDeleteLeadCallLogs = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS);
+  /** Recording ref + verify call log (admin QA) */
+  const canApproveCallLogs = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE);
   const canLinkLeadCustomer = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER);
   const canConvertLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CONVERT);
+  const canAccessMyAssignedLeadsPage = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE);
+
+  /** “My assigned” workspace modals — also covered by broader lead edit/call perms for backward compatibility */
+  const canAgentQuickUpdateStatus = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS) || canEditLead();
+  const canAgentQuickLogCall = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL) || canLogLeadCalls();
+  const canAgentQuickSetFollowup = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP) || canEditLead();
 
   /** List/query scope: all company leads vs assigned-or-created only */
   const leadsListViewAll = (): boolean => canViewAllLeads();
@@ -127,6 +142,8 @@ export const usePermissions = () => {
         return canViewUserManagement();
       case "leads":
         return canAccessLeadsPage();
+      case "my-assigned-leads":
+        return canAccessMyAssignedLeadsPage();
       default:
         return false;
     }
@@ -235,6 +252,7 @@ export const usePermissions = () => {
     canViewRecentInvoices,
     canAccessInvoiceVerification,
     canViewDebugInfo,
+    canViewDashboardMyAssignedLeads,
 
     // Invoice permissions
     canViewInvoices,
@@ -300,8 +318,14 @@ export const usePermissions = () => {
     canDeleteLead,
     canAssignLeads,
     canLogLeadCalls,
+    canDeleteLeadCallLogs,
+    canApproveCallLogs,
     canLinkLeadCustomer,
     canConvertLead,
+    canAccessMyAssignedLeadsPage,
+    canAgentQuickUpdateStatus,
+    canAgentQuickLogCall,
+    canAgentQuickSetFollowup,
     leadsListViewAll,
 
     // Legacy compatibility

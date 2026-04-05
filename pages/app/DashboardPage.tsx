@@ -9,7 +9,8 @@ import { usePermissionRefresh } from "../../hooks/usePermissionRefresh";
 import { db } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
-import type { Invoice, Customer, BankAccount, Expense } from "../../types";
+import type { Invoice, Customer, BankAccount, Expense, Lead, CompanyUser } from "../../types";
+import { LeadService } from "../../services/leadService";
 import Spinner from "../../components/Spinner";
 import InvoiceVerificationSection from "../../components/InvoiceVerificationSection";
 
@@ -34,6 +35,11 @@ const DashboardPage: React.FC = () => {
     canViewRecentInvoices,
     canAccessInvoiceVerification,
     canViewDebugInfo,
+    canViewDashboardMyAssignedLeads,
+    canAccessMyAssignedLeadsPage,
+    canAccessLeadsPage,
+    leadsListViewAll,
+    canAssignLeads,
     isOwner,
     isAdmin
   } = usePermissions();
@@ -45,6 +51,115 @@ const DashboardPage: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+  const [myAssignedLeads, setMyAssignedLeads] = useState<Lead[]>([]);
+  const [companyLeadsTeamView, setCompanyLeadsTeamView] = useState<Lead[]>([]);
+  const [teamAssigneeLabels, setTeamAssigneeLabels] = useState<{ uid: string; label: string }[]>([]);
+
+  const leadsViewAll = leadsListViewAll();
+  const canAssign = canAssignLeads();
+  const canLeadsPage = canAccessLeadsPage();
+  /** Admins / assigners: dashboard shows team-wide assignment stats instead of “my” counts */
+  const teamLeadsDashboardMode = (leadsViewAll || canAssign) && canLeadsPage;
+
+  useEffect(() => {
+    if (!user || !userProfile || teamLeadsDashboardMode) return;
+    if (!canViewDashboardMyAssignedLeads()) return;
+    const unsub = LeadService.getLeadsAssignedToMeRealTime(user, userProfile, setMyAssignedLeads);
+    return () => unsub();
+  }, [user, userProfile, canViewDashboardMyAssignedLeads, teamLeadsDashboardMode]);
+
+  useEffect(() => {
+    if (!user || !userProfile || !teamLeadsDashboardMode) return;
+    const unsub = LeadService.getLeadsRealTime(user, userProfile, true, setCompanyLeadsTeamView);
+    return () => unsub();
+  }, [user, userProfile, teamLeadsDashboardMode]);
+
+  useEffect(() => {
+    if (!teamLeadsDashboardMode || !user || !userProfile) return;
+    const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
+    if (!companyId) return;
+
+    const load = async () => {
+      const out: { uid: string; label: string }[] = [];
+      const ownerSnap = await db.collection("users").doc(companyId).get();
+      if (ownerSnap.exists) {
+        const d = ownerSnap.data();
+        out.push({
+          uid: companyId,
+          label: d?.displayName || d?.companyName || "Owner",
+        });
+      }
+      const snap = await db.collection("companyUsers").where("companyId", "==", companyId).get();
+      snap.docs.forEach((docSnap) => {
+        const u = docSnap.data() as CompanyUser;
+        const uid = u.uid || docSnap.id;
+        if (!out.some((x) => x.uid === uid)) {
+          out.push({
+            uid,
+            label: u.displayName || u.email || uid,
+          });
+        }
+      });
+      if (!out.some((x) => x.uid === user.uid)) {
+        out.push({
+          uid: user.uid,
+          label: userProfile.displayName || userProfile.email || "Me",
+        });
+      }
+      setTeamAssigneeLabels(out);
+    };
+    void load();
+  }, [teamLeadsDashboardMode, user, userProfile]);
+
+  const myAssignedLeadStats = React.useMemo(() => {
+    const now = Date.now();
+    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const sevenDaysAhead = now + 7 * 24 * 60 * 60 * 1000;
+    let active = 0;
+    let assignedWeek = 0;
+    let followDue = 0;
+    for (const l of myAssignedLeads) {
+      if (l.status !== "Won" && l.status !== "Lost") active += 1;
+      const created = l.createdAt?.toMillis?.() ?? 0;
+      if (created >= weekAgo) assignedWeek += 1;
+      const fu = l.nextFollowUpDate?.toMillis?.();
+      if (fu != null && !Number.isNaN(fu) && fu <= sevenDaysAhead) followDue += 1;
+    }
+    return {
+      total: myAssignedLeads.length,
+      active,
+      assignedWeek,
+      followDue,
+    };
+  }, [myAssignedLeads]);
+
+  const teamLeadAssignmentRows = React.useMemo(() => {
+    const label = (uid: string) =>
+      uid === "__unassigned__"
+        ? "Unassigned"
+        : teamAssigneeLabels.find((a) => a.uid === uid)?.label || uid;
+    const now = Date.now();
+    const sevenDaysAhead = now + 7 * 24 * 60 * 60 * 1000;
+    const byUid = new Map<string, { total: number; active: number; followDue: number }>();
+    for (const l of companyLeadsTeamView) {
+      const uid = (l.assignedUserId || "").trim();
+      const key = uid || "__unassigned__";
+      if (!byUid.has(key)) {
+        byUid.set(key, { total: 0, active: 0, followDue: 0 });
+      }
+      const row = byUid.get(key)!;
+      row.total += 1;
+      if (l.status !== "Won" && l.status !== "Lost") row.active += 1;
+      const fu = l.nextFollowUpDate?.toMillis?.();
+      if (fu != null && !Number.isNaN(fu) && fu <= sevenDaysAhead) row.followDue += 1;
+    }
+    const keys = [...byUid.keys()].sort((a, b) => {
+      if (a === "__unassigned__") return 1;
+      if (b === "__unassigned__") return -1;
+      return label(a).localeCompare(label(b), undefined, { sensitivity: "base" });
+    });
+    return keys.map((k) => ({ uid: k, label: label(k), ...byUid.get(k)! }));
+  }, [companyLeadsTeamView, teamAssigneeLabels]);
 
   useEffect(() => {
     if (!user || !userProfile) return;
@@ -231,9 +346,16 @@ const DashboardPage: React.FC = () => {
   }
 
   // Check if user has any dashboard permissions
-  const hasAnyDashboardPermission = canViewTotalRevenue() || canViewOutstandingRevenue() ||
-    canViewMonthlyExpenses() || canViewTotalCustomers() || canViewDashboardBankAccounts() ||
-    canViewRecentInvoices() || canAccessInvoiceVerification();
+  const hasAnyDashboardPermission =
+    canViewTotalRevenue() ||
+    canViewOutstandingRevenue() ||
+    canViewMonthlyExpenses() ||
+    canViewTotalCustomers() ||
+    canViewDashboardBankAccounts() ||
+    canViewRecentInvoices() ||
+    canAccessInvoiceVerification() ||
+    canViewDashboardMyAssignedLeads() ||
+    teamLeadsDashboardMode;
 
   // Calculate real-time bank balances
   const bankBalances = bankAccounts.map((account) => {
@@ -332,6 +454,122 @@ const DashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {teamLeadsDashboardMode && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
+                Team lead assignments
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-3xl">
+                Live counts per user across your company&apos;s leads (who has how many assigned, active pipeline,
+                and follow-ups in the next 7 days). Use Leads to assign or reassign.
+              </p>
+            </div>
+            <Link
+              to="/leads"
+              className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400 shrink-0"
+            >
+              Open leads →
+            </Link>
+          </div>
+          {teamLeadAssignmentRows.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No leads in this company yet.</p>
+          ) : (
+            <div className="table-responsive -mx-2 sm:mx-0">
+              <table className="w-full text-sm text-left text-gray-600 dark:text-gray-300">
+                <thead className="text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">User</th>
+                    <th className="px-3 py-2 font-medium text-right">Assigned</th>
+                    <th className="px-3 py-2 font-medium text-right">Active</th>
+                    <th className="px-3 py-2 font-medium text-right">Follow-ups (7d)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamLeadAssignmentRows.map((row) => (
+                    <tr
+                      key={row.uid}
+                      className="border-b border-gray-100 dark:border-gray-700/80 last:border-0"
+                    >
+                      <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{row.label}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.total}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.active}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.followDue}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {canViewDashboardMyAssignedLeads() && !teamLeadsDashboardMode && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
+                My assigned leads
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Live counts for leads currently assigned to you. Open the full page for date-wise history and
+                detailed progress.
+              </p>
+            </div>
+            {canAccessMyAssignedLeadsPage() ? (
+              <Link
+                to="/leads/my-assigned"
+                className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400 shrink-0"
+              >
+                View full page →
+              </Link>
+            ) : (
+              <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0 max-w-[12rem] text-right">
+                Ask your admin for “My assigned leads” page access to open the full view.
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Total assigned
+              </p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {myAssignedLeadStats.total}
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Active pipeline
+              </p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {myAssignedLeadStats.active}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Excludes won &amp; lost</p>
+            </div>
+            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                New leads (7 days)
+              </p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {myAssignedLeadStats.assignedWeek}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">By lead created date</p>
+            </div>
+            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Follow-ups due
+              </p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {myAssignedLeadStats.followDue}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Next 7 days or overdue</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bank Accounts Overview - Now updates in real-time */}
       {canViewDashboardBankAccounts() && (

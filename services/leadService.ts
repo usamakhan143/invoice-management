@@ -11,6 +11,7 @@ import type {
   LeadStatus,
   Customer,
 } from "../types";
+import { normalizeLeadTargetSalesGender } from "../config/leadTargetSalesGender";
 import type firebase from "firebase/compat/app";
 
 function normalizePhone(phone?: string): string | undefined {
@@ -168,7 +169,11 @@ export class LeadService {
           assigned = snap.docs.map((d) => docToLead(d));
           emit();
         },
-        (err) => logFirestoreQueryError("getLeadsRealTime assigned", err),
+        (err) => {
+          logFirestoreQueryError("getLeadsRealTime assigned", err);
+          assigned = [];
+          emit();
+        },
       );
 
     const unSubC = db
@@ -181,7 +186,11 @@ export class LeadService {
           created = snap.docs.map((d) => docToLead(d));
           emit();
         },
-        (err) => logFirestoreQueryError("getLeadsRealTime createdBy", err),
+        (err) => {
+          logFirestoreQueryError("getLeadsRealTime createdBy", err);
+          created = [];
+          emit();
+        },
       );
 
     return () => {
@@ -228,6 +237,7 @@ export class LeadService {
       linkedBusinessId: data.linkedBusinessId ?? null,
       phoneNormalized: phoneNorm || null,
       emailNormalized: emailNorm || null,
+      targetSalesGender: normalizeLeadTargetSalesGender(data.targetSalesGender),
       updatedAt: Timestamp.now(),
     };
 
@@ -317,6 +327,32 @@ export class LeadService {
     }
   }
 
+  static async deleteCallLog(leadId: string, logId: string): Promise<void> {
+    await db.collection("leads").doc(leadId).collection("callLogs").doc(logId).delete();
+  }
+
+  /** Admin QA: recording/reference + verification flags on an existing call log */
+  static async updateCallLogAdminFields(
+    leadId: string,
+    logId: string,
+    patch: {
+      recordingRef?: string | null;
+      callVerifiedAt?: firebase.firestore.Timestamp | null;
+      callVerifiedByUserId?: string | null;
+    },
+  ): Promise<void> {
+    const clean: Record<string, unknown> = {};
+    if (patch.recordingRef !== undefined) {
+      const t = typeof patch.recordingRef === "string" ? patch.recordingRef.trim() : "";
+      clean.recordingRef = t || null;
+    }
+    if (patch.callVerifiedAt !== undefined) clean.callVerifiedAt = patch.callVerifiedAt;
+    if (patch.callVerifiedByUserId !== undefined) {
+      clean.callVerifiedByUserId = patch.callVerifiedByUserId;
+    }
+    await db.collection("leads").doc(leadId).collection("callLogs").doc(logId).update(clean);
+  }
+
   static async getAssignmentEvents(leadId: string): Promise<LeadAssignmentEvent[]> {
     const snap = await db
       .collection("leads")
@@ -352,16 +388,20 @@ export class LeadService {
     assignedByUserId: string,
     reason?: string,
   ): Promise<void> {
+    const toId = (toUserId || "").trim();
+    if (!toId) {
+      throw new Error("assignLead: assignee user id is required");
+    }
     const batch = db.batch();
     const leadRef = db.collection("leads").doc(leadId);
     batch.update(leadRef, {
-      assignedUserId: toUserId,
+      assignedUserId: toId,
       updatedAt: Timestamp.now(),
     });
     const evRef = leadRef.collection("assignmentEvents").doc();
     batch.set(evRef, {
       fromUserId,
-      toUserId,
+      toUserId: toId,
       assignedByUserId,
       reason: reason?.trim() || "",
       createdAt: Timestamp.now(),
@@ -386,6 +426,7 @@ export class LeadService {
       linkedCustomerId: string | null;
       linkedBusinessId: string | null;
       assignedUserId: string;
+      targetSalesGender: string;
     }>,
   ): Promise<void> {
     const update: Record<string, unknown> = {
@@ -448,6 +489,54 @@ export class LeadService {
       if (e && le && e === le) return true;
       return false;
     });
+  }
+
+  /**
+   * Real-time stream of leads assigned to the current user in their company.
+   */
+  static getLeadsAssignedToMeRealTime(
+    user: firebase.User,
+    userProfile: { isOwner?: boolean; companyId?: string },
+    callback: (leads: Lead[]) => void,
+  ): () => void {
+    const companyId = this.resolveCompanyId(user, userProfile);
+    return db
+      .collection("leads")
+      .where("companyId", "==", companyId)
+      .where("assignedUserId", "==", user.uid)
+      .orderBy("createdAt", "desc")
+      .onSnapshot(
+        (snap) => callback(snap.docs.map((d) => docToLead(d))),
+        (err) => {
+          logFirestoreQueryError("getLeadsAssignedToMeRealTime", err);
+          callback([]);
+        },
+      );
+  }
+
+  /**
+   * When `toUserId` last appeared as assignee in assignment history (most recent matching event).
+   */
+  static async getLastAssignmentToUserAsAssignee(
+    leadId: string,
+    toUserId: string,
+  ): Promise<firebase.firestore.Timestamp | null> {
+    try {
+      const snap = await db
+        .collection("leads")
+        .doc(leadId)
+        .collection("assignmentEvents")
+        .orderBy("createdAt", "desc")
+        .limit(40)
+        .get();
+      for (const docSnap of snap.docs) {
+        const d = docSnap.data() as { toUserId?: string; createdAt?: firebase.firestore.Timestamp };
+        if (d.toUserId === toUserId && d.createdAt) return d.createdAt;
+      }
+    } catch (e) {
+      console.error("getLastAssignmentToUserAsAssignee", leadId, e);
+    }
+    return null;
   }
 
   /**

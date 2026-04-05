@@ -244,6 +244,12 @@ export interface LeadExtras {
   website?: string;
   address?: string;
   extraNotes?: string;
+  /** Lead uses WhatsApp for contact */
+  hasWhatsapp?: boolean;
+  /** When true, WhatsApp number is the same as the main phone field */
+  whatsappSameAsPhone?: boolean;
+  /** WhatsApp number when different from main phone */
+  whatsappPhone?: string;
 }
 
 export interface Lead {
@@ -257,6 +263,8 @@ export interface Lead {
   phone?: string;
   email?: string;
   source: string;
+  /** Preferred gender for the assigned sales agent (filtering / routing). */
+  targetSalesGender?: string;
   status: LeadStatus;
   assignedUserId: string;
   notes?: string;
@@ -282,6 +290,11 @@ export interface LeadCallLog {
   createdAt: firebase.firestore.Timestamp;
   createdBy: string;
   metadata?: Record<string, unknown>;
+  /** CRM / dialer recording ID or any reference — set by admins only in the app */
+  recordingRef?: string | null;
+  /** When an admin marked this log as a verified real call */
+  callVerifiedAt?: firebase.firestore.Timestamp | null;
+  callVerifiedByUserId?: string | null;
 }
 
 export interface LeadAssignmentEvent {

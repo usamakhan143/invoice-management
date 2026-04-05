@@ -29,6 +29,7 @@ export const GRANULAR_PERMISSIONS = {
   DASHBOARD_VIEW_RECENT_INVOICES: "dashboard_view_recent_invoices",
   DASHBOARD_ACCESS_INVOICE_VERIFICATION: "dashboard_access_invoice_verification",
   DASHBOARD_VIEW_DEBUG_INFO: "dashboard_view_debug_info",
+  DASHBOARD_VIEW_MY_ASSIGNED_LEADS: "dashboard_view_my_assigned_leads",
 
   // Invoices Page Permissions
   INVOICES_VIEW: "invoices_view",
@@ -93,8 +94,20 @@ export const GRANULAR_PERMISSIONS = {
   LEADS_DELETE: "leads_delete",
   LEADS_ASSIGN: "leads_assign",
   LEADS_LOG_CALLS: "leads_log_calls",
+  /** Delete entries from a lead’s call log history */
+  LEADS_DELETE_CALL_LOGS: "leads_delete_call_logs",
+  /** Set recording/reference ID and mark call logs as verified (admin QA) */
+  LEADS_CALL_LOG_APPROVE: "leads_call_log_approve",
   LEADS_LINK_CUSTOMER: "leads_link_customer",
   LEADS_CONVERT: "leads_convert",
+  /** Dedicated page: leads currently assigned to the signed-in user, grouped by assignment date */
+  LEADS_MY_ASSIGNED_PAGE: "leads_my_assigned_page",
+  /** My assigned workspace: change pipeline status from the quick modal (also allowed if user has leads_edit) */
+  LEADS_AGENT_QUICK_STATUS: "leads_agent_quick_status",
+  /** My assigned workspace: add/view call logs in modals (also allowed if user has leads_log_calls) */
+  LEADS_AGENT_QUICK_CALL: "leads_agent_quick_call",
+  /** My assigned workspace: set or clear next follow-up from the quick modal (also allowed if user has leads_edit) */
+  LEADS_AGENT_QUICK_FOLLOWUP: "leads_agent_quick_followup",
 } as const;
 
 // Permission descriptions for the role management UI
@@ -108,6 +121,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES]: "View Recent Invoices section on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION]: "Access Invoice Authentication Verification section",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO]: "View Debug Info (Real-time) section on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS]:
+    "View “My assigned leads” summary (counts & follow-ups) on the dashboard",
 
   // Invoices
   [GRANULAR_PERMISSIONS.INVOICES_VIEW]: "Access invoices page and view invoice list",
@@ -172,8 +187,19 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.LEADS_DELETE]: "Delete leads",
   [GRANULAR_PERMISSIONS.LEADS_ASSIGN]: "Assign or reassign leads to users",
   [GRANULAR_PERMISSIONS.LEADS_LOG_CALLS]: "Add and view call logs on leads",
+  [GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS]: "Delete call log entries from a lead",
+  [GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE]:
+    "Add recording/reference ID to call logs and mark them as verified (quality control)",
   [GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER]: "Link leads to existing customers or businesses",
   [GRANULAR_PERMISSIONS.LEADS_CONVERT]: "Convert won leads to customers and start invoices",
+  [GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE]:
+    "Access “My assigned leads” page (your assigned leads, grouped by date, with progress stats)",
+  [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS]:
+    "On “My assigned leads”: open the status modal to update pipeline stage (Won/Lost/etc.)",
+  [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL]:
+    "On “My assigned leads”: open call log modal to log calls and optional follow-up from the call",
+  [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP]:
+    "On “My assigned leads”: open follow-up modal to set or clear the next follow-up date",
 };
 
 // Group permissions by category for better organization in UI
@@ -187,6 +213,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_RECENT_INVOICES,
     GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS,
   ],
   [PERMISSION_CATEGORIES.INVOICES]: [
     GRANULAR_PERMISSIONS.INVOICES_VIEW,
@@ -251,8 +278,14 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_DELETE,
     GRANULAR_PERMISSIONS.LEADS_ASSIGN,
     GRANULAR_PERMISSIONS.LEADS_LOG_CALLS,
+    GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS,
+    GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE,
     GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER,
     GRANULAR_PERMISSIONS.LEADS_CONVERT,
+    GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE,
+    GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS,
+    GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL,
+    GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP,
   ],
 };
 
@@ -278,6 +311,7 @@ export const PAGES = {
   USER_MANAGEMENT: "user-management",
   REPORTS: "reports",
   LEADS: "leads",
+  MY_ASSIGNED_LEADS: "my-assigned-leads",
 } as const;
 
 // Legacy actions for backward compatibility (to be removed)

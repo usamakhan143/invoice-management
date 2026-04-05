@@ -291,3 +291,29 @@ html, body {
     font-size: 0.875rem;
   }
 }
+
+/* Native date/time: keep picker icon visible on dark form fields */
+.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.85;
+}
+
+/* Lead details modal — copy confirmation */
+@keyframes workspace-copy-hint {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(2px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.02) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.workspace-copy-hint {
+  animation: workspace-copy-hint 0.38s ease-out forwards;
+}

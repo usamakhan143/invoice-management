@@ -1,8 +1,11 @@
 export { LEAD_COUNTRY_OPTIONS } from "./leadCountries";
+export { LEAD_SOURCE_PRESETS } from "./leadSources";
 
 /** Sentinel for country / category dropdowns → show custom text field */
 export const COUNTRY_CUSTOM_VALUE = "__country_custom__";
 export const CATEGORY_CUSTOM_VALUE = "__category_custom__";
+/** Sentinel for lead source searchable select → custom text field */
+export const SOURCE_CUSTOM_VALUE = "__source_custom__";
 
 /**
  * Simple industry / business types — good for selling digital services or products online.
