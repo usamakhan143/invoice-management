@@ -140,6 +140,44 @@ service cloud.firestore {
       allow read, write: if canAccessUserData(resource.data.userId);
     }
 
+    // Leads (CRM) — company boundary matches customers/invoices; granular permissions enforced in the app
+    match /leads/{leadId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(request.resource.data.companyId) || isAdmin());
+      allow update, delete: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
+    match /leads/{leadId}/callLogs/{logId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(get(/databases/$(database)/documents/leads/$(leadId)).data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(get(/databases/$(database)/documents/leads/$(leadId)).data.companyId) || isAdmin());
+      allow update, delete: if isAuthenticated() &&
+        (canAccessCompanyData(get(/databases/$(database)/documents/leads/$(leadId)).data.companyId) || isAdmin());
+    }
+
+    match /leads/{leadId}/assignmentEvents/{eventId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(get(/databases/$(database)/documents/leads/$(leadId)).data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(get(/databases/$(database)/documents/leads/$(leadId)).data.companyId) || isAdmin());
+      allow update, delete: if isAuthenticated() &&
+        (canAccessCompanyData(get(/databases/$(database)/documents/leads/$(leadId)).data.companyId) || isAdmin());
+    }
+
+    // Businesses (under a customer) — company-scoped
+    match /businesses/{businessId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(request.resource.data.companyId) || isAdmin());
+      allow update, delete: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
     // Default deny rule for any other collections
     match /{document=**} {
       allow read, write: if false;

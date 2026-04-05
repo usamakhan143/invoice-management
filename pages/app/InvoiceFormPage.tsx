@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { db, FieldValue, Timestamp } from "../../services/firebase";
@@ -22,6 +22,7 @@ const InvoiceFormPage: React.FC = () => {
   const { canCreateInvoice, canEditInvoice } = usePermissions();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Check permissions for create/edit access
   useEffect(() => {
@@ -144,6 +145,18 @@ const InvoiceFormPage: React.FC = () => {
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
+
+  // Preselect customer when navigating from lead conversion (or other flows)
+  useEffect(() => {
+    if (id) return;
+    const st = location.state as { customerId?: string } | undefined;
+    const cid = st?.customerId;
+    if (!cid || customers.length === 0) return;
+    if (!customers.some((c) => c.id === cid)) return;
+    setInvoiceData((prev) =>
+      prev.customerId === cid ? prev : { ...prev, customerId: cid },
+    );
+  }, [id, location.state, customers]);
 
   useEffect(() => {
     if (invoiceData.bankAccountId) {

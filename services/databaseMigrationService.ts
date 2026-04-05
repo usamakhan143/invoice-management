@@ -228,6 +228,10 @@ export class DatabaseMigrationService {
       data.customRoles = toRows(
         await this.queryAllByField("customRoles", "companyId", companyId),
       );
+      data.businesses = toRows(
+        await this.queryAllByField("businesses", "companyId", companyId),
+      );
+      data.leads = await this.exportLeadsNested(companyId);
       data.subscriptions = toRows(
         await this.queryAllByField("subscriptions", "companyId", companyId),
       );
@@ -250,6 +254,36 @@ export class DatabaseMigrationService {
   /**
    * Paginated equality query; falls back to single .get() if composite index missing.
    */
+  private static async exportLeadsNested(companyId: string): Promise<unknown[]> {
+    const rows = await this.queryAllByField("leads", "companyId", companyId);
+    const out: unknown[] = [];
+    for (const row of rows) {
+      const logsSnap = await db
+        .collection("leads")
+        .doc(row.id)
+        .collection("callLogs")
+        .get();
+      const evSnap = await db
+        .collection("leads")
+        .doc(row.id)
+        .collection("assignmentEvents")
+        .get();
+      out.push({
+        id: row.id,
+        ...serializeDocData(row.data as Record<string, unknown>),
+        callLogs: logsSnap.docs.map((d) => ({
+          id: d.id,
+          ...serializeDocData(d.data() as Record<string, unknown>),
+        })),
+        assignmentEvents: evSnap.docs.map((d) => ({
+          id: d.id,
+          ...serializeDocData(d.data() as Record<string, unknown>),
+        })),
+      });
+    }
+    return out;
+  }
+
   private static async queryAllByField(
     collectionName: string,
     field: "companyId" | "userId",
@@ -381,6 +415,7 @@ export class DatabaseMigrationService {
         ["bankAccounts", "bankAccounts"],
         ["products", "products"],
         ["customers", "customers"],
+        ["businesses", "businesses"],
         ["invoices", "invoices"],
         ["expenses", "expenses"],
         ["activities", "activities"],
@@ -412,6 +447,61 @@ export class DatabaseMigrationService {
         }
 
         if (ops.length) await this.commitBatches(ops);
+      }
+
+      const leadList = rows.leads;
+      if (Array.isArray(leadList) && leadList.length) {
+        for (const raw of leadList) {
+          if (!raw || typeof raw !== "object") continue;
+          const item = raw as Record<string, unknown>;
+          const lid = item.id as string | undefined;
+          if (!lid) continue;
+          const callLogs = item.callLogs;
+          const assignmentEvents = item.assignmentEvents;
+          const { id: _lid, callLogs: _cl, assignmentEvents: _ae, ...leadRest } = item;
+          const revivedLead = reviveFirestoreValues(leadRest) as Record<string, unknown>;
+          delete revivedLead.importedAt;
+          revivedLead.backupImportedAt = Timestamp.now();
+          await db.collection("leads").doc(lid).set(revivedLead, { merge: true });
+
+          if (Array.isArray(callLogs)) {
+            for (const log of callLogs) {
+              if (!log || typeof log !== "object") continue;
+              const logRec = log as Record<string, unknown>;
+              const logId = logRec.id as string | undefined;
+              if (!logId) continue;
+              const { id: _logId, ...logBody } = logRec;
+              const revivedLog = reviveFirestoreValues(logBody) as Record<string, unknown>;
+              delete revivedLog.importedAt;
+              revivedLog.backupImportedAt = Timestamp.now();
+              await db
+                .collection("leads")
+                .doc(lid)
+                .collection("callLogs")
+                .doc(logId)
+                .set(revivedLog, { merge: true });
+            }
+          }
+
+          if (Array.isArray(assignmentEvents)) {
+            for (const ev of assignmentEvents) {
+              if (!ev || typeof ev !== "object") continue;
+              const evRec = ev as Record<string, unknown>;
+              const evId = evRec.id as string | undefined;
+              if (!evId) continue;
+              const { id: _evId, ...evBody } = evRec;
+              const revivedEv = reviveFirestoreValues(evBody) as Record<string, unknown>;
+              delete revivedEv.importedAt;
+              revivedEv.backupImportedAt = Timestamp.now();
+              await db
+                .collection("leads")
+                .doc(lid)
+                .collection("assignmentEvents")
+                .doc(evId)
+                .set(revivedEv, { merge: true });
+            }
+          }
+        }
       }
     } catch (error) {
       console.error("Import failed:", error);

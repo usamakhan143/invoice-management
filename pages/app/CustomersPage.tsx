@@ -7,6 +7,7 @@ import { ActivityLogger } from "../../services/activityLogger";
 import { CustomerService } from "../../services/customerService";
 import type { Customer } from "../../types";
 import Spinner from "../../components/Spinner";
+import { InternationalPhoneInput } from "../../components/InternationalPhoneInput";
 
 const PaginationControls: React.FC<{
   currentPage: number;
@@ -459,17 +460,15 @@ const CustomersPage: React.FC = () => {
                 className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 required
               />
-              <input
-                type="tel"
-                placeholder="Phone"
+              <InternationalPhoneInput
+                placeholder="Phone (start with + and country code for spacing)"
                 value={currentCustomer.phone || ""}
-                onChange={(e) =>
-                  setCurrentCustomer({
-                    ...currentCustomer,
-                    phone: e.target.value,
-                  })
+                onChange={(v) =>
+                  setCurrentCustomer((c) => ({
+                    ...c,
+                    phone: v,
+                  }))
                 }
-                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
               <textarea
                 placeholder="Address (optional)"

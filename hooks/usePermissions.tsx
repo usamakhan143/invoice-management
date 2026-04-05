@@ -88,6 +88,23 @@ export const usePermissions = () => {
   const canImportBackup = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DATA_BACKUP_IMPORT);
   const canViewBackupHistory = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DATA_BACKUP_VIEW_HISTORY);
 
+  // Leads / CRM (granular only)
+  const canViewLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_VIEW);
+  const canViewAllLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_VIEW_ALL);
+  const canAccessLeadsPage = (): boolean =>
+    canViewLeads() || canViewAllLeads();
+  const canCreateLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CREATE);
+  const canEditLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_EDIT);
+  const canDeleteLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE);
+  const canAssignLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_ASSIGN);
+  const canLogLeadCalls = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_LOG_CALLS);
+  const canLinkLeadCustomer = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER);
+  const canConvertLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CONVERT);
+
+  /** List/query scope: all company leads vs assigned-or-created only */
+  const leadsListViewAll = (): boolean => canViewAllLeads();
+
   // Legacy compatibility functions (to be gradually removed)
   const hasPageAccess = (page: string): boolean => {
     // Map legacy page access to new permissions
@@ -108,6 +125,8 @@ export const usePermissions = () => {
         return canViewExpenses();
       case "user-management":
         return canViewUserManagement();
+      case "leads":
+        return canAccessLeadsPage();
       default:
         return false;
     }
@@ -128,6 +147,8 @@ export const usePermissions = () => {
         return canCreateExpense();
       case "user-management":
         return canCreateUser();
+      case "leads":
+        return canCreateLead();
       default:
         return false;
     }
@@ -147,6 +168,8 @@ export const usePermissions = () => {
         return canEditExpense();
       case "user-management":
         return canEditUser();
+      case "leads":
+        return canEditLead();
       default:
         return false;
     }
@@ -166,6 +189,8 @@ export const usePermissions = () => {
         return canDeleteExpense();
       case "user-management":
         return false; // Remove functionality is disabled
+      case "leads":
+        return canDeleteLead();
       default:
         return false;
     }
@@ -265,6 +290,19 @@ export const usePermissions = () => {
     canExportBackup,
     canImportBackup,
     canViewBackupHistory,
+
+    // Leads / CRM
+    canViewLeads,
+    canViewAllLeads,
+    canAccessLeadsPage,
+    canCreateLead,
+    canEditLead,
+    canDeleteLead,
+    canAssignLeads,
+    canLogLeadCalls,
+    canLinkLeadCustomer,
+    canConvertLead,
+    leadsListViewAll,
 
     // Legacy compatibility
     hasPageAccess,

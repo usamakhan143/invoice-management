@@ -15,6 +15,7 @@ export const PERMISSION_CATEGORIES = {
   COMPANY_ACTIVITY: "company-activity",
   DATA_MANAGEMENT: "data-management",
   SIDEBAR: "sidebar",
+  LEADS: "leads",
 } as const;
 
 // New granular permissions for each section/UI element
@@ -83,6 +84,17 @@ export const GRANULAR_PERMISSIONS = {
   DATA_BACKUP_EXPORT: "data_backup_export",
   DATA_BACKUP_IMPORT: "data_backup_import",
   DATA_BACKUP_VIEW_HISTORY: "data_backup_view_history",
+
+  // Leads / CRM (granular only — no role names in app logic)
+  LEADS_VIEW: "leads_view",
+  LEADS_VIEW_ALL: "leads_view_all",
+  LEADS_CREATE: "leads_create",
+  LEADS_EDIT: "leads_edit",
+  LEADS_DELETE: "leads_delete",
+  LEADS_ASSIGN: "leads_assign",
+  LEADS_LOG_CALLS: "leads_log_calls",
+  LEADS_LINK_CUSTOMER: "leads_link_customer",
+  LEADS_CONVERT: "leads_convert",
 } as const;
 
 // Permission descriptions for the role management UI
@@ -151,6 +163,17 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.DATA_BACKUP_EXPORT]: "Export company data for backup",
   [GRANULAR_PERMISSIONS.DATA_BACKUP_IMPORT]: "Import company data from backup",
   [GRANULAR_PERMISSIONS.DATA_BACKUP_VIEW_HISTORY]: "View backup history and logs",
+
+  // Leads
+  [GRANULAR_PERMISSIONS.LEADS_VIEW]: "Access leads and view leads assigned to you or created by you",
+  [GRANULAR_PERMISSIONS.LEADS_VIEW_ALL]: "View all leads in the company (monitoring)",
+  [GRANULAR_PERMISSIONS.LEADS_CREATE]: "Create new leads",
+  [GRANULAR_PERMISSIONS.LEADS_EDIT]: "Edit lead fields, status, and follow-up date",
+  [GRANULAR_PERMISSIONS.LEADS_DELETE]: "Delete leads",
+  [GRANULAR_PERMISSIONS.LEADS_ASSIGN]: "Assign or reassign leads to users",
+  [GRANULAR_PERMISSIONS.LEADS_LOG_CALLS]: "Add and view call logs on leads",
+  [GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER]: "Link leads to existing customers or businesses",
+  [GRANULAR_PERMISSIONS.LEADS_CONVERT]: "Convert won leads to customers and start invoices",
 };
 
 // Group permissions by category for better organization in UI
@@ -220,6 +243,17 @@ export const PERMISSION_GROUPS = {
   [PERMISSION_CATEGORIES.SIDEBAR]: [
     GRANULAR_PERMISSIONS.SIDEBAR_EDIT_PROFILE,
   ],
+  [PERMISSION_CATEGORIES.LEADS]: [
+    GRANULAR_PERMISSIONS.LEADS_VIEW,
+    GRANULAR_PERMISSIONS.LEADS_VIEW_ALL,
+    GRANULAR_PERMISSIONS.LEADS_CREATE,
+    GRANULAR_PERMISSIONS.LEADS_EDIT,
+    GRANULAR_PERMISSIONS.LEADS_DELETE,
+    GRANULAR_PERMISSIONS.LEADS_ASSIGN,
+    GRANULAR_PERMISSIONS.LEADS_LOG_CALLS,
+    GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER,
+    GRANULAR_PERMISSIONS.LEADS_CONVERT,
+  ],
 };
 
 // Helper function to get all permissions as an array
@@ -243,6 +277,7 @@ export const PAGES = {
   EXPENSES: "expenses",
   USER_MANAGEMENT: "user-management",
   REPORTS: "reports",
+  LEADS: "leads",
 } as const;
 
 // Legacy actions for backward compatibility (to be removed)

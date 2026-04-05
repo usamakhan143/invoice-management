@@ -191,7 +191,14 @@ export type ActivityType =
   | "user_updated"
   | "user_deleted"
   | "login"
-  | "logout";
+  | "logout"
+  | "lead_created"
+  | "lead_updated"
+  | "lead_deleted"
+  | "lead_call_logged"
+  | "lead_assigned"
+  | "lead_converted"
+  | "lead_linked_customer";
 
 export interface Activity {
   id: string;
@@ -208,4 +215,94 @@ export interface Activity {
     newValue?: any;
   };
   timestamp: firebase.firestore.Timestamp;
+}
+
+/** CRM pipeline stage — independent from per-call outcome */
+export type LeadStatus =
+  | "New"
+  | "Contacted"
+  | "Qualified"
+  | "Proposal Sent"
+  | "Won"
+  | "Lost";
+
+/** Per-call result — does not auto-change LeadStatus */
+export type LeadCallOutcome =
+  | "No Answer"
+  | "Busy"
+  | "Connected"
+  | "Wrong Number";
+
+/** Optional fields toggled in UI; no strict validation */
+export interface LeadExtras {
+  socialMedia?: string;
+  facebookUrl?: string;
+  instagramUrl?: string;
+  linkedinUrl?: string;
+  twitterUrl?: string;
+  tiktokUrl?: string;
+  website?: string;
+  address?: string;
+  extraNotes?: string;
+}
+
+export interface Lead {
+  id: string;
+  name?: string;
+  company?: string;
+  /** Lead / business location (country) */
+  country?: string;
+  /** Business type / industry category */
+  category?: string;
+  phone?: string;
+  email?: string;
+  source: string;
+  status: LeadStatus;
+  assignedUserId: string;
+  notes?: string;
+  nextFollowUpDate?: firebase.firestore.Timestamp | null;
+  companyId: string;
+  createdAt: firebase.firestore.Timestamp;
+  updatedAt?: firebase.firestore.Timestamp;
+  createdById: string;
+  linkedCustomerId?: string | null;
+  linkedBusinessId?: string | null;
+  convertedCustomerId?: string | null;
+  convertedBusinessId?: string | null;
+  extras?: LeadExtras;
+  phoneNormalized?: string;
+  emailNormalized?: string;
+}
+
+export interface LeadCallLog {
+  id: string;
+  outcome: LeadCallOutcome;
+  notes: string;
+  nextFollowUpDate?: firebase.firestore.Timestamp | null;
+  createdAt: firebase.firestore.Timestamp;
+  createdBy: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LeadAssignmentEvent {
+  id: string;
+  fromUserId: string | null;
+  toUserId: string;
+  assignedByUserId: string;
+  reason?: string;
+  createdAt: firebase.firestore.Timestamp;
+}
+
+/** Commercial entity under a customer; not created at lead capture */
+export interface Business {
+  id: string;
+  companyId: string;
+  customerId: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  createdAt: firebase.firestore.Timestamp;
+  updatedAt?: firebase.firestore.Timestamp;
+  createdById?: string;
 }
