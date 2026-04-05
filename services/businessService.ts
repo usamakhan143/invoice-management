@@ -1,4 +1,5 @@
 import { db, Timestamp } from "./firebase";
+import { resolveCompanyIdForUser } from "./companyId";
 import { FirebaseHealth } from "./firebaseHealth";
 import type { Business } from "../types";
 import type firebase from "firebase/compat/app";
@@ -8,7 +9,7 @@ export class BusinessService {
     user: firebase.User,
     userProfile: { isOwner?: boolean; companyId?: string },
   ): string {
-    return userProfile?.isOwner ? user.uid : userProfile?.companyId || user.uid;
+    return resolveCompanyIdForUser(user, userProfile);
   }
 
   static async listByCustomer(
@@ -46,6 +47,9 @@ export class BusinessService {
     userProfile: { isOwner?: boolean; companyId?: string },
   ): Promise<string> {
     const companyId = this.resolveCompanyId(user, userProfile);
+    if (!companyId) {
+      throw new Error("Company is still loading. Wait a moment and try again.");
+    }
     const id = await FirebaseHealth.safeAddDocument("businesses", {
       companyId,
       customerId: data.customerId,

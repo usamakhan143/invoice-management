@@ -77,6 +77,11 @@ function isClosedLead(l: Lead): boolean {
   return l.status === "Won" || l.status === "Lost";
 }
 
+/** Customer created from lead, or lead linked to existing customer — ready for invoicing */
+function leadHasCustomerOrLink(l: Lead): boolean {
+  return !!(l.convertedCustomerId || "").trim() || !!(l.linkedCustomerId || "").trim();
+}
+
 type WorkspaceTab = "queue" | "closed";
 
 const FILTER_FIELD =
@@ -116,6 +121,12 @@ const MyAssignedLeadsPage: React.FC = () => {
     canAgentQuickSetFollowup,
     canDeleteLeadCallLogs,
     canApproveCallLogs,
+    canAccessLeadConversionHub,
+    canLinkLeadCustomer,
+    canConvertWonLeadToCustomer,
+    canCreateInvoiceFromLead,
+    canCreateInvoice,
+    isAdmin,
   } = usePermissions();
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -176,21 +187,23 @@ const MyAssignedLeadsPage: React.FC = () => {
     if (modal && !modalLead) closeModal();
   }, [modal, modalLead]);
 
-  useEffect(() => {
-    if (!user || !userProfile) return;
-    if (!canAccessMyAssignedLeadsPage()) {
-      navigate("/");
-    }
-  }, [user, userProfile, canAccessMyAssignedLeadsPage, navigate]);
+  const mayAccessMyAssigned = canAccessMyAssignedLeadsPage();
 
   useEffect(() => {
-    if (!user || !userProfile || !canAccessMyAssignedLeadsPage()) return;
+    if (!user || !userProfile) return;
+    if (!mayAccessMyAssigned) {
+      navigate("/");
+    }
+  }, [user, userProfile, mayAccessMyAssigned, navigate]);
+
+  useEffect(() => {
+    if (!user || !userProfile || !mayAccessMyAssigned) return;
     const unsub = LeadService.getLeadsAssignedToMeRealTime(user, userProfile, (rows) => {
       setLeads(rows);
       setLoadingList(false);
     });
     return () => unsub();
-  }, [user, userProfile, canAccessMyAssignedLeadsPage]);
+  }, [user, userProfile, mayAccessMyAssigned]);
 
   const assignedLeadIdsKey = leads.map((l) => l.id).sort().join("\u0001");
 
@@ -347,7 +360,7 @@ const MyAssignedLeadsPage: React.FC = () => {
   }, [filteredLeads, assignedAtMs]);
 
   if (!user || !userProfile) return null;
-  if (!canAccessMyAssignedLeadsPage()) return null;
+  if (!mayAccessMyAssigned) return null;
 
   const winRate =
     closedStats.won + closedStats.lost > 0
@@ -364,6 +377,12 @@ const MyAssignedLeadsPage: React.FC = () => {
   const canDelCallLog = canDeleteLeadCallLogs();
   const canApproveCallLog = canApproveCallLogs();
   const showFullLeadLink = canAccessLeadsPage();
+  /** Owner / company admin: keep Status, Call, F/U on closed leads for corrections */
+  const privilegedWorkspace = userProfile.isOwner === true || isAdmin;
+  const conversionHubAllowed = canAccessLeadConversionHub();
+  const canLinkCust = canLinkLeadCustomer();
+  const canConvertWon = canConvertWonLeadToCustomer();
+  const canInvoiceShortcut = canCreateInvoiceFromLead() && canCreateInvoice();
 
   const followLabel = (l: Lead) => {
     const sod = new Date();
@@ -391,6 +410,7 @@ const MyAssignedLeadsPage: React.FC = () => {
           canDeleteCallLog={canDelCallLog}
           canApproveCallLog={canApproveCallLog}
           canSetFollowup={canFollow}
+          canAccessLeadConversionHub={conversionHubAllowed}
         />
       ) : null}
 
@@ -402,7 +422,7 @@ const MyAssignedLeadsPage: React.FC = () => {
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
             {workspaceTab === "queue"
               ? "Open pipeline only — focus on leads you still need to connect with. Won and Lost stay under Closed."
-              : "Won and Lost history — for reference. Your day-to-day work lives in Working queue."}
+              : "Won and Lost history. For deals you won, finish by linking or creating a customer so you can invoice."}
           </p>
           {loadingDates && leads.length > 0 ? (
             <p className="text-xs text-primary-600 dark:text-primary-400 mt-1">Syncing assignment dates…</p>
@@ -739,51 +759,157 @@ const MyAssignedLeadsPage: React.FC = () => {
                                     {followLabel(l)}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 text-right whitespace-nowrap">
-                                  <div className="inline-flex flex-nowrap items-center justify-end gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => openModal(l.id, "details")}
-                                      className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                                    >
-                                      Details
-                                    </button>
-                                    {canStatus ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openModal(l.id, "status")}
-                                        className="shrink-0 rounded-md bg-primary-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-primary-700"
+                                <td className="px-3 py-2 text-right align-top">
+                                  {(() => {
+                                    const hidePipelineClosedNormal =
+                                      workspaceTab === "closed" &&
+                                      !privilegedWorkspace &&
+                                      (l.status === "Won" || l.status === "Lost");
+                                    const closedWonBillingRow =
+                                      workspaceTab === "closed" &&
+                                      !privilegedWorkspace &&
+                                      l.status === "Won";
+                                    return (
+                                      <div
+                                        className={
+                                          closedWonBillingRow
+                                            ? "flex flex-col items-end gap-2 max-w-[16rem] ml-auto"
+                                            : "inline-flex flex-col items-end gap-1"
+                                        }
                                       >
-                                        Status
-                                      </button>
-                                    ) : null}
-                                    {canCall ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openModal(l.id, "call")}
-                                        className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                                      >
-                                        Call
-                                      </button>
-                                    ) : null}
-                                    {canFollow ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openModal(l.id, "followup")}
-                                        className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                                      >
-                                        F/U
-                                      </button>
-                                    ) : null}
-                                    {showFullLeadLink ? (
-                                      <Link
-                                        to={`/leads/${l.id}`}
-                                        className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-primary-600 hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-950/30"
-                                      >
-                                        Full
-                                      </Link>
-                                    ) : null}
-                                  </div>
+                                        <div className="inline-flex flex-nowrap items-center justify-end gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => openModal(l.id, "details")}
+                                            className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                                          >
+                                            Details
+                                          </button>
+                                          {!hidePipelineClosedNormal && canStatus ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => openModal(l.id, "status")}
+                                              className="shrink-0 rounded-md bg-primary-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-primary-700"
+                                            >
+                                              Status
+                                            </button>
+                                          ) : null}
+                                          {!hidePipelineClosedNormal && canCall ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => openModal(l.id, "call")}
+                                              className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                                            >
+                                              Call
+                                            </button>
+                                          ) : null}
+                                          {!hidePipelineClosedNormal && canFollow ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => openModal(l.id, "followup")}
+                                              className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                                            >
+                                              F/U
+                                            </button>
+                                          ) : null}
+                                          {showFullLeadLink ? (
+                                            <Link
+                                              to={`/leads/${l.id}`}
+                                              className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-primary-600 hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-950/30"
+                                            >
+                                              Full
+                                            </Link>
+                                          ) : null}
+                                        </div>
+                                        {closedWonBillingRow ? (
+                                          <div className="w-full rounded-lg border border-emerald-200/90 dark:border-emerald-800/50 bg-emerald-50/70 dark:bg-emerald-950/25 px-2 py-2 text-left">
+                                            {!leadHasCustomerOrLink(l) ? (
+                                              <>
+                                                <p className="text-[10px] text-emerald-900/90 dark:text-emerald-100/90 leading-snug font-medium">
+                                                  No customer on this deal yet — link an existing contact or create one to
+                                                  enable invoicing.
+                                                </p>
+                                                <div className="mt-1.5 flex flex-wrap justify-end gap-1">
+                                                  {canLinkCust ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => navigate(`/leads/${l.id}?tab=details`)}
+                                                      className="rounded-md border border-emerald-600/40 dark:border-emerald-500/40 bg-white dark:bg-gray-900 px-2 py-1 text-[10px] font-semibold text-emerald-900 dark:text-emerald-100 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40"
+                                                    >
+                                                      Link customer
+                                                    </button>
+                                                  ) : null}
+                                                  {canConvertWon ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => navigate(`/leads/${l.id}?tab=conversion`)}
+                                                      className="rounded-md bg-emerald-700 dark:bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-800 dark:hover:bg-emerald-500"
+                                                    >
+                                                      Convert to customer
+                                                    </button>
+                                                  ) : null}
+                                                  {!canLinkCust && !canConvertWon && conversionHubAllowed ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => navigate(`/leads/${l.id}?tab=conversion`)}
+                                                      className="rounded-md bg-emerald-700 dark:bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-800 dark:hover:bg-emerald-500"
+                                                    >
+                                                      Set up billing
+                                                    </button>
+                                                  ) : null}
+                                                  {!canLinkCust && !canConvertWon && !conversionHubAllowed ? (
+                                                    <p className="text-[10px] text-gray-600 dark:text-gray-400 text-right w-full">
+                                                      Ask your admin for lead conversion permissions.
+                                                    </p>
+                                                  ) : null}
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <p className="text-[10px] text-emerald-900/90 dark:text-emerald-100/90 font-medium">
+                                                  Customer on file — you can create an invoice.
+                                                </p>
+                                                <div className="mt-1.5 flex flex-wrap justify-end gap-1">
+                                                  {canInvoiceShortcut ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        navigate("/invoices/new", {
+                                                          state: {
+                                                            customerId: (
+                                                              l.convertedCustomerId ||
+                                                              l.linkedCustomerId ||
+                                                              ""
+                                                            ).trim(),
+                                                            fromLeadConversion: true,
+                                                          },
+                                                        })
+                                                      }
+                                                      className="rounded-md bg-primary-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-primary-700"
+                                                    >
+                                                      New invoice
+                                                    </button>
+                                                  ) : null}
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => navigate(`/leads/${l.id}?tab=conversion`)}
+                                                    className="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[10px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                                                  >
+                                                    {canInvoiceShortcut ? "Lead page" : "Open billing"}
+                                                  </button>
+                                                </div>
+                                                {!canInvoiceShortcut ? (
+                                                  <p className="text-[10px] text-gray-600 dark:text-gray-400 mt-1 text-right">
+                                                    Invoice shortcut needs separate permission; use Invoices or open the lead.
+                                                  </p>
+                                                ) : null}
+                                              </>
+                                            )}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
                             );

@@ -1,4 +1,5 @@
 import { db, Timestamp } from "./firebase";
+import { resolveCompanyIdForUser } from "./companyId";
 import { FirebaseHealth } from "./firebaseHealth";
 import type { Product } from "../types";
 
@@ -10,7 +11,10 @@ export class ProductService {
     userProfile: any,
     productId?: string,
   ): Promise<string> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
+    if (!companyId) {
+      throw new Error("Company is still loading. Wait a moment and try again.");
+    }
 
     const finalProductData = {
       ...productData,
@@ -18,7 +22,7 @@ export class ProductService {
       createdBy:
         userProfile?.displayName || userProfile?.companyName || user.email,
       createdById: user.uid,
-      companyId: companyId || user.uid,
+      companyId,
       ...(productId
         ? {
             updatedBy:
@@ -64,7 +68,7 @@ export class ProductService {
     isOwner: boolean,
     isAdmin: boolean,
   ): Promise<Product[]> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     try {
       // Check connection before fetching
@@ -73,11 +77,15 @@ export class ProductService {
         console.log("🔄 Firebase offline, using cached data for products");
       }
 
+      if ((isOwner || isAdmin) && !companyId) {
+        return [];
+      }
+
       const query =
         isOwner || isAdmin
           ? db
               .collection("products")
-              .where("companyId", "==", companyId || user.uid)
+              .where("companyId", "==", companyId)
               .orderBy("createdAt", "desc")
           : db
               .collection("products")
@@ -115,15 +123,19 @@ export class ProductService {
     isAdmin: boolean,
     callback: (products: Product[]) => void,
   ): () => void {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     // Build Firestore query based on user role
     let query;
     if (isOwner || isAdmin) {
+      if (!companyId) {
+        callback([]);
+        return () => {};
+      }
       // Admin sees all company products
       query = db
         .collection("products")
-        .where("companyId", "==", companyId || user.uid)
+        .where("companyId", "==", companyId)
         .orderBy("createdAt", "desc");
     } else {
       // Regular user sees their own products
@@ -319,16 +331,19 @@ export class ProductService {
     isOwner: boolean,
     isAdmin: boolean,
   ): Promise<Product[]> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     try {
       let productsData: Product[] = [];
 
       if (isOwner || isAdmin) {
+        if (!companyId) {
+          return [];
+        }
         // Admin sees all company products
         const snapshot = await db
           .collection("products")
-          .where("companyId", "==", companyId || user.uid)
+          .where("companyId", "==", companyId)
           .get();
 
         productsData = snapshot.docs.map((doc) => ({

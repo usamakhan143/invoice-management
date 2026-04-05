@@ -1,4 +1,5 @@
 import { db, Timestamp } from "./firebase";
+import { resolveCompanyIdForUser } from "./companyId";
 import { FirebaseHealth } from "./firebaseHealth";
 import { CustomerService } from "./customerService";
 import { BusinessService } from "./businessService";
@@ -76,7 +77,7 @@ function mergeLeadSnapshots(
 
 export class LeadService {
   static resolveCompanyId(user: firebase.User, userProfile: { isOwner?: boolean; companyId?: string }): string {
-    return userProfile?.isOwner ? user.uid : userProfile?.companyId || user.uid;
+    return resolveCompanyIdForUser(user, userProfile);
   }
 
   /** Scoped list: assigned to user OR created by user. */
@@ -91,6 +92,9 @@ export class LeadService {
     viewAll: boolean,
   ): Promise<Lead[]> {
     const companyId = this.resolveCompanyId(user, userProfile);
+    if (!companyId) {
+      return [];
+    }
     try {
       if (viewAll) {
         const snap = await db
@@ -129,6 +133,10 @@ export class LeadService {
     callback: (leads: Lead[]) => void,
   ): () => void {
     const companyId = this.resolveCompanyId(user, userProfile);
+    if (!companyId) {
+      callback([]);
+      return () => {};
+    }
 
     if (viewAll) {
       return db
@@ -216,6 +224,9 @@ export class LeadService {
     leadId?: string,
   ): Promise<string> {
     const companyId = this.resolveCompanyId(user, userProfile);
+    if (!companyId) {
+      throw new Error("Company is still loading. Wait a moment and try again, or sign out and back in.");
+    }
 
     const phoneNorm = normalizePhone(data.phone);
     const emailNorm = normalizeEmail(data.email);
@@ -500,6 +511,10 @@ export class LeadService {
     callback: (leads: Lead[]) => void,
   ): () => void {
     const companyId = this.resolveCompanyId(user, userProfile);
+    if (!companyId) {
+      callback([]);
+      return () => {};
+    }
     return db
       .collection("leads")
       .where("companyId", "==", companyId)

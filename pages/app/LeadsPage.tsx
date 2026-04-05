@@ -295,16 +295,18 @@ const LeadsPage: React.FC = () => {
   const showDuplicateWarning =
     duplicateCustomers.length > 0 || duplicateLeads.length > 0;
 
+  const mayAccessLeads = canAccessLeadsPage();
+
   useEffect(() => {
     if (!user || !userProfile) return;
-    if (!canAccessLeadsPage()) {
+    if (!mayAccessLeads) {
       navigate("/");
       return;
     }
-  }, [user, userProfile, canAccessLeadsPage, navigate]);
+  }, [user, userProfile, mayAccessLeads, navigate]);
 
   useEffect(() => {
-    if (!user || !userProfile || !canAccessLeadsPage()) return;
+    if (!user || !userProfile || !mayAccessLeads) return;
 
     const unsub = LeadService.getLeadsRealTime(
       user,
@@ -316,7 +318,7 @@ const LeadsPage: React.FC = () => {
       },
     );
     return () => unsub();
-  }, [user, userProfile, canAccessLeadsPage, viewAll]);
+  }, [user, userProfile, mayAccessLeads, viewAll]);
 
   useEffect(() => {
     if (!user || !userProfile || !modalOpen) return;

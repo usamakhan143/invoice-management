@@ -19,10 +19,14 @@ import Spinner from "../../components/Spinner";
 
 const InvoiceFormPage: React.FC = () => {
   const { user, userProfile } = useAuth();
-  const { canCreateInvoice, canEditInvoice } = usePermissions();
+  const { canCreateInvoice, canEditInvoice, canCreateInvoiceFromLead } = usePermissions();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const allowCreateInvoice = canCreateInvoice();
+  const allowEditInvoice = canEditInvoice();
+  const allowInvoiceFromLead = canCreateInvoiceFromLead();
 
   // Check permissions for create/edit access
   useEffect(() => {
@@ -30,15 +34,29 @@ const InvoiceFormPage: React.FC = () => {
 
     // Check if user has permission to access this form
     const isEditMode = !!id;
-    if (isEditMode && !canEditInvoice()) {
+    if (isEditMode && !allowEditInvoice) {
       navigate("/");
       return;
     }
-    if (!isEditMode && !canCreateInvoice()) {
+    if (!isEditMode && !allowCreateInvoice) {
       navigate("/");
       return;
     }
-  }, [user, userProfile, id, canCreateInvoice, canEditInvoice, navigate]);
+    const st = location.state as { fromLeadConversion?: boolean } | undefined;
+    if (!isEditMode && st?.fromLeadConversion && !allowInvoiceFromLead) {
+      navigate("/invoices", { replace: true });
+      return;
+    }
+  }, [
+    user,
+    userProfile,
+    id,
+    allowCreateInvoice,
+    allowEditInvoice,
+    allowInvoiceFromLead,
+    navigate,
+    location.state,
+  ]);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);

@@ -141,13 +141,19 @@ const LeadDetailPage: React.FC = () => {
     canDeleteLeadCallLogs,
     canApproveCallLogs,
     canLinkLeadCustomer,
-    canConvertLead,
+    canConvertWonLeadToCustomer,
+    canCreateInvoiceFromLead,
+    canAccessLeadConversionHub,
+    canCreateInvoice,
+    canViewCustomers,
     leadsListViewAll,
     isOwner,
     isAdmin,
   } = usePermissions();
 
   const viewAll = leadsListViewAll();
+  /** Boolean — do not pass permission *functions* into effect deps (new ref every render resets tabs). */
+  const conversionHubAllowed = canAccessLeadConversionHub();
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,12 +190,15 @@ const LeadDetailPage: React.FC = () => {
 
   useEffect(() => {
     const raw = searchParams.get("tab");
-    const next: LeadDetailTab =
+    let next: LeadDetailTab =
       raw === "details" || raw === "calls" || raw === "conversion" || raw === "assignment"
         ? raw
         : "details";
+    if (next === "conversion" && !conversionHubAllowed) {
+      next = "details";
+    }
     setActiveTab(next);
-  }, [id, searchParams]);
+  }, [id, searchParams, conversionHubAllowed]);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -210,6 +219,8 @@ const LeadDetailPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [convertBiz, setConvertBiz] = useState(false);
   const [convertBizName, setConvertBizName] = useState("");
+  const [converting, setConverting] = useState(false);
+  const [convertFeedback, setConvertFeedback] = useState<null | { type: "success" | "error"; message: string }>(null);
 
   const phoneCountryIso = useMemo(() => {
     const name =
@@ -217,12 +228,20 @@ const LeadDetailPage: React.FC = () => {
     return getIsoFromLeadCountryName(name);
   }, [countrySelect, countryCustom]);
 
+  const convertedCustomerLabel = useMemo(() => {
+    if (!lead?.convertedCustomerId) return "";
+    const c = customers.find((x) => x.id === lead.convertedCustomerId);
+    return (c?.name || "").trim();
+  }, [lead?.convertedCustomerId, customers]);
+
+  const mayAccessLeadArea = canAccessLeadsPage() || canAccessMyAssignedLeadsPage();
+
   useEffect(() => {
     if (!user || !userProfile) return;
-    if (!canAccessLeadsPage() && !canAccessMyAssignedLeadsPage()) {
+    if (!mayAccessLeadArea) {
       navigate("/");
     }
-  }, [user, userProfile, canAccessLeadsPage, canAccessMyAssignedLeadsPage, navigate]);
+  }, [user, userProfile, mayAccessLeadArea, navigate]);
 
   useEffect(() => {
     if (!id || !user || !userProfile) return;
@@ -353,7 +372,7 @@ const LeadDetailPage: React.FC = () => {
 
   useEffect(() => {
     if (!user || !userProfile || !lead) return;
-    if (!canLinkLeadCustomer() && !canConvertLead()) return;
+    if (!conversionHubAllowed) return;
     (async () => {
       const list = await CustomerService.getCustomers(
         user,
@@ -363,7 +382,7 @@ const LeadDetailPage: React.FC = () => {
       );
       setCustomers(list);
     })();
-  }, [user, userProfile, lead, canLinkLeadCustomer, canConvertLead, isOwner, isAdmin]);
+  }, [user, userProfile, lead, conversionHubAllowed, isOwner, isAdmin]);
 
   useEffect(() => {
     if (!lead || !linkCustomerId || !userProfile) return;
@@ -566,19 +585,21 @@ const LeadDetailPage: React.FC = () => {
   };
 
   const handleConvert = async () => {
-    if (!user || !userProfile || !lead || !canConvertLead()) return;
+    if (!user || !userProfile || !lead || !canConvertWonLeadToCustomer()) return;
     if (convertMode !== "new") return;
     if (lead.status !== "Won") {
-      alert("Set the lead to Won before converting");
+      setConvertFeedback({ type: "error", message: "Set the lead to Won first (Details tab → Status)." });
       return;
     }
     if (lead.convertedCustomerId) {
-      alert("Already converted");
+      setConvertFeedback({ type: "error", message: "This lead is already linked to a customer." });
       return;
     }
     if (!email.trim() && !window.confirm("No email on file — a placeholder email will be used for the customer record. Continue?")) {
       return;
     }
+    setConvertFeedback(null);
+    setConverting(true);
     try {
       const { customerId } = await LeadService.convertWonLead(lead, user, userProfile, {
         createBusiness: convertBiz,
@@ -589,11 +610,31 @@ const LeadDetailPage: React.FC = () => {
         entityType: "lead",
         newValue: { customerId },
       });
-      navigate("/invoices/new", { state: { customerId } });
+      const canInvoiceShortcut = canCreateInvoiceFromLead() && canCreateInvoice();
+      if (canInvoiceShortcut) {
+        navigate("/invoices/new", { state: { customerId, fromLeadConversion: true } });
+        return;
+      }
+      setConvertFeedback({
+        type: "success",
+        message: canCreateInvoice()
+          ? "Customer created. Ask your admin for “Create invoice from lead” to open the invoice screen from here, or start a new invoice from the Invoices page and pick this customer."
+          : "Customer created. You can open the Customers page to review the record. Ask your admin if you also need permission to create invoices.",
+      });
     } catch (e) {
       console.error(e);
-      alert(e instanceof Error ? e.message : "Convert failed");
+      setConvertFeedback({
+        type: "error",
+        message: e instanceof Error ? e.message : "Conversion failed. Try again or contact support.",
+      });
+    } finally {
+      setConverting(false);
     }
+  };
+
+  const goToNewInvoiceForCustomer = (customerId: string) => {
+    if (!canCreateInvoiceFromLead() || !canCreateInvoice()) return;
+    navigate("/invoices/new", { state: { customerId, fromLeadConversion: true } });
   };
 
   if (loading) {
@@ -624,7 +665,7 @@ const LeadDetailPage: React.FC = () => {
   const tabItems: { id: LeadDetailTab; label: string }[] = [
     { id: "details", label: "Details" },
     { id: "calls", label: "Call logs" },
-    { id: "conversion", label: "Conversion" },
+    ...(conversionHubAllowed ? [{ id: "conversion" as const, label: "Conversion & billing" }] : []),
     { id: "assignment", label: "Assignment" },
   ];
 
@@ -701,6 +742,33 @@ const LeadDetailPage: React.FC = () => {
             </button>
           ))}
         </nav>
+        {lead.status === "Won" && conversionHubAllowed ? (
+          <div className="mt-4 rounded-xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 dark:border-emerald-800/60 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">This deal is Won</p>
+              <p className="text-xs text-emerald-800/90 dark:text-emerald-200/85 mt-0.5">
+                {lead.convertedCustomerId
+                  ? "Customer record is ready — you can start an invoice when you have permission."
+                  : "Next: create a customer from this lead or link an existing one, then bill via invoice."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("conversion")}
+              className="shrink-0 rounded-lg bg-emerald-700 text-white text-sm font-medium px-4 py-2 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              Open conversion &amp; billing
+            </button>
+          </div>
+        ) : null}
+        {lead.status === "Lost" && conversionHubAllowed ? (
+          <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40 px-4 py-3">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Lead closed as Lost</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+              No customer or invoice steps apply. You can still review call logs and history on this page.
+            </p>
+          </div>
+        ) : null}
       </header>
 
       {activeTab === "details" && (
@@ -1249,107 +1317,255 @@ const LeadDetailPage: React.FC = () => {
       )}
 
       {activeTab === "conversion" && (
-        <section className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
-          <h2 className="font-semibold text-gray-800 dark:text-white mb-1">Convert to customer</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Won leads can be tied to your customer list for billing. Choose the path that matches how you already track this contact.
-          </p>
-          {!canConvertLead() ? (
-            <p className="text-sm text-gray-600 dark:text-gray-300">You don&apos;t have permission to convert leads.</p>
-          ) : lead.convertedCustomerId ? (
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              Already converted — customer ID{" "}
-              <code className="text-xs bg-gray-100 dark:bg-gray-900 px-1 rounded">{lead.convertedCustomerId}</code>
-            </p>
+        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700/80 p-5 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Conversion &amp; billing</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+                After a win, connect this lead to your customer directory, then raise an invoice. Each step respects the permissions your admin assigned.
+              </p>
+            </div>
+          </div>
+
+          {lead.status === "Lost" ? (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/30 px-4 py-5 text-sm text-gray-700 dark:text-gray-300">
+              <p className="font-medium text-gray-900 dark:text-white">This lead is closed as Lost</p>
+              <p className="mt-2 text-gray-600 dark:text-gray-400">
+                Customer creation and invoicing are not part of this outcome. You can keep this record for reporting and call history.
+              </p>
+            </div>
           ) : (
             <>
-              <div className="space-y-3 mb-6">
-                <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-gray-200 dark:border-gray-600 p-3 hover:border-gray-300 dark:hover:border-gray-500">
-                  <input
-                    type="radio"
-                    className="mt-1"
-                    name="lead-convert-mode"
-                    checked={convertMode === "new"}
-                    onChange={() => setConvertMode("new")}
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-200">
-                    <span className="font-semibold text-gray-900 dark:text-white">New customer</span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      Create a customer record from this lead and go to new invoice (optional business record).
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-gray-200 dark:border-gray-600 p-3 hover:border-gray-300 dark:hover:border-gray-500">
-                  <input
-                    type="radio"
-                    className="mt-1"
-                    name="lead-convert-mode"
-                    checked={convertMode === "existing"}
-                    onChange={() => setConvertMode("existing")}
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-200">
-                    <span className="font-semibold text-gray-900 dark:text-white">Existing customer</span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      Avoid duplicates — link this lead to a customer you already have (Details tab → Link to customer).
-                    </span>
-                  </span>
-                </label>
-              </div>
-
-              {convertMode === "existing" ? (
-                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-4 text-sm text-gray-600 dark:text-gray-300">
-                  <p className="mb-2">
-                    Open the{" "}
-                    <button
-                      type="button"
-                      className="text-primary-600 dark:text-primary-400 font-medium underline"
-                      onClick={() => setActiveTab("details")}
+              <ol className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+                {(
+                  [
+                    {
+                      n: 1,
+                      title: "Mark Won",
+                      done: lead.status === "Won" || !!lead.convertedCustomerId,
+                      hint: "Pipeline must be Won before a customer can be created from this lead.",
+                    },
+                    {
+                      n: 2,
+                      title: "Customer",
+                      done: !!lead.convertedCustomerId || !!(lead.linkedCustomerId && lead.linkedCustomerId.trim()),
+                      hint: "Create a new customer or link an existing one from Details.",
+                    },
+                    {
+                      n: 3,
+                      title: "Invoice",
+                      done: false,
+                      hint: "Open a new invoice with this customer pre-selected when you have the right permissions.",
+                    },
+                  ] as const
+                ).map((step) => (
+                  <li
+                    key={step.n}
+                    className={`flex gap-3 rounded-xl border px-3 py-3 ${
+                      step.done
+                        ? "border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/60 dark:bg-emerald-950/25"
+                        : "border-gray-200 dark:border-gray-600 bg-gray-50/50 dark:bg-gray-900/20"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                        step.done
+                          ? "bg-emerald-600 text-white"
+                          : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                      }`}
                     >
-                      Details
-                    </button>{" "}
-                    tab, pick the customer under <strong>Link to customer</strong>, then click{" "}
-                    <strong>Save link</strong>.
+                      {step.done ? "✓" : step.n}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{step.title}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{step.hint}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              {convertFeedback ? (
+                <div
+                  role="status"
+                  className={`mb-6 rounded-lg px-4 py-3 text-sm ${
+                    convertFeedback.type === "success"
+                      ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100 border border-emerald-200 dark:border-emerald-800"
+                      : "bg-red-50 text-red-900 dark:bg-red-950/30 dark:text-red-100 border border-red-200 dark:border-red-900/50"
+                  }`}
+                >
+                  {convertFeedback.message}
+                </div>
+              ) : null}
+
+              {!canConvertWonLeadToCustomer() && !canLinkLeadCustomer() && canCreateInvoiceFromLead() ? (
+                <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/20 px-4 py-4 text-sm text-amber-950 dark:text-amber-100 mb-6">
+                  You can start invoices from leads once a <strong>customer record</strong> exists. Ask your admin for permission to{" "}
+                  <strong>convert a Won lead to a customer</strong> or <strong>link this lead</strong> to an existing customer, then
+                  return here.
+                </div>
+              ) : null}
+
+              {lead.linkedCustomerId && !lead.convertedCustomerId && lead.status === "Won" && canCreateInvoiceFromLead() && canCreateInvoice() ? (
+                <div className="rounded-xl border border-primary-200 dark:border-primary-800/50 bg-primary-50/50 dark:bg-primary-950/20 p-4 mb-6">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Linked to an existing customer</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                    This lead is connected to your customer directory. You can start billing without creating a duplicate record.
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Use <strong>New customer</strong> when you need a fresh CRM contact created from this lead.
+                  <button
+                    type="button"
+                    onClick={() => goToNewInvoiceForCustomer(lead.linkedCustomerId!)}
+                    className="mt-3 inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
+                  >
+                    New invoice for linked customer
+                  </button>
+                </div>
+              ) : null}
+
+              {lead.convertedCustomerId ? (
+                <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/50 bg-gradient-to-b from-emerald-50/90 to-white dark:from-emerald-950/30 dark:to-gray-900/40 p-5">
+                  <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">Customer ready</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">
+                    {convertedCustomerLabel ? (
+                      <>
+                        <span className="font-medium text-gray-900 dark:text-white">{convertedCustomerLabel}</span>
+                        <span className="text-gray-500 dark:text-gray-400"> · </span>
+                      </>
+                    ) : null}
+                    <code className="text-xs bg-white/80 dark:bg-gray-950 px-1.5 py-0.5 rounded border border-emerald-200/80 dark:border-emerald-800">
+                      {lead.convertedCustomerId}
+                    </code>
                   </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {canCreateInvoiceFromLead() && canCreateInvoice() ? (
+                      <button
+                        type="button"
+                        onClick={() => goToNewInvoiceForCustomer(lead.convertedCustomerId!)}
+                        className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
+                      >
+                        New invoice for this customer
+                      </button>
+                    ) : (
+                      <p className="text-xs text-gray-600 dark:text-gray-400 w-full sm:w-auto">
+                        {canCreateInvoice()
+                          ? "You can create invoices, but the shortcut from this lead is disabled. Use Invoices → New and select this customer."
+                          : "Invoice creation is managed separately. Ask your admin if you need access."}
+                      </p>
+                    )}
+                    {canViewCustomers() ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate("/customers")}
+                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                      >
+                        Open customers
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 <>
-                  {lead.status !== "Won" && (
-                    <p className="text-sm text-amber-700 dark:text-amber-300 mb-3 rounded-md bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
-                      Set pipeline status to <strong>Won</strong> before converting.
-                    </p>
-                  )}
-                  <label className="flex items-center gap-2 text-sm mb-2 text-gray-700 dark:text-gray-200">
-                    <input
-                      type="checkbox"
-                      checked={convertBiz}
-                      onChange={(e) => setConvertBiz(e.target.checked)}
-                    />
-                    Also create a business under the new customer
-                  </label>
-                  {convertBiz && (
-                    <div className="space-y-1 mb-3">
-                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="convert-biz-name">
-                        Business name
-                      </label>
-                      <input
-                        id="convert-biz-name"
-                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        placeholder="Business name"
-                        value={convertBizName}
-                        onChange={(e) => setConvertBizName(e.target.value)}
-                      />
+                  {lead.status !== "Won" ? (
+                    <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/20 px-4 py-4 mb-6">
+                      <p className="text-sm font-medium text-amber-950 dark:text-amber-100">Set status to Won first</p>
+                      <p className="text-sm text-amber-900/90 dark:text-amber-200/90 mt-1">
+                        On the <strong>Details</strong> tab, change pipeline status to <strong>Won</strong> and save — or use{" "}
+                        <strong>My assigned leads</strong> → Status, if you work from there.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("details")}
+                        className="mt-3 text-sm font-medium text-primary-700 hover:underline dark:text-primary-400"
+                      >
+                        Go to Details
+                      </button>
                     </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleConvert}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium"
-                  >
-                    Convert &amp; new invoice
-                  </button>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {canLinkLeadCustomer() ? (
+                      <div className="rounded-xl border border-gray-200 dark:border-gray-600 p-4 flex flex-col h-full bg-gray-50/50 dark:bg-gray-900/25">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Existing customer</h3>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 flex-1">
+                          Avoid duplicates when this person or company is already in your directory.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConvertMode("existing");
+                            setActiveTab("details");
+                          }}
+                          className="mt-4 w-full sm:w-auto rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                        >
+                          Link in Details tab
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {canConvertWonLeadToCustomer() ? (
+                      <div className="rounded-xl border border-gray-200 dark:border-gray-600 p-4 flex flex-col h-full">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">New customer from lead</h3>
+                          {canLinkLeadCustomer() ? (
+                            <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400 shrink-0">
+                              or use left card
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          Creates a customer record from this Won lead. Your admin can allow the invoice shortcut separately.
+                        </p>
+                        <label className="flex items-center gap-2 text-sm mt-4 text-gray-700 dark:text-gray-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={convertBiz}
+                            onChange={(e) => setConvertBiz(e.target.checked)}
+                            className="rounded border-gray-300"
+                          />
+                          Also create a business under the new customer
+                        </label>
+                        {convertBiz ? (
+                          <div className="space-y-1 mt-2">
+                            <label
+                              className="block text-xs font-medium text-gray-600 dark:text-gray-300"
+                              htmlFor="convert-biz-name"
+                            >
+                              Business name
+                            </label>
+                            <input
+                              id="convert-biz-name"
+                              className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                              placeholder="Business name"
+                              value={convertBizName}
+                              onChange={(e) => setConvertBizName(e.target.value)}
+                            />
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={converting || lead.status !== "Won"}
+                          onClick={() => void handleConvert()}
+                          className="mt-4 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {converting ? "Creating customer…" : "Create customer from lead"}
+                        </button>
+                      </div>
+                    ) : (
+                      !canLinkLeadCustomer() &&
+                      !canCreateInvoiceFromLead() && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 lg:col-span-2">
+                          You don&apos;t have permission to create or link customers from leads. Ask your administrator to update
+                          your role.
+                        </p>
+                      )
+                    )}
+                  </div>
+
+                  {canLinkLeadCustomer() && canConvertWonLeadToCustomer() ? (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
+                      Tip: Prefer <strong>Existing customer</strong> when the contact already exists; use <strong>New customer</strong>{" "}
+                      for a first-time buyer pulled from this lead.
+                    </p>
+                  ) : null}
                 </>
               )}
             </>

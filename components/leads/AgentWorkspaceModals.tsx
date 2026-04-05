@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type firebase from "firebase/compat/app";
 import { Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
@@ -88,6 +89,8 @@ interface AgentWorkspaceModalsProps {
   canDeleteCallLog: boolean;
   canApproveCallLog: boolean;
   canSetFollowup: boolean;
+  /** Show “conversion & billing” CTA after marking Won */
+  canAccessLeadConversionHub: boolean;
 }
 
 function statusBadgeClasses(status: LeadStatus): string {
@@ -119,9 +122,12 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   canDeleteCallLog,
   canApproveCallLog,
   canSetFollowup,
+  canAccessLeadConversionHub,
 }) => {
+  const navigate = useNavigate();
   const [statusChoice, setStatusChoice] = useState<LeadStatus>("New");
   const [statusSaving, setStatusSaving] = useState(false);
+  const [pipelineOutcome, setPipelineOutcome] = useState<null | "won" | "lost">(null);
 
   const [callOutcome, setCallOutcome] = useState<LeadCallOutcome>("Connected");
   const [callNotes, setCallNotes] = useState("");
@@ -157,6 +163,10 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   }, [lead?.id, lead?.status, lead?.nextFollowUpDate, mode]);
 
   useEffect(() => {
+    setPipelineOutcome(null);
+  }, [lead?.id, mode]);
+
+  useEffect(() => {
     setCopyFlash(null);
     if (copyTimerRef.current) {
       clearTimeout(copyTimerRef.current);
@@ -184,7 +194,13 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
         entityId: lead.id,
         entityType: "lead",
       });
-      onClose();
+      if (statusChoice === "Won") {
+        setPipelineOutcome("won");
+      } else if (statusChoice === "Lost") {
+        setPipelineOutcome("lost");
+      } else {
+        onClose();
+      }
     } catch (e) {
       console.error(e);
       alert("Could not update status");
@@ -472,7 +488,45 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
             </div>
           )}
 
-          {mode === "status" && canUpdateStatus && (
+          {mode === "status" && canUpdateStatus && pipelineOutcome === "won" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/90 dark:bg-emerald-950/35 px-4 py-4">
+                <p className="text-base font-semibold text-emerald-900 dark:text-emerald-100">Deal marked as Won</p>
+                <p className="text-sm text-emerald-900/85 dark:text-emerald-200/90 mt-2 leading-relaxed">
+                  Great work. When you&apos;re ready, add this contact to your customer list and start an invoice — everything
+                  is guided on the lead&apos;s <strong>Conversion &amp; billing</strong> tab.
+                </p>
+                {canAccessLeadConversionHub ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigate(`/leads/${lead.id}?tab=conversion`);
+                      setPipelineOutcome(null);
+                      onClose();
+                    }}
+                    className="mt-4 w-full sm:w-auto rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                  >
+                    Open conversion &amp; billing
+                  </button>
+                ) : (
+                  <p className="mt-3 text-xs text-emerald-800/80 dark:text-emerald-300/80">
+                    Open the full lead page from the list when you need customer or invoice steps.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {mode === "status" && canUpdateStatus && pipelineOutcome === "lost" && (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/30 px-4 py-4">
+              <p className="text-base font-semibold text-gray-900 dark:text-white">Lead closed as Lost</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 leading-relaxed">
+                The record stays in your history for reporting. No customer or invoice workflow applies to this outcome.
+              </p>
+            </div>
+          )}
+
+          {mode === "status" && canUpdateStatus && !pipelineOutcome && (
             <div className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Pipeline stage</span>
@@ -488,8 +542,9 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                   ))}
                 </select>
               </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Updates save immediately to the lead. Use Won before converting to a customer (on the full lead page).
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                Choose <strong>Won</strong> when the sale is confirmed — you&apos;ll get clear next steps. Choose{" "}
+                <strong>Lost</strong> when the opportunity is closed without a sale.
               </p>
             </div>
           )}
@@ -644,7 +699,19 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
               Done
             </button>
           )}
-          {mode === "status" && canUpdateStatus && (
+          {mode === "status" && canUpdateStatus && pipelineOutcome && (
+            <button
+              type="button"
+              onClick={() => {
+                setPipelineOutcome(null);
+                onClose();
+              }}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium bg-primary-600 text-white hover:bg-primary-700"
+            >
+              Done
+            </button>
+          )}
+          {mode === "status" && canUpdateStatus && !pipelineOutcome && (
             <>
               <button
                 type="button"

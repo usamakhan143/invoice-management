@@ -1,6 +1,8 @@
 import { db, Timestamp } from "./firebase";
+import { resolveCompanyIdForUser } from "./companyId";
 import { FirebaseHealth } from "./firebaseHealth";
 import type { Customer } from "../types";
+import type firebase from "firebase/compat/app";
 
 export class CustomerService {
   // Save customer to centralized collection (same pattern as InvoiceService)
@@ -10,7 +12,10 @@ export class CustomerService {
     userProfile: any,
     customerId?: string,
   ): Promise<string> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
+    if (!companyId) {
+      throw new Error("Company is still loading. Wait a moment and try again.");
+    }
 
     const finalCustomerData = {
       ...customerData,
@@ -18,7 +23,7 @@ export class CustomerService {
       createdBy:
         userProfile?.displayName || userProfile?.companyName || user.email,
       createdById: user.uid,
-      companyId: companyId || user.uid,
+      companyId,
       ...(customerId
         ? {
             updatedBy:
@@ -64,7 +69,7 @@ export class CustomerService {
     isOwner: boolean,
     isAdmin: boolean,
   ): Promise<Customer[]> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     try {
       // Check connection before fetching
@@ -73,11 +78,15 @@ export class CustomerService {
         console.log("🔄 Firebase offline, using cached data for customers");
       }
 
+      if ((isOwner || isAdmin) && !companyId) {
+        return [];
+      }
+
       const query =
         isOwner || isAdmin
           ? db
               .collection("customers")
-              .where("companyId", "==", companyId || user.uid)
+              .where("companyId", "==", companyId)
               .orderBy("createdAt", "desc")
           : db
               .collection("customers")
@@ -116,15 +125,19 @@ export class CustomerService {
     isAdmin: boolean,
     callback: (customers: Customer[]) => void,
   ): () => void {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     // Build Firestore query based on user role
     let query;
     if (isOwner || isAdmin) {
+      if (!companyId) {
+        callback([]);
+        return () => {};
+      }
       // Admin sees all company customers
       query = db
         .collection("customers")
-        .where("companyId", "==", companyId || user.uid)
+        .where("companyId", "==", companyId)
         .orderBy("createdAt", "desc");
     } else {
       // Regular user sees their own customers
@@ -170,12 +183,119 @@ export class CustomerService {
     return unsubscribe;
   }
 
-  // Delete customer from centralized collection
+  /**
+   * Delete customer and clear linked/converted customer IDs on any leads that pointed at it.
+   * Without this, Won leads keep stale IDs and the UI still shows “customer on file”.
+   */
   static async deleteCustomer(customerId: string): Promise<void> {
+    const id = (customerId || "").trim();
+    if (!id) {
+      throw new Error("Invalid customer id");
+    }
+
+    const customerRef = db.collection("customers").doc(id);
+    let customerSnap: firebase.firestore.DocumentSnapshot;
     try {
-      await db.collection("customers").doc(customerId).delete();
+      customerSnap = await customerRef.get();
     } catch (error) {
-      console.error("Error deleting customer:", error);
+      console.error("Error loading customer before delete:", error);
+      throw error;
+    }
+
+    const companyIdForQuery = customerSnap.exists
+      ? String((customerSnap.data() as { companyId?: string })?.companyId ?? "").trim()
+      : "";
+
+    const byLeadId = new Map<string, firebase.firestore.QueryDocumentSnapshot>();
+
+    const mergeUnscoped = async () => {
+      const [linkedSnap, convertedSnap] = await Promise.all([
+        db.collection("leads").where("linkedCustomerId", "==", id).get(),
+        db.collection("leads").where("convertedCustomerId", "==", id).get(),
+      ]);
+      linkedSnap.docs.forEach((d) => byLeadId.set(d.id, d));
+      convertedSnap.docs.forEach((d) => byLeadId.set(d.id, d));
+    };
+
+    try {
+      if (companyIdForQuery) {
+        try {
+          const [linkedSnap, convertedSnap] = await Promise.all([
+            db
+              .collection("leads")
+              .where("companyId", "==", companyIdForQuery)
+              .where("linkedCustomerId", "==", id)
+              .get(),
+            db
+              .collection("leads")
+              .where("companyId", "==", companyIdForQuery)
+              .where("convertedCustomerId", "==", id)
+              .get(),
+          ]);
+          linkedSnap.docs.forEach((d) => byLeadId.set(d.id, d));
+          convertedSnap.docs.forEach((d) => byLeadId.set(d.id, d));
+        } catch (e) {
+          const code = typeof e === "object" && e !== null && "code" in e ? String((e as { code?: string }).code) : "";
+          if (code === "failed-precondition") {
+            console.warn(
+              "[CustomerService] Lead/customer composite index missing or building — using unscoped lead queries. Deploy firestore.indexes.json.",
+            );
+            await mergeUnscoped();
+          } else {
+            throw e;
+          }
+        }
+      } else {
+        await mergeUnscoped();
+      }
+    } catch (error) {
+      console.error("Error finding leads referencing customer:", error);
+      throw error;
+    }
+
+    const leadDocs = [...byLeadId.values()];
+    const MAX_OPS = 450;
+    let batch = db.batch();
+    let ops = 0;
+
+    const commitBatch = async () => {
+      if (ops === 0) return;
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    };
+
+    for (const docSnap of leadDocs) {
+      const ld = docSnap.data() as {
+        linkedCustomerId?: string | null;
+        convertedCustomerId?: string | null;
+      };
+      const patch: Record<string, unknown> = { updatedAt: Timestamp.now() };
+      if ((ld.linkedCustomerId || "").trim() === id) {
+        patch.linkedCustomerId = null;
+        patch.linkedBusinessId = null;
+      }
+      if ((ld.convertedCustomerId || "").trim() === id) {
+        patch.convertedCustomerId = null;
+        patch.convertedBusinessId = null;
+      }
+      if (Object.keys(patch).length > 1) {
+        batch.update(docSnap.ref, patch);
+        ops++;
+        if (ops >= MAX_OPS) await commitBatch();
+      }
+    }
+
+    if (customerSnap.exists) {
+      batch.delete(customerRef);
+      ops++;
+      if (ops >= MAX_OPS) await commitBatch();
+    }
+
+    try {
+      await commitBatch();
+    } catch (error) {
+      console.error("Error deleting customer / updating leads:", error);
       throw error;
     }
   }

@@ -74,22 +74,24 @@ const CustomersPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const customersPerPage = 20;
 
+  const mayViewCustomers = canViewCustomers();
+
   // Check if user has permission to view customers page
   useEffect(() => {
     if (!user || !userProfile) return;
 
-    if (!canViewCustomers()) {
+    if (!mayViewCustomers) {
       navigate("/");
       return;
     }
-  }, [user, userProfile, canViewCustomers, navigate]);
+  }, [user, userProfile, mayViewCustomers, navigate]);
 
   // Set up real-time listener for customers
   useEffect(() => {
     if (!user || !userProfile) return;
 
     // Only proceed if user has permission to view customers
-    if (!canViewCustomers()) return;
+    if (!mayViewCustomers) return;
 
     let unsubscribe: () => void;
 
@@ -116,7 +118,7 @@ const CustomersPage: React.FC = () => {
         unsubscribe();
       }
     };
-  }, [user, userProfile, canViewCustomers, isOwner, isAdmin]);
+  }, [user, userProfile, mayViewCustomers, isOwner, isAdmin]);
 
   // Filter customers based on search term
   useEffect(() => {

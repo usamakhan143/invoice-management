@@ -381,7 +381,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                     if (!cu.empty) {
                       const cid = cu.docs[0].data()?.companyId;
                       if (typeof cid === "string" && cid.trim()) {
-                        userData.companyId = cid.trim();
+                        const trimmed = cid.trim();
+                        userData.companyId = trimmed;
+                        try {
+                          await userDocRef.update({ companyId: trimmed });
+                        } catch (persistErr) {
+                          console.warn("Could not persist companyId on users doc", persistErr);
+                        }
                       }
                     }
                   } catch (backfillErr) {
@@ -458,7 +464,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                         if (!cu.empty) {
                           const cid = cu.docs[0].data()?.companyId;
                           if (typeof cid === "string" && cid.trim()) {
-                            userData.companyId = cid.trim();
+                            const trimmed = cid.trim();
+                            userData.companyId = trimmed;
+                            try {
+                              await userDoc.ref.update({ companyId: trimmed });
+                            } catch (persistErr) {
+                              console.warn("Could not persist companyId on users doc", persistErr);
+                            }
                           }
                         }
                       } catch (backfillErr) {

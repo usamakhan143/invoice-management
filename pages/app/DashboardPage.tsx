@@ -61,12 +61,14 @@ const DashboardPage: React.FC = () => {
   /** Admins / assigners: dashboard shows team-wide assignment stats instead of “my” counts */
   const teamLeadsDashboardMode = (leadsViewAll || canAssign) && canLeadsPage;
 
+  const mayViewMyAssignedDash = canViewDashboardMyAssignedLeads();
+
   useEffect(() => {
     if (!user || !userProfile || teamLeadsDashboardMode) return;
-    if (!canViewDashboardMyAssignedLeads()) return;
+    if (!mayViewMyAssignedDash) return;
     const unsub = LeadService.getLeadsAssignedToMeRealTime(user, userProfile, setMyAssignedLeads);
     return () => unsub();
-  }, [user, userProfile, canViewDashboardMyAssignedLeads, teamLeadsDashboardMode]);
+  }, [user, userProfile, mayViewMyAssignedDash, teamLeadsDashboardMode]);
 
   useEffect(() => {
     if (!user || !userProfile || !teamLeadsDashboardMode) return;

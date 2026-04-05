@@ -1,4 +1,5 @@
 import { db, Timestamp } from "./firebase";
+import { resolveCompanyIdForUser } from "./companyId";
 import type { ActivityType, Activity } from "../types";
 import type firebase from "firebase/compat/app";
 
@@ -13,9 +14,7 @@ export class ActivityLogger {
     try {
       // Use proper user ID and company ID resolution
       const actualUserId = userProfile?.uid || user.uid;
-      const companyId = userProfile?.isOwner
-        ? actualUserId
-        : userProfile?.companyId || user.uid;
+      const companyId = resolveCompanyIdForUser(user, userProfile);
 
       if (!companyId) {
         console.warn("Cannot log activity: Company ID not found");

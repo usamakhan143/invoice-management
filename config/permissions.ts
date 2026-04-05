@@ -99,7 +99,12 @@ export const GRANULAR_PERMISSIONS = {
   /** Set recording/reference ID and mark call logs as verified (admin QA) */
   LEADS_CALL_LOG_APPROVE: "leads_call_log_approve",
   LEADS_LINK_CUSTOMER: "leads_link_customer",
+  /** @deprecated Prefer LEADS_CONVERT_WON_TO_CUSTOMER + INVOICES_CREATE_FROM_LEAD — kept for existing roles */
   LEADS_CONVERT: "leads_convert",
+  /** Create a new customer (and optional business) from a Won lead */
+  LEADS_CONVERT_WON_TO_CUSTOMER: "leads_convert_won_to_customer",
+  /** Open “new invoice” from a lead with the converted customer pre-selected */
+  INVOICES_CREATE_FROM_LEAD: "invoices_create_from_lead",
   /** Dedicated page: leads currently assigned to the signed-in user, grouped by assignment date */
   LEADS_MY_ASSIGNED_PAGE: "leads_my_assigned_page",
   /** My assigned workspace: change pipeline status from the quick modal (also allowed if user has leads_edit) */
@@ -132,6 +137,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.INVOICES_EDIT]: "Edit invoices",
   [GRANULAR_PERMISSIONS.INVOICES_DELETE]: "Delete invoices",
   [GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS]: "View and modify invoice status column",
+  [GRANULAR_PERMISSIONS.INVOICES_CREATE_FROM_LEAD]:
+    "Start a new invoice from a lead (customer pre-filled after conversion). Still requires “Create invoice” to save.",
 
   // Customers
   [GRANULAR_PERMISSIONS.CUSTOMERS_VIEW]: "Access customers page and view customer list",
@@ -191,7 +198,10 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE]:
     "Add recording/reference ID to call logs and mark them as verified (quality control)",
   [GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER]: "Link leads to existing customers or businesses",
-  [GRANULAR_PERMISSIONS.LEADS_CONVERT]: "Convert won leads to customers and start invoices",
+  [GRANULAR_PERMISSIONS.LEADS_CONVERT]:
+    "Legacy: full post-win flow (create customer from Won + invoice shortcut). Prefer the two split permissions below for finer control.",
+  [GRANULAR_PERMISSIONS.LEADS_CONVERT_WON_TO_CUSTOMER]:
+    "Create a new customer record from a Won lead (optional business). Does not open the invoice screen by itself.",
   [GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE]:
     "Access “My assigned leads” page (your assigned leads, grouped by date, with progress stats)",
   [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS]:
@@ -218,6 +228,7 @@ export const PERMISSION_GROUPS = {
   [PERMISSION_CATEGORIES.INVOICES]: [
     GRANULAR_PERMISSIONS.INVOICES_VIEW,
     GRANULAR_PERMISSIONS.INVOICES_CREATE,
+    GRANULAR_PERMISSIONS.INVOICES_CREATE_FROM_LEAD,
     GRANULAR_PERMISSIONS.INVOICES_VIEW_PDF,
     GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING,
     GRANULAR_PERMISSIONS.INVOICES_EDIT,
@@ -282,6 +293,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE,
     GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER,
     GRANULAR_PERMISSIONS.LEADS_CONVERT,
+    GRANULAR_PERMISSIONS.LEADS_CONVERT_WON_TO_CUSTOMER,
     GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL,

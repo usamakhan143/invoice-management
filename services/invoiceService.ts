@@ -1,4 +1,5 @@
 import { db, Timestamp } from "./firebase";
+import { resolveCompanyIdForUser } from "./companyId";
 import { FirebaseHealth } from "./firebaseHealth";
 import { generateInvoiceAuthCode } from "../utils/invoiceAuthCode";
 import type { Invoice } from "../types";
@@ -40,9 +41,10 @@ export class InvoiceService {
     userProfile: any,
     invoiceId?: string,
   ): Promise<string> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
-
-    const effectiveCompanyId = companyId || user.uid;
+    const effectiveCompanyId = resolveCompanyIdForUser(user, userProfile);
+    if (!effectiveCompanyId) {
+      throw new Error("Company is still loading. Wait a moment and try again.");
+    }
     const creatorIdForCode = user.uid;
 
     const finalInvoiceData: Record<string, unknown> = {
@@ -141,15 +143,19 @@ export class InvoiceService {
     isAdmin: boolean,
     callback: (invoices: Invoice[]) => void,
   ): () => void {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     // Build Firestore query based on user role
     let query;
     if (isOwner || isAdmin) {
+      if (!companyId) {
+        callback([]);
+        return () => {};
+      }
       // Admin sees all company invoices
       query = db
         .collection("invoices")
-        .where("companyId", "==", companyId || user.uid)
+        .where("companyId", "==", companyId)
         .orderBy("issueDate", "desc");
     } else {
       // Regular user sees their own invoices
@@ -201,7 +207,7 @@ export class InvoiceService {
     isOwner: boolean,
     isAdmin: boolean,
   ): Promise<Invoice[]> {
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
+    const companyId = resolveCompanyIdForUser(user, userProfile);
 
     try {
       const isConnected = await FirebaseHealth.isFirebaseReachable();
@@ -209,11 +215,15 @@ export class InvoiceService {
         console.log("🔄 Firebase offline, using cached data for invoices");
       }
 
+      if ((isOwner || isAdmin) && !companyId) {
+        return [];
+      }
+
       const query =
         isOwner || isAdmin
           ? db
               .collection("invoices")
-              .where("companyId", "==", companyId || user.uid)
+              .where("companyId", "==", companyId)
               .orderBy("issueDate", "desc")
           : db
               .collection("invoices")

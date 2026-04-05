@@ -105,7 +105,25 @@ export const usePermissions = () => {
   const canApproveCallLogs = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE);
   const canLinkLeadCustomer = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.LEADS_LINK_CUSTOMER);
-  const canConvertLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CONVERT);
+
+  /** Legacy single permission — grants both post-win actions */
+  const hasLegacyLeadConvertBundle = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_CONVERT);
+
+  /** Create customer (+ optional business) from a Won lead */
+  const canConvertWonLeadToCustomer = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_CONVERT_WON_TO_CUSTOMER) || hasLegacyLeadConvertBundle();
+
+  /** Open new invoice from lead context (prefilled customer). Invoice form still requires INVOICES_CREATE. */
+  const canCreateInvoiceFromLead = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.INVOICES_CREATE_FROM_LEAD) || hasLegacyLeadConvertBundle();
+
+  /** Conversion tab / hub: any path that uses this area */
+  const canAccessLeadConversionHub = (): boolean =>
+    canLinkLeadCustomer() || canConvertWonLeadToCustomer() || canCreateInvoiceFromLead();
+
+  /** @deprecated Use canAccessLeadConversionHub / canConvertWonLeadToCustomer / canCreateInvoiceFromLead */
+  const canConvertLead = (): boolean => canAccessLeadConversionHub();
   const canAccessMyAssignedLeadsPage = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE);
 
@@ -322,6 +340,9 @@ export const usePermissions = () => {
     canApproveCallLogs,
     canLinkLeadCustomer,
     canConvertLead,
+    canConvertWonLeadToCustomer,
+    canCreateInvoiceFromLead,
+    canAccessLeadConversionHub,
     canAccessMyAssignedLeadsPage,
     canAgentQuickUpdateStatus,
     canAgentQuickLogCall,
