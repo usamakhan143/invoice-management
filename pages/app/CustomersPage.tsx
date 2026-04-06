@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
 import { usePermissions } from "../../hooks/usePermissions";
-import { db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { CustomerService } from "../../services/customerService";
 import type { Customer } from "../../types";
@@ -57,15 +57,17 @@ const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
   const {
     canViewCustomers,
+    canAccessCustomerDetailPage,
     canCreateCustomer,
     canEditCustomer,
     canDeleteCustomer,
+    canBulkDeleteCustomers,
     isOwner,
     isAdmin
   } = usePermissions();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterCreatedBy, setFilterCreatedBy] = useState("");
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentCustomer, setCurrentCustomer] =
@@ -73,8 +75,14 @@ const CustomersPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const customersPerPage = 20;
+  const companyUserOptions = useCompanyUserOptions(user, userProfile);
+  const allowBulkRowSelect = canBulkDeleteCustomers();
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const selectAllCustomersRef = useRef<HTMLInputElement>(null);
 
   const mayViewCustomers = canViewCustomers();
+  const mayOpenCustomerDetail = canAccessCustomerDetailPage();
 
   // Check if user has permission to view customers page
   useEffect(() => {
@@ -104,7 +112,6 @@ const CustomersPage: React.FC = () => {
         isAdmin,
         (customersData) => {
           setCustomers(customersData);
-          setFilteredCustomers(customersData);
           setLoading(false);
         },
       );
@@ -120,22 +127,129 @@ const CustomersPage: React.FC = () => {
     };
   }, [user, userProfile, mayViewCustomers, isOwner, isAdmin]);
 
-  // Filter customers based on search term
-  useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredCustomers(customers);
-    } else {
-      const filtered = customers.filter(
+  const filteredCustomers = useMemo(() => {
+    let list = customers;
+    const q = searchTerm.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
         (customer) =>
-          customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          customer.address.toLowerCase().includes(searchTerm.toLowerCase()),
+          customer.name.toLowerCase().includes(q) ||
+          customer.email.toLowerCase().includes(q) ||
+          customer.phone.toLowerCase().includes(q) ||
+          customer.address.toLowerCase().includes(q),
       );
-      setFilteredCustomers(filtered);
     }
+    if (filterCreatedBy && (isOwner || isAdmin)) {
+      list = list.filter((c) => (c.createdById || "") === filterCreatedBy);
+    }
+    return list;
+  }, [customers, searchTerm, filterCreatedBy, isOwner, isAdmin]);
+
+  useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, customers]);
+  }, [searchTerm, filterCreatedBy]);
+
+  const selectedCustomerSet = useMemo(
+    () => new Set(selectedCustomerIds),
+    [selectedCustomerIds],
+  );
+
+  const totalPages = Math.ceil(filteredCustomers.length / customersPerPage);
+  const currentCustomers = filteredCustomers.slice(
+    (currentPage - 1) * customersPerPage,
+    currentPage * customersPerPage,
+  );
+
+  const allCustomersOnPageSelected =
+    allowBulkRowSelect &&
+    currentCustomers.length > 0 &&
+    currentCustomers.every((c) => selectedCustomerSet.has(c.id));
+
+  const allFilteredCustomerIdsSelected =
+    allowBulkRowSelect &&
+    filteredCustomers.length > 0 &&
+    filteredCustomers.every((c) => selectedCustomerSet.has(c.id));
+
+  useEffect(() => {
+    const el = selectAllCustomersRef.current;
+    if (!el || !allowBulkRowSelect || currentCustomers.length === 0) {
+      if (el) el.indeterminate = false;
+      return;
+    }
+    const onPage = currentCustomers.filter((c) =>
+      selectedCustomerSet.has(c.id),
+    ).length;
+    el.indeterminate = onPage > 0 && onPage < currentCustomers.length;
+  }, [allowBulkRowSelect, currentCustomers, selectedCustomerSet]);
+
+  const toggleCustomerSelected = useCallback((id: string) => {
+    setSelectedCustomerIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSelectAllCustomersOnPage = useCallback(() => {
+    setSelectedCustomerIds((prev) => {
+      const next = new Set(prev);
+      const everyOnPage =
+        currentCustomers.length > 0 &&
+        currentCustomers.every((c) => next.has(c.id));
+      if (everyOnPage) {
+        currentCustomers.forEach((c) => next.delete(c.id));
+      } else {
+        currentCustomers.forEach((c) => next.add(c.id));
+      }
+      return Array.from(next);
+    });
+  }, [currentCustomers]);
+
+  const selectAllFilteredCustomers = useCallback(() => {
+    setSelectedCustomerIds(filteredCustomers.map((c) => c.id));
+  }, [filteredCustomers]);
+
+  const clearCustomerSelection = useCallback(() => {
+    setSelectedCustomerIds([]);
+  }, []);
+
+  const handleBulkDeleteCustomers = async () => {
+    if (!user || !userProfile || !allowBulkRowSelect || selectedCustomerIds.length === 0) {
+      return;
+    }
+    const n = selectedCustomerIds.length;
+    if (
+      !window.confirm(
+        `Delete ${n} customer${n === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeleting(true);
+    try {
+      for (const customerId of selectedCustomerIds) {
+        const customerToDelete = customers.find((c) => c.id === customerId);
+        await CustomerService.deleteCustomer(customerId);
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "customer_deleted",
+          `Bulk deleted customer: ${customerToDelete?.name || "Unknown"}`,
+          {
+            entityId: customerId,
+            entityType: "customer",
+            oldValue: customerToDelete,
+          },
+        );
+      }
+      clearCustomerSelection();
+    } catch (error) {
+      console.error("Bulk delete customers:", error);
+      alert(
+        "Some customers could not be deleted. They may be linked to invoices.",
+      );
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!user || !userProfile || !currentCustomer || isSubmitting) return;
@@ -262,13 +376,6 @@ const CustomersPage: React.FC = () => {
     );
   }
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredCustomers.length / customersPerPage);
-  const currentCustomers = filteredCustomers.slice(
-    (currentPage - 1) * customersPerPage,
-    currentPage * customersPerPage,
-  );
-
   return (
     <div>
       <div className="mb-6">
@@ -334,21 +441,108 @@ const CustomersPage: React.FC = () => {
           )}
         </div>
 
+        {(isOwner || isAdmin) && (
+          <div className="mt-3 flex flex-wrap gap-2 items-center">
+            <label htmlFor="customers-filter-created-by" className="sr-only">
+              Filter by creator
+            </label>
+            <select
+              id="customers-filter-created-by"
+              value={filterCreatedBy}
+              onChange={(e) => setFilterCreatedBy(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[11rem]"
+              aria-label="Filter by creator"
+            >
+              <option value="">All creators</option>
+              {companyUserOptions.map((u) => (
+                <option key={u.uid} value={u.uid}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+            {filterCreatedBy && (
+              <button
+                type="button"
+                onClick={() => setFilterCreatedBy("")}
+                className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+              >
+                Clear creator filter
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Results info */}
         <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          {searchTerm
-            ? `Found ${filteredCustomers.length} customer${
+          {searchTerm || filterCreatedBy
+            ? `Showing ${filteredCustomers.length} of ${customers.length} customer${
                 filteredCustomers.length !== 1 ? "s" : ""
-              } matching "${searchTerm}"`
+              }${searchTerm ? ` matching "${searchTerm}"` : ""}`
             : `Total ${customers.length} customer${customers.length !== 1 ? "s" : ""}`}
         </div>
       </div>
+
+      {allowBulkRowSelect && selectedCustomerIds.length > 0 ? (
+        <div
+          className="mb-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50/90 p-3 dark:border-primary-800 dark:bg-primary-950/40 sm:flex-row sm:flex-wrap sm:items-end"
+          role="region"
+          aria-label="Bulk actions for customers"
+        >
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            {selectedCustomerIds.length} customer
+            {selectedCustomerIds.length === 1 ? "" : "s"} selected
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkDeleting}
+              onClick={() => void handleBulkDeleteCustomers()}
+              className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkDeleting ? "Deleting…" : "Delete selected"}
+            </button>
+            <button
+              type="button"
+              disabled={bulkDeleting}
+              onClick={clearCustomerSelection}
+              className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
+            >
+              Clear selection
+            </button>
+          </div>
+          {!allFilteredCustomerIdsSelected &&
+          filteredCustomers.length > currentCustomers.length ? (
+            <button
+              type="button"
+              disabled={bulkDeleting}
+              onClick={selectAllFilteredCustomers}
+              className="text-sm text-primary-700 hover:underline dark:text-primary-400 sm:ml-auto"
+            >
+              Select all {filteredCustomers.length} matching customers
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="table-responsive">
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
               <tr>
+                {allowBulkRowSelect ? (
+                  <th scope="col" className="w-10 px-2 py-3">
+                    <span className="sr-only">Select row</span>
+                    <input
+                      ref={selectAllCustomersRef}
+                      type="checkbox"
+                      checked={allCustomersOnPageSelected}
+                      onChange={toggleSelectAllCustomersOnPage}
+                      disabled={currentCustomers.length === 0}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                      aria-label="Select all customers on this page"
+                    />
+                  </th>
+                ) : null}
                 <th scope="col" className="px-6 py-3">
                   Name
                 </th>
@@ -372,8 +566,32 @@ const CustomersPage: React.FC = () => {
               {currentCustomers.map((customer) => (
                 <tr
                   key={customer.id}
-                  className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                  onClick={() => {
+                    if (mayOpenCustomerDetail) {
+                      navigate(`/customers/${customer.id}`);
+                    }
+                  }}
+                  className={
+                    "bg-white border-b dark:bg-gray-800 dark:border-gray-700 " +
+                    (mayOpenCustomerDetail
+                      ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                      : "")
+                  }
                 >
+                  {allowBulkRowSelect ? (
+                    <td
+                      className="w-10 px-2 py-4 align-top"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCustomerSet.has(customer.id)}
+                        onChange={() => toggleCustomerSelected(customer.id)}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                        aria-label={`Select customer ${customer.name}`}
+                      />
+                    </td>
+                  ) : null}
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     {customer.name}
                   </td>
@@ -395,10 +613,11 @@ const CustomersPage: React.FC = () => {
                       </div>
                     </td>
                   )}
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                     <div className="flex space-x-2">
                       {canEditCustomer() && (
                         <button
+                          type="button"
                           onClick={() => openModal(customer)}
                           className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
                         >
@@ -407,6 +626,7 @@ const CustomersPage: React.FC = () => {
                       )}
                       {canDeleteCustomer() && (
                         <button
+                          type="button"
                           onClick={() => handleDelete(customer.id)}
                           className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                         >

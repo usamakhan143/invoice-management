@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PAGES } from "../../config/permissions";
@@ -16,14 +17,119 @@ const formatCurrency = (amount: number) =>
 const ProductsPage: React.FC = () => {
   usePageTitle("Products");
   const { user, userProfile } = useAuth();
-  const { canCreate, canEdit, canDelete, hasPageAccess, isOwner, isAdmin } =
-    usePermissions();
+  const {
+    canCreate,
+    canEdit,
+    canDelete,
+    hasPageAccess,
+    isOwner,
+    isAdmin,
+    canUseCompanyProductCatalog,
+    canBulkDeleteProducts,
+  } = usePermissions();
+  const useCompanyCatalog = canUseCompanyProductCatalog();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentProduct, setCurrentProduct] = useState<Partial<Product> | null>(
     null,
   );
+  const [filterCreatedBy, setFilterCreatedBy] = useState("");
+  const companyUserOptions = useCompanyUserOptions(user, userProfile);
+  const allowBulkRowSelect = canBulkDeleteProducts();
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [bulkDeletingProducts, setBulkDeletingProducts] = useState(false);
+  const selectAllProductsRef = useRef<HTMLInputElement>(null);
+
+  const filteredProducts = useMemo(() => {
+    let list = products;
+    if (filterCreatedBy && (isOwner || isAdmin)) {
+      list = list.filter((p) => (p.createdById || "") === filterCreatedBy);
+    }
+    return list;
+  }, [products, filterCreatedBy, isOwner, isAdmin]);
+
+  const selectedProductSet = useMemo(
+    () => new Set(selectedProductIds),
+    [selectedProductIds],
+  );
+
+  const allFilteredProductsSelected =
+    allowBulkRowSelect &&
+    filteredProducts.length > 0 &&
+    filteredProducts.every((p) => selectedProductSet.has(p.id));
+
+  useEffect(() => {
+    const el = selectAllProductsRef.current;
+    if (!el || !allowBulkRowSelect || filteredProducts.length === 0) {
+      if (el) el.indeterminate = false;
+      return;
+    }
+    const n = filteredProducts.filter((p) => selectedProductSet.has(p.id)).length;
+    el.indeterminate = n > 0 && n < filteredProducts.length;
+  }, [allowBulkRowSelect, filteredProducts, selectedProductSet]);
+
+  const toggleProductSelected = useCallback((id: string) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSelectAllFilteredProducts = useCallback(() => {
+    setSelectedProductIds((prev) => {
+      const next = new Set(prev);
+      const every = filteredProducts.length > 0 && filteredProducts.every((p) => next.has(p.id));
+      if (every) {
+        filteredProducts.forEach((p) => next.delete(p.id));
+      } else {
+        filteredProducts.forEach((p) => next.add(p.id));
+      }
+      return Array.from(next);
+    });
+  }, [filteredProducts]);
+
+  const clearProductSelection = useCallback(() => {
+    setSelectedProductIds([]);
+  }, []);
+
+  const handleBulkDeleteProducts = async () => {
+    if (!user || !userProfile || !allowBulkRowSelect || selectedProductIds.length === 0) {
+      return;
+    }
+    const n = selectedProductIds.length;
+    if (
+      !window.confirm(
+        `Delete ${n} product${n === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeletingProducts(true);
+    try {
+      for (const productId of selectedProductIds) {
+        const productToDelete = products.find((p) => p.id === productId);
+        await ProductService.deleteProduct(productId);
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "product_deleted",
+          `Bulk deleted product: ${productToDelete?.name || "Unknown"}`,
+          {
+            entityId: productId,
+            entityType: "product",
+            oldValue: productToDelete,
+          },
+        );
+      }
+      clearProductSelection();
+      await loadProducts();
+    } catch (error) {
+      console.error(error);
+      alert("Some products could not be deleted. They may be linked to invoices.");
+    } finally {
+      setBulkDeletingProducts(false);
+    }
+  };
 
   // Set up real-time listener for products
   useEffect(() => {
@@ -35,6 +141,7 @@ const ProductsPage: React.FC = () => {
       userProfile,
       isOwner,
       isAdmin,
+      useCompanyCatalog,
       (productsData) => {
         setProducts(productsData);
         setLoading(false);
@@ -45,7 +152,7 @@ const ProductsPage: React.FC = () => {
     loadProducts();
 
     return () => unsubscribe();
-  }, [user, userProfile, isOwner, isAdmin]);
+  }, [user, userProfile, isOwner, isAdmin, useCompanyCatalog]);
 
   const openModal = (product: Partial<Product> | null = null) => {
     setCurrentProduct(
@@ -70,6 +177,7 @@ const ProductsPage: React.FC = () => {
         userProfile,
         isOwner,
         isAdmin,
+        useCompanyCatalog,
       );
       setProducts(productsData);
     } catch (error) {
@@ -242,11 +350,99 @@ const ProductsPage: React.FC = () => {
           )}
         </div>
       </div>
+      {useCompanyCatalog && !canCreate(PAGES.PRODUCTS) && (
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 max-w-3xl">
+          You can browse the company catalog and use these products when creating invoices. Adding or editing products is limited to users with those permissions.
+        </p>
+      )}
+      {(isOwner || isAdmin) && (
+        <div className="mb-4 flex flex-wrap gap-2 items-center">
+          <label htmlFor="products-filter-created-by" className="sr-only">
+            Filter by creator
+          </label>
+          <select
+            id="products-filter-created-by"
+            value={filterCreatedBy}
+            onChange={(e) => setFilterCreatedBy(e.target.value)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[11rem]"
+            aria-label="Filter by creator"
+          >
+            <option value="">All creators</option>
+            {companyUserOptions.map((u) => (
+              <option key={u.uid} value={u.uid}>
+                {u.label}
+              </option>
+            ))}
+          </select>
+          {filterCreatedBy && (
+            <button
+              type="button"
+              onClick={() => setFilterCreatedBy("")}
+              className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+            >
+              Clear creator filter
+            </button>
+          )}
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            {filterCreatedBy
+              ? `Showing ${filteredProducts.length} of ${products.length} product${
+                  products.length !== 1 ? "s" : ""
+                }`
+              : `${products.length} product${products.length !== 1 ? "s" : ""}`}
+          </span>
+        </div>
+      )}
+
+      {allowBulkRowSelect && selectedProductIds.length > 0 ? (
+        <div
+          className="mb-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50/90 p-3 dark:border-primary-800 dark:bg-primary-950/40 sm:flex-row sm:flex-wrap sm:items-end"
+          role="region"
+          aria-label="Bulk actions for products"
+        >
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            {selectedProductIds.length} product
+            {selectedProductIds.length === 1 ? "" : "s"} selected
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkDeletingProducts}
+              onClick={() => void handleBulkDeleteProducts()}
+              className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkDeletingProducts ? "Deleting…" : "Delete selected"}
+            </button>
+            <button
+              type="button"
+              disabled={bulkDeletingProducts}
+              onClick={clearProductSelection}
+              className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
+            >
+              Clear selection
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="table-responsive">
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
               <tr>
+                {allowBulkRowSelect ? (
+                  <th scope="col" className="w-10 px-2 py-3">
+                    <span className="sr-only">Select row</span>
+                    <input
+                      ref={selectAllProductsRef}
+                      type="checkbox"
+                      checked={allFilteredProductsSelected}
+                      onChange={toggleSelectAllFilteredProducts}
+                      disabled={filteredProducts.length === 0}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                      aria-label="Select all products in the list"
+                    />
+                  </th>
+                ) : null}
                 <th scope="col" className="px-6 py-3">
                   Name
                 </th>
@@ -256,7 +452,7 @@ const ProductsPage: React.FC = () => {
                 <th scope="col" className="px-6 py-3">
                   Price
                 </th>
-                {(isOwner || isAdmin) && (
+                {(isOwner || isAdmin || useCompanyCatalog) && (
                   <th scope="col" className="px-6 py-3">
                     Created By
                   </th>
@@ -267,17 +463,28 @@ const ProductsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {products.map((product) => (
+              {filteredProducts.map((product) => (
                 <tr
                   key={product.id}
                   className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
                 >
+                  {allowBulkRowSelect ? (
+                    <td className="w-10 px-2 py-4 align-top">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductSet.has(product.id)}
+                        onChange={() => toggleProductSelected(product.id)}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                        aria-label={`Select product ${product.name}`}
+                      />
+                    </td>
+                  ) : null}
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     {product.name}
                   </td>
                   <td className="px-6 py-4">{product.description}</td>
                   <td className="px-6 py-4">{formatCurrency(product.price)}</td>
-                  {(isOwner || isAdmin) && (
+                  {(isOwner || isAdmin || useCompanyCatalog) && (
                     <td className="px-6 py-4">
                       <div className="text-sm">
                         <div className="text-gray-900 dark:text-white">

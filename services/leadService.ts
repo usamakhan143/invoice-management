@@ -555,6 +555,38 @@ export class LeadService {
   }
 
   /**
+   * Company leads that reference this customer (Won conversion and/or CRM link).
+   */
+  static async findLeadsForCustomer(
+    customerId: string,
+    companyId: string,
+  ): Promise<Lead[]> {
+    const id = (customerId || "").trim();
+    const cid = (companyId || "").trim();
+    if (!id || !cid) {
+      return [];
+    }
+    try {
+      const [linkedSnap, convertedSnap] = await Promise.all([
+        db
+          .collection("leads")
+          .where("companyId", "==", cid)
+          .where("linkedCustomerId", "==", id)
+          .get(),
+        db
+          .collection("leads")
+          .where("companyId", "==", cid)
+          .where("convertedCustomerId", "==", id)
+          .get(),
+      ]);
+      return mergeLeadSnapshots([...linkedSnap.docs, ...convertedSnap.docs]);
+    } catch (e) {
+      logFirestoreQueryError("findLeadsForCustomer", e);
+      return [];
+    }
+  }
+
+  /**
    * Convert Won lead → customer (+ optional business). Does not delete the lead.
    */
   static async convertWonLead(

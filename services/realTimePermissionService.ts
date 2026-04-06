@@ -43,7 +43,7 @@ export class RealTimePermissionService {
             const updatedProfile = {
               ...userProfile,
               role: companyUserData.role,
-              granularPermissions: companyUserData.granularPermissions || []
+              granularPermissions: companyUserData.granularPermissions || [],
             };
 
             // Update main user document

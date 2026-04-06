@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -10,7 +10,8 @@ import Spinner from "../../components/Spinner";
 const CompanyActivityPage: React.FC = () => {
   usePageTitle("Company Activity");
   const { user, userProfile } = useAuth();
-  const { canViewCompanyActivity, isOwner, isAdmin } = usePermissions();
+  const { canViewCompanyActivity, canBulkDeleteCompanyActivity, isOwner, isAdmin } =
+    usePermissions();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [users, setUsers] = useState<CompanyUser[]>([]);
@@ -18,6 +19,10 @@ const CompanyActivityPage: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const allowBulkActivitySelect = canBulkDeleteCompanyActivity();
+  const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
+  const [bulkDeletingActivities, setBulkDeletingActivities] = useState(false);
+  const selectAllActivitiesRef = useRef<HTMLInputElement>(null);
 
   const loadData = async () => {
     if (!user || !userProfile) return;
@@ -173,6 +178,81 @@ const CompanyActivityPage: React.FC = () => {
     });
 
     return userStats.sort((a, b) => b.total - a.total);
+  };
+
+  const visibleActivities = useMemo(
+    () => filteredActivities.slice(0, 50),
+    [filteredActivities],
+  );
+
+  const selectedActivitySet = useMemo(
+    () => new Set(selectedActivityIds),
+    [selectedActivityIds],
+  );
+
+  const allVisibleActivitiesSelected =
+    allowBulkActivitySelect &&
+    visibleActivities.length > 0 &&
+    visibleActivities.every((a) => selectedActivitySet.has(a.id));
+
+  useEffect(() => {
+    const el = selectAllActivitiesRef.current;
+    if (!el || !allowBulkActivitySelect || visibleActivities.length === 0) {
+      if (el) el.indeterminate = false;
+      return;
+    }
+    const n = visibleActivities.filter((a) =>
+      selectedActivitySet.has(a.id),
+    ).length;
+    el.indeterminate = n > 0 && n < visibleActivities.length;
+  }, [allowBulkActivitySelect, visibleActivities, selectedActivitySet]);
+
+  const toggleActivitySelected = useCallback((id: string) => {
+    setSelectedActivityIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSelectAllVisibleActivities = useCallback(() => {
+    setSelectedActivityIds((prev) => {
+      const next = new Set(prev);
+      const every =
+        visibleActivities.length > 0 &&
+        visibleActivities.every((a) => next.has(a.id));
+      if (every) {
+        visibleActivities.forEach((a) => next.delete(a.id));
+      } else {
+        visibleActivities.forEach((a) => next.add(a.id));
+      }
+      return Array.from(next);
+    });
+  }, [visibleActivities]);
+
+  const clearActivitySelection = useCallback(() => {
+    setSelectedActivityIds([]);
+  }, []);
+
+  const handleBulkDeleteActivities = async () => {
+    if (!allowBulkActivitySelect || selectedActivityIds.length === 0) return;
+    const n = selectedActivityIds.length;
+    if (
+      !window.confirm(
+        `Permanently delete ${n} activity log entr${n === 1 ? "y" : "ies"}?`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeletingActivities(true);
+    try {
+      await ActivityLogger.deleteActivitiesByIds(selectedActivityIds);
+      clearActivitySelection();
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete some activities.");
+    } finally {
+      setBulkDeletingActivities(false);
+    }
   };
 
   if (!canViewCompanyActivity()) {
@@ -387,11 +467,48 @@ const CompanyActivityPage: React.FC = () => {
 
         {/* Activity Feed */}
         <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
-              Activity Timeline ({filteredActivities.length} activities)
+              Activity Timeline ({filteredActivities.length} activities, showing up to 50)
             </h2>
+            {allowBulkActivitySelect && visibleActivities.length > 0 ? (
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <input
+                  ref={selectAllActivitiesRef}
+                  type="checkbox"
+                  checked={allVisibleActivitiesSelected}
+                  onChange={toggleSelectAllVisibleActivities}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                  aria-label="Select all activities in this list"
+                />
+                Select visible
+              </label>
+            ) : null}
           </div>
+
+          {allowBulkActivitySelect && selectedActivityIds.length > 0 ? (
+            <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-2 bg-primary-50/50 dark:bg-primary-950/20">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                {selectedActivityIds.length} selected
+              </span>
+              <button
+                type="button"
+                disabled={bulkDeletingActivities}
+                onClick={() => void handleBulkDeleteActivities()}
+                className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {bulkDeletingActivities ? "Deleting…" : "Delete selected"}
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeletingActivities}
+                onClick={clearActivitySelection}
+                className="text-sm text-primary-700 hover:underline dark:text-primary-400"
+              >
+                Clear selection
+              </button>
+            </div>
+          ) : null}
 
           {filteredActivities.length === 0 ? (
             <div className="text-center py-8">
@@ -403,12 +520,21 @@ const CompanyActivityPage: React.FC = () => {
           ) : (
             <div className="max-h-96 overflow-y-auto custom-scrollbar">
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredActivities.slice(0, 50).map((activity) => (
+                {visibleActivities.map((activity) => (
                   <div
                     key={activity.id}
                     className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     <div className="flex items-start space-x-3">
+                      {allowBulkActivitySelect ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedActivitySet.has(activity.id)}
+                          onChange={() => toggleActivitySelected(activity.id)}
+                          className="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                          aria-label={`Select activity ${(activity.description || "").slice(0, 40)}`}
+                        />
+                      ) : null}
                       <div className="flex-shrink-0">
                         <span className="text-xl">
                           {ActivityLogger.getActivityIcon(activity.type)}

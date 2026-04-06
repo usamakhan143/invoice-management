@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useNavigate } from "react-router-dom";
+import firebase from "firebase/compat/app";
 import { db, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import type { Expense, BankAccount } from "../../types";
@@ -11,7 +12,13 @@ import Spinner from "../../components/Spinner";
 const ExpensesPage: React.FC = () => {
   usePageTitle("Expenses");
   const { user, userProfile } = useAuth();
-  const { canViewExpenses, canCreateExpense, canEditExpense, canDeleteExpense } = usePermissions();
+  const {
+    canViewExpenses,
+    canCreateExpense,
+    canEditExpense,
+    canDeleteExpense,
+    canBulkDeleteExpenses,
+  } = usePermissions();
   const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -31,6 +38,10 @@ const ExpensesPage: React.FC = () => {
     category: "",
     search: "",
   });
+  const allowBulkRowSelect = canBulkDeleteExpenses();
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
+  const [bulkDeletingExpenses, setBulkDeletingExpenses] = useState(false);
+  const selectAllExpensesRef = useRef<HTMLInputElement>(null);
 
   const expenseCategories = [
     "Office Supplies",
@@ -411,42 +422,37 @@ const ExpensesPage: React.FC = () => {
     }
   };
 
+  const deleteExpenseRecord = async (expenseId: string, expense: Expense) => {
+    if (!user || !userProfile) return;
+    await db.collection("expenses").doc(expenseId).delete();
+
+    if (expense.bankAccountId) {
+      await db
+        .collection("bankAccounts")
+        .doc(expense.bankAccountId)
+        .update({
+          currentBalance: firebase.firestore.FieldValue.increment(expense.amount),
+        });
+    }
+
+    await ActivityLogger.logActivity(
+      user,
+      userProfile,
+      "expense_deleted",
+      `Deleted expense: ${expense.title}`,
+      {
+        entityId: expenseId,
+        entityType: "expense",
+        oldValue: expense,
+      },
+    );
+  };
+
   const handleDelete = async (expenseId: string, expense: Expense) => {
     if (!user || !userProfile) return;
     if (window.confirm("Are you sure you want to delete this expense?")) {
       try {
-        await db.collection("expenses").doc(expenseId).delete();
-
-        // Restore bank account balance
-        const selectedBank = bankAccounts.find(
-          (b) => b.id === expense.bankAccountId,
-        );
-        if (selectedBank) {
-          await db
-            .collection("bankAccounts")
-            .doc(selectedBank.id)
-            .update({
-              currentBalance:
-                (selectedBank.currentBalance ||
-                  selectedBank.initialBalance ||
-                  0) + expense.amount,
-            });
-        }
-
-        // Log delete activity
-        await ActivityLogger.logActivity(
-          user,
-          userProfile,
-          "expense_deleted",
-          `Deleted expense: ${expense.title}`,
-          {
-            entityId: expenseId,
-            entityType: "expense",
-            oldValue: expense,
-          },
-        );
-
-        // Real-time listener will automatically update the expenses list
+        await deleteExpenseRecord(expenseId, expense);
       } catch (error) {
         console.error("Error deleting expense:", error);
         alert("Failed to delete expense");
@@ -456,6 +462,79 @@ const ExpensesPage: React.FC = () => {
 
   const stats = getExpenseStats();
   const filteredExpenses = getFilteredExpenses();
+
+  const selectedExpenseSet = useMemo(
+    () => new Set(selectedExpenseIds),
+    [selectedExpenseIds],
+  );
+
+  const allFilteredExpensesSelected =
+    allowBulkRowSelect &&
+    filteredExpenses.length > 0 &&
+    filteredExpenses.every((e) => selectedExpenseSet.has(e.id));
+
+  useEffect(() => {
+    const el = selectAllExpensesRef.current;
+    if (!el || !allowBulkRowSelect || filteredExpenses.length === 0) {
+      if (el) el.indeterminate = false;
+      return;
+    }
+    const n = filteredExpenses.filter((e) => selectedExpenseSet.has(e.id)).length;
+    el.indeterminate = n > 0 && n < filteredExpenses.length;
+  }, [allowBulkRowSelect, filteredExpenses, selectedExpenseSet]);
+
+  const toggleExpenseSelected = useCallback((id: string) => {
+    setSelectedExpenseIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSelectAllFilteredExpenses = useCallback(() => {
+    setSelectedExpenseIds((prev) => {
+      const next = new Set(prev);
+      const every =
+        filteredExpenses.length > 0 &&
+        filteredExpenses.every((e) => next.has(e.id));
+      if (every) {
+        filteredExpenses.forEach((e) => next.delete(e.id));
+      } else {
+        filteredExpenses.forEach((e) => next.add(e.id));
+      }
+      return Array.from(next);
+    });
+  }, [filteredExpenses]);
+
+  const clearExpenseSelection = useCallback(() => {
+    setSelectedExpenseIds([]);
+  }, []);
+
+  const handleBulkDeleteExpenses = async () => {
+    if (!user || !userProfile || !allowBulkRowSelect || selectedExpenseIds.length === 0) {
+      return;
+    }
+    const n = selectedExpenseIds.length;
+    if (
+      !window.confirm(
+        `Delete ${n} expense${n === 1 ? "" : "s"}? Bank balances will be adjusted. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeletingExpenses(true);
+    try {
+      for (const expenseId of selectedExpenseIds) {
+        const expense = expenses.find((e) => e.id === expenseId);
+        if (!expense) continue;
+        await deleteExpenseRecord(expenseId, expense);
+      }
+      clearExpenseSelection();
+    } catch (error) {
+      console.error(error);
+      alert("Some expenses could not be deleted.");
+    } finally {
+      setBulkDeletingExpenses(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -621,6 +700,37 @@ const ExpensesPage: React.FC = () => {
       </div>
 
       {/* Expenses List */}
+      {allowBulkRowSelect && selectedExpenseIds.length > 0 ? (
+        <div
+          className="mb-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50/90 p-3 dark:border-primary-800 dark:bg-primary-950/40 sm:flex-row sm:flex-wrap sm:items-end"
+          role="region"
+          aria-label="Bulk actions for expenses"
+        >
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            {selectedExpenseIds.length} expense
+            {selectedExpenseIds.length === 1 ? "" : "s"} selected
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkDeletingExpenses}
+              onClick={() => void handleBulkDeleteExpenses()}
+              className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkDeletingExpenses ? "Deleting…" : "Delete selected"}
+            </button>
+            <button
+              type="button"
+              disabled={bulkDeletingExpenses}
+              onClick={clearExpenseSelection}
+              className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
+            >
+              Clear selection
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
@@ -647,6 +757,20 @@ const ExpensesPage: React.FC = () => {
             <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
               <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
                 <tr>
+                  {allowBulkRowSelect ? (
+                    <th className="w-10 px-2 py-3">
+                      <span className="sr-only">Select row</span>
+                      <input
+                        ref={selectAllExpensesRef}
+                        type="checkbox"
+                        checked={allFilteredExpensesSelected}
+                        onChange={toggleSelectAllFilteredExpenses}
+                        disabled={filteredExpenses.length === 0}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                        aria-label="Select all expenses in the list"
+                      />
+                    </th>
+                  ) : null}
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Title</th>
                   <th className="px-6 py-3">Category</th>
@@ -661,6 +785,17 @@ const ExpensesPage: React.FC = () => {
                     key={expense.id}
                     className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
                   >
+                    {allowBulkRowSelect ? (
+                      <td className="w-10 px-2 py-4 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selectedExpenseSet.has(expense.id)}
+                          onChange={() => toggleExpenseSelected(expense.id)}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                          aria-label={`Select expense ${expense.title}`}
+                        />
+                      </td>
+                    ) : null}
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                       {expense.date.toDate().toLocaleDateString()}
                     </td>

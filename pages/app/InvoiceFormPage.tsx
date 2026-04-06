@@ -16,10 +16,19 @@ import type {
   PaymentRecord,
 } from "../../types";
 import Spinner from "../../components/Spinner";
+import { getInvoiceBankDisplayName } from "../../utils/bankAccountDisplay";
 
 const InvoiceFormPage: React.FC = () => {
   const { user, userProfile } = useAuth();
-  const { canCreateInvoice, canEditInvoice, canCreateInvoiceFromLead } = usePermissions();
+  const {
+    canCreateInvoice,
+    canEditInvoice,
+    canCreateInvoiceFromLead,
+    canMarkInvoicePaid,
+    isAdmin,
+    canUseCompanyProductCatalog,
+  } = usePermissions();
+  const useCompanyCatalog = canUseCompanyProductCatalog();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,6 +70,10 @@ const InvoiceFormPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [loadedInvoiceStatus, setLoadedInvoiceStatus] = useState<
+    Invoice["status"] | undefined
+  >(undefined);
+
   const [invoiceData, setInvoiceData] = useState<Partial<Invoice>>({
     customerId: "",
     status: "draft",
@@ -116,7 +129,8 @@ const InvoiceFormPage: React.FC = () => {
         user,
         userProfile,
         userProfile?.isOwner || false,
-        userProfile?.role === "admin" || false,
+        isAdmin,
+        useCompanyCatalog,
       );
 
       setProducts(productsData);
@@ -148,9 +162,12 @@ const InvoiceFormPage: React.FC = () => {
             data.payments = [];
           }
           setInvoiceData(data);
+          setLoadedInvoiceStatus(data.status);
         } else {
           setError("Invoice not found.");
         }
+      } else {
+        setLoadedInvoiceStatus(undefined);
       }
     } catch (err) {
       console.error(err);
@@ -158,7 +175,7 @@ const InvoiceFormPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, id]);
+  }, [user, id, userProfile, isAdmin, useCompanyCatalog]);
 
   useEffect(() => {
     fetchInitialData();
@@ -287,6 +304,12 @@ const InvoiceFormPage: React.FC = () => {
   };
 
   const addPayment = () => {
+    if (invoiceData.status === "paid" && !canMarkInvoicePaid()) {
+      window.alert(
+        "You cannot add payments while this invoice is Paid without permission to change Paid status.",
+      );
+      return;
+    }
     if (newPayment.amount <= 0) {
       setPaymentError("Payment amount must be greater than zero");
       return;
@@ -318,7 +341,12 @@ const InvoiceFormPage: React.FC = () => {
       payments: updatedPayments,
       amountPaid: newAmountPaid,
       remainingAmount: newRemainingAmount,
-      status: newRemainingAmount <= 0 ? "paid" : invoiceData.status,
+      status:
+        newRemainingAmount <= 0
+          ? canMarkInvoicePaid()
+            ? "paid"
+            : "sent"
+          : invoiceData.status,
     });
 
     setNewPayment({
@@ -331,6 +359,12 @@ const InvoiceFormPage: React.FC = () => {
   };
 
   const removePayment = (paymentId: string) => {
+    if (invoiceData.status === "paid" && !canMarkInvoicePaid()) {
+      window.alert(
+        "You do not have permission to change Paid status (e.g. remove payments on a paid invoice).",
+      );
+      return;
+    }
     const paymentToRemove = invoiceData.payments?.find(
       (p) => p.id === paymentId,
     );
@@ -348,7 +382,12 @@ const InvoiceFormPage: React.FC = () => {
       payments: updatedPayments,
       amountPaid: newAmountPaid,
       remainingAmount: newRemainingAmount,
-      status: newRemainingAmount > 0 ? "sent" : "paid",
+      status:
+        newRemainingAmount > 0
+          ? "sent"
+          : canMarkInvoicePaid()
+            ? "paid"
+            : "sent",
     });
   };
 
@@ -416,6 +455,26 @@ const InvoiceFormPage: React.FC = () => {
       setError("User not authenticated.");
       return;
     }
+    if (
+      invoiceData.status === "paid" &&
+      loadedInvoiceStatus !== "paid" &&
+      !canMarkInvoicePaid()
+    ) {
+      setError(
+        "You do not have permission to mark this invoice as Paid. Ask an administrator to grant “Mark invoices as paid”, or set status to Sent.",
+      );
+      return;
+    }
+    if (
+      loadedInvoiceStatus === "paid" &&
+      invoiceData.status !== "paid" &&
+      !canMarkInvoicePaid()
+    ) {
+      setError(
+        "You do not have permission to change status away from Paid.",
+      );
+      return;
+    }
     setLoading(true);
 
     const selectedCustomer = customers.find(
@@ -443,7 +502,13 @@ const InvoiceFormPage: React.FC = () => {
       );
       if (selectedBankAccount) {
         finalInvoiceData.bankAccountCurrency = selectedBankAccount.currency;
+        finalInvoiceData.bankDisplayName =
+          getInvoiceBankDisplayName(selectedBankAccount);
+      } else {
+        finalInvoiceData.bankDisplayName = undefined;
       }
+    } else {
+      finalInvoiceData.bankDisplayName = undefined;
     }
 
     try {
@@ -510,21 +575,32 @@ const InvoiceFormPage: React.FC = () => {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Status
           </label>
-          <select
-            value={invoiceData.status}
-            onChange={(e) =>
-              setInvoiceData({
-                ...invoiceData,
-                status: e.target.value as Invoice["status"],
-              })
-            }
-            className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-          >
-            <option value="draft">Draft</option>
-            <option value="sent">Sent</option>
-            <option value="paid">Paid</option>
-            <option value="overdue">Overdue</option>
-          </select>
+          {!canMarkInvoicePaid() && invoiceData.status === "paid" ? (
+            <div
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md bg-gray-50 dark:bg-gray-900/40 text-gray-800 dark:text-gray-200 text-sm"
+              title="Only users with permission can change Paid status"
+            >
+              Paid
+            </div>
+          ) : (
+            <select
+              value={invoiceData.status}
+              onChange={(e) =>
+                setInvoiceData({
+                  ...invoiceData,
+                  status: e.target.value as Invoice["status"],
+                })
+              }
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            >
+              <option value="draft">Draft</option>
+              <option value="sent">Sent</option>
+              {canMarkInvoicePaid() && (
+                <option value="paid">Paid</option>
+              )}
+              <option value="overdue">Overdue</option>
+            </select>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -751,7 +827,8 @@ const InvoiceFormPage: React.FC = () => {
           <option value="">Select a bank account</option>
           {bankAccounts.map((b) => (
             <option key={b.id} value={b.id}>
-              {b.accountName} - {b.bankName} ({b.currency} - {b.currencySymbol})
+              {b.accountName} — {getInvoiceBankDisplayName(b)} ({b.currency}{" "}
+              {b.currencySymbol})
             </option>
           ))}
         </select>

@@ -6,6 +6,7 @@ import { PAGES } from "../../config/permissions";
 import { db, Timestamp } from "../../services/firebase";
 import type { BankAccount } from "../../types";
 import Spinner from "../../components/Spinner";
+import { getInvoiceBankDisplayName } from "../../utils/bankAccountDisplay";
 import ProtectedComponent from "../../components/ProtectedComponent";
 
 const currencies = ["USD", "PKR", "EUR"];
@@ -19,6 +20,7 @@ const BankAccountsPage: React.FC = () => {
   const [form, setForm] = useState({
     accountName: "",
     bankName: "",
+    invoiceDisplayBankName: "",
     accountNumber: "",
     currency: "USD",
     currencySymbol: "$",
@@ -67,6 +69,7 @@ const BankAccountsPage: React.FC = () => {
     setForm({
       accountName: "",
       bankName: "",
+      invoiceDisplayBankName: "",
       accountNumber: "",
       currency: "USD",
       currencySymbol: "$",
@@ -105,6 +108,7 @@ const BankAccountsPage: React.FC = () => {
         userId: user.uid,
         accountName: form.accountName,
         bankName: form.bankName,
+        invoiceDisplayBankName: form.invoiceDisplayBankName.trim(),
         accountNumber: form.accountNumber,
         currency: form.currency,
         currencySymbol: form.currencySymbol,
@@ -140,6 +144,7 @@ const BankAccountsPage: React.FC = () => {
     setForm({
       accountName: account.accountName,
       bankName: account.bankName,
+      invoiceDisplayBankName: account.invoiceDisplayBankName || "",
       accountNumber: account.accountNumber,
       currency: account.currency,
       currencySymbol: account.currencySymbol || "$",
@@ -235,6 +240,22 @@ const BankAccountsPage: React.FC = () => {
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               required
             />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Invoice / customer-facing bank name (optional)
+            </label>
+            <input
+              type="text"
+              name="invoiceDisplayBankName"
+              value={form.invoiceDisplayBankName}
+              onChange={handleInputChange}
+              placeholder="e.g. Company operating account (leave empty to use real bank name on invoices)"
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              If set, team members and customers only see this label when choosing a bank on invoices and on PDFs — your real bank name above stays stored for your records and internal use.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -368,8 +389,17 @@ const BankAccountsPage: React.FC = () => {
                     {account.accountName}
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
+                    <span className="text-gray-500 dark:text-gray-400 text-xs">
+                      Actual bank:{" "}
+                    </span>
                     {account.bankName}
                   </p>
+                  {account.invoiceDisplayBankName?.trim() ? (
+                    <p className="text-sm text-indigo-700 dark:text-indigo-300">
+                      <span className="text-xs font-medium">On invoices: </span>
+                      {getInvoiceBankDisplayName(account)}
+                    </p>
+                  ) : null}
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {account.accountNumber}
                   </p>

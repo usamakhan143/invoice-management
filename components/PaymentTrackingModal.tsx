@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { db, Timestamp } from "../services/firebase";
 import { ActivityLogger } from "../services/activityLogger";
 import { InvoiceService } from "../services/invoiceService";
@@ -17,6 +18,7 @@ const PaymentTrackingModal: React.FC<PaymentTrackingModalProps> = ({
   onPaymentUpdate,
 }) => {
   const { user, userProfile } = useAuth();
+  const { canMarkInvoicePaid } = usePermissions();
   const [currentInvoice, setCurrentInvoice] = useState<Invoice>(invoice);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
 
@@ -55,6 +57,13 @@ const PaymentTrackingModal: React.FC<PaymentTrackingModalProps> = ({
   const addPayment = async () => {
     if (!user || !userProfile) return;
 
+    if (currentInvoice.status === "paid" && !canMarkInvoicePaid()) {
+      setPaymentError(
+        "You cannot change payments on a Paid invoice without permission to change Paid status.",
+      );
+      return;
+    }
+
     if (newPayment.amount <= 0) {
       setPaymentError("Payment amount must be greater than zero");
       return;
@@ -87,8 +96,12 @@ const PaymentTrackingModal: React.FC<PaymentTrackingModalProps> = ({
         payments: updatedPayments,
         amountPaid: newAmountPaid,
         remainingAmount: Math.max(0, newRemainingAmount),
-        // Auto-update status to paid if fully paid
-        status: newRemainingAmount <= 0 ? "paid" as const : currentInvoice.status,
+        status:
+          newRemainingAmount <= 0
+            ? canMarkInvoicePaid()
+              ? ("paid" as const)
+              : ("sent" as const)
+            : currentInvoice.status,
       };
 
       // Update invoice in database
@@ -127,6 +140,13 @@ const PaymentTrackingModal: React.FC<PaymentTrackingModalProps> = ({
   const removePayment = async (paymentId: string) => {
     if (!user || !userProfile) return;
 
+    if (currentInvoice.status === "paid" && !canMarkInvoicePaid()) {
+      alert(
+        "You do not have permission to remove payments or change Paid status. Ask an administrator.",
+      );
+      return;
+    }
+
     const paymentToRemove = currentInvoice.payments?.find(p => p.id === paymentId);
     if (!paymentToRemove) return;
 
@@ -145,8 +165,10 @@ const PaymentTrackingModal: React.FC<PaymentTrackingModalProps> = ({
         payments: updatedPayments,
         amountPaid: Math.max(0, newAmountPaid),
         remainingAmount: Math.max(0, newRemainingAmount),
-        // Update status back to sent if no longer fully paid
-        status: newRemainingAmount > 0 && currentInvoice.status === "paid" ? "sent" as const : currentInvoice.status,
+        status:
+          newRemainingAmount > 0 && currentInvoice.status === "paid"
+            ? ("sent" as const)
+            : currentInvoice.status,
       };
 
       // Update invoice in database

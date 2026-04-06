@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -26,6 +26,7 @@ const UserManagementPage: React.FC = () => {
     canCreateCustomRole,
     canEditCustomRole,
     canDeleteCustomRole,
+    canBulkDeleteCompanyUsers,
     isOwner,
     isAdmin
   } = usePermissions();
@@ -36,6 +37,9 @@ const UserManagementPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"users" | "roles">("users");
   const [userFilterTab, setUserFilterTab] = useState<"active" | "deactivated">("active");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [bulkRemovingUsers, setBulkRemovingUsers] = useState(false);
+  const selectAllTeamRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -500,7 +504,31 @@ const UserManagementPage: React.FC = () => {
     }
   };
 
+  const performRemoveCompanyUser = async (userId: string, userEmail: string) => {
+    const userToDelete = users.find((u) => u.id === userId);
+    await db.collection("companyUsers").doc(userId).delete();
+
+    if (user && userProfile && userToDelete) {
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_deleted",
+        `Removed user: ${userToDelete.displayName} (${userEmail})`,
+        {
+          entityId: userId,
+          entityType: "user",
+          oldValue: {
+            email: userEmail,
+            displayName: userToDelete.displayName,
+            role: userToDelete.role,
+          },
+        },
+      );
+    }
+  };
+
   const deleteUser = async (userId: string, userEmail: string) => {
+    if (!canBulkDeleteCompanyUsers()) return;
     if (
       !window.confirm(
         `Are you sure you want to remove ${userEmail} from your company?`,
@@ -509,35 +537,39 @@ const UserManagementPage: React.FC = () => {
       return;
     }
 
-    const userToDelete = users.find((u) => u.id === userId);
-
     try {
-      await db.collection("companyUsers").doc(userId).delete();
-
-      // Log user deletion activity
-      if (user && userProfile && userToDelete) {
-        await ActivityLogger.logActivity(
-          user,
-          userProfile,
-          "user_deleted",
-          `Removed user: ${userToDelete.displayName} (${userEmail})`,
-          {
-            entityId: userId,
-            entityType: "user",
-            oldValue: {
-              email: userEmail,
-              displayName: userToDelete.displayName,
-              role: userToDelete.role,
-            },
-          },
-        );
-      }
-
-      // Auto refresh data after successful deletion
-      await loadUsers();
+      await performRemoveCompanyUser(userId, userEmail);
     } catch (error) {
       console.error("Error deleting user:", error);
       alert("Failed to remove user");
+    }
+  };
+
+  const handleBulkRemoveUsers = async () => {
+    if (!canBulkDeleteCompanyUsers() || selectedUserIds.length === 0) return;
+    const targets = selectedUserIds
+      .map((id) => users.find((u) => u.id === id))
+      .filter((u): u is CompanyUser => !!u && u.role !== "owner");
+    if (targets.length === 0) return;
+    const n = targets.length;
+    if (
+      !window.confirm(
+        `Remove ${n} user${n === 1 ? "" : "s"} from your company? They will lose access to this workspace.`,
+      )
+    ) {
+      return;
+    }
+    setBulkRemovingUsers(true);
+    try {
+      for (const t of targets) {
+        await performRemoveCompanyUser(t.id, t.email);
+      }
+      setSelectedUserIds([]);
+    } catch (error) {
+      console.error("Bulk remove users:", error);
+      alert("Failed to remove some users.");
+    } finally {
+      setBulkRemovingUsers(false);
     }
   };
 
@@ -776,6 +808,60 @@ const UserManagementPage: React.FC = () => {
     }
   };
 
+  const allowBulkTeamSelect = canBulkDeleteCompanyUsers();
+
+  const selectableTeamMembers = useMemo(
+    () => filteredUsers.filter((u) => u.role !== "owner"),
+    [filteredUsers],
+  );
+
+  const selectedTeamSet = useMemo(
+    () => new Set(selectedUserIds),
+    [selectedUserIds],
+  );
+
+  const allSelectableTeamSelected =
+    allowBulkTeamSelect &&
+    selectableTeamMembers.length > 0 &&
+    selectableTeamMembers.every((u) => selectedTeamSet.has(u.id));
+
+  useEffect(() => {
+    const el = selectAllTeamRef.current;
+    if (!el || !allowBulkTeamSelect || selectableTeamMembers.length === 0) {
+      if (el) el.indeterminate = false;
+      return;
+    }
+    const onPage = selectableTeamMembers.filter((u) =>
+      selectedTeamSet.has(u.id),
+    ).length;
+    el.indeterminate = onPage > 0 && onPage < selectableTeamMembers.length;
+  }, [allowBulkTeamSelect, selectableTeamMembers, selectedTeamSet]);
+
+  const toggleTeamMemberSelected = useCallback((id: string) => {
+    setSelectedUserIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSelectAllTeamMembers = useCallback(() => {
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      const every =
+        selectableTeamMembers.length > 0 &&
+        selectableTeamMembers.every((u) => next.has(u.id));
+      if (every) {
+        selectableTeamMembers.forEach((u) => next.delete(u.id));
+      } else {
+        selectableTeamMembers.forEach((u) => next.add(u.id));
+      }
+      return Array.from(next);
+    });
+  }, [selectableTeamMembers]);
+
+  const clearTeamSelection = useCallback(() => {
+    setSelectedUserIds([]);
+  }, []);
+
   if (!canViewUserManagement()) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -979,6 +1065,37 @@ const UserManagementPage: React.FC = () => {
       </div>
 
       {/* Users Table */}
+      {allowBulkTeamSelect && selectedUserIds.length > 0 ? (
+        <div
+          className="mb-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50/90 p-3 dark:border-primary-800 dark:bg-primary-950/40 sm:flex-row sm:flex-wrap sm:items-end"
+          role="region"
+          aria-label="Bulk actions for team members"
+        >
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            {selectedUserIds.length} user{selectedUserIds.length === 1 ? "" : "s"}{" "}
+            selected
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkRemovingUsers}
+              onClick={() => void handleBulkRemoveUsers()}
+              className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkRemovingUsers ? "Removing…" : "Remove selected"}
+            </button>
+            <button
+              type="button"
+              disabled={bulkRemovingUsers}
+              onClick={clearTeamSelection}
+              className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
+            >
+              Clear selection
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
@@ -1003,6 +1120,20 @@ const UserManagementPage: React.FC = () => {
             <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
               <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
                 <tr>
+                  {allowBulkTeamSelect ? (
+                    <th className="w-10 px-2 py-3">
+                      <span className="sr-only">Select row</span>
+                      <input
+                        ref={selectAllTeamRef}
+                        type="checkbox"
+                        checked={allSelectableTeamSelected}
+                        onChange={toggleSelectAllTeamMembers}
+                        disabled={selectableTeamMembers.length === 0}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                        aria-label="Select all users in the list (owner excluded)"
+                      />
+                    </th>
+                  ) : null}
                   <th className="px-6 py-3">User</th>
                   <th className="px-6 py-3">Role</th>
                   <th className="px-6 py-3">Status</th>
@@ -1011,57 +1142,69 @@ const UserManagementPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((user) => (
+                {filteredUsers.map((member) => (
                   <tr
-                    key={user.id}
+                    key={member.id}
                     className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
                   >
+                    {allowBulkTeamSelect ? (
+                      <td className="w-10 px-2 py-4 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selectedTeamSet.has(member.id)}
+                          onChange={() => toggleTeamMemberSelected(member.id)}
+                          disabled={member.role === "owner"}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 disabled:opacity-40"
+                          aria-label={`Select user ${member.displayName}`}
+                        />
+                      </td>
+                    ) : null}
                     <td className="px-6 py-4">
                       <div>
                         <div className="font-medium text-gray-900 dark:text-white">
-                          {user.displayName}
+                          {member.displayName}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {user.email}
+                          {member.email}
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          user.role === "owner"
+                          member.role === "owner"
                             ? "bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-100"
-                            : user.role === "admin"
+                            : member.role === "admin"
                               ? "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100"
-                              : user.role === "manager"
+                              : member.role === "manager"
                                 ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
-                                : user.role === "editor"
+                                : member.role === "editor"
                                   ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100"
                                   : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
                         }`}
                       >
-                        {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                        {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          user.isActive
+                          member.isActive
                             ? "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100"
                             : "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100"
                         }`}
                       >
-                        {user.isActive ? "Active" : "Inactive"}
+                        {member.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {user.createdAt?.toDate().toLocaleDateString()}
+                      {member.createdAt?.toDate().toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
-                        {(canLoginAsUser() || isOwner || isAdmin) && user.isActive && (
+                        {(canLoginAsUser() || isOwner || isAdmin) && member.isActive && (
                           <button
-                            onClick={() => handleDirectLogin(user)}
+                            onClick={() => handleDirectLogin(member)}
                             className="inline-flex items-center px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
                             title="Login as this user"
                           >
@@ -1082,9 +1225,9 @@ const UserManagementPage: React.FC = () => {
                           </button>
                         )}
                         {canEditUser() &&
-                          user.role !== "owner" && (
+                          member.role !== "owner" && (
                             <button
-                              onClick={() => openEditModal(user)}
+                              onClick={() => openEditModal(member)}
                               className="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-blue-800 dark:text-blue-200 dark:border-blue-600 dark:hover:bg-blue-700"
                             >
                               <svg
@@ -1103,13 +1246,13 @@ const UserManagementPage: React.FC = () => {
                               Edit
                             </button>
                           )}
-                        {canActivateDeactivateUser() && user.role !== "owner" && (
+                        {canActivateDeactivateUser() && member.role !== "owner" && (
                           <button
                             onClick={() =>
-                              toggleUserStatus(user.id, user.isActive)
+                              toggleUserStatus(member.id, member.isActive)
                             }
                             className={`inline-flex items-center px-3 py-1 text-xs font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                              user.isActive
+                              member.isActive
                                 ? "text-red-700 bg-red-100 border-red-300 hover:bg-red-200 focus:ring-red-500 dark:bg-red-800 dark:text-red-200 dark:border-red-600 dark:hover:bg-red-700"
                                 : "text-green-700 bg-green-100 border-green-300 hover:bg-green-200 focus:ring-green-500 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
                             }`}
@@ -1125,16 +1268,28 @@ const UserManagementPage: React.FC = () => {
                                 strokeLinejoin="round"
                                 strokeWidth="2"
                                 d={
-                                  user.isActive
+                                  member.isActive
                                     ? "M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636"
                                     : "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                                 }
                               />
                             </svg>
-                            {user.isActive ? "Deactivate" : "Activate"}
+                            {member.isActive ? "Deactivate" : "Activate"}
                           </button>
                         )}
-                        {!canLoginAsUser() && !canEditUser() && !canActivateDeactivateUser() && (
+                        {canBulkDeleteCompanyUsers() && member.role !== "owner" && (
+                          <button
+                            type="button"
+                            onClick={() => void deleteUser(member.id, member.email)}
+                            className="inline-flex items-center px-3 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 dark:bg-red-950/40 dark:text-red-200 dark:border-red-800"
+                          >
+                            Remove
+                          </button>
+                        )}
+                        {!canLoginAsUser() &&
+                          !canEditUser() &&
+                          !canActivateDeactivateUser() &&
+                          !(canBulkDeleteCompanyUsers() && member.role !== "owner") && (
                           <span className="text-gray-400 text-xs">No actions available</span>
                         )}
                       </div>

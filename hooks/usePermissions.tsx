@@ -34,6 +34,14 @@ export const usePermissions = () => {
   const canViewDebugInfo = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO);
   const canViewDashboardMyAssignedLeads = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS);
+  const canViewLeadGenAnalytics = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ANALYTICS);
+  const canViewLeadGenCreated = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CREATED);
+  const canViewLeadGenAssigned = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ASSIGNED);
+  const canViewLeadGenConverted = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CONVERTED);
 
   // Invoice permissions
   const canViewInvoices = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW);
@@ -42,18 +50,75 @@ export const usePermissions = () => {
   const canAccessPaymentTracking = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING);
   const canEditInvoice = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_EDIT);
   const canDeleteInvoice = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_DELETE);
+  const canBulkDeleteInvoices = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.INVOICES_BULK_DELETE);
   const canViewInvoiceStatus = (): boolean => hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS);
+  /** Set or clear Paid status (bank balance). Owner always allowed via hasPermission. */
+  const canMarkInvoicePaid = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.INVOICES_MARK_PAID);
 
   // Customer permissions
   const canViewCustomers = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_VIEW);
   const canCreateCustomer = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_CREATE);
   const canEditCustomer = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT);
   const canDeleteCustomer = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DELETE);
+  const canBulkDeleteCustomers = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_BULK_DELETE);
+
+  /**
+   * Customer profile page #/customers/:id.
+   * Requires list access plus either `customers_detail_view` or global `customers_edit` (so existing “edit” roles keep access).
+   */
+  const canAccessCustomerDetailPage = (): boolean =>
+    userProfile?.isOwner === true ||
+    (hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_VIEW) &&
+      (hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW) ||
+        hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT)));
+
+  /** Detail page: edit contact modal (global “customers_edit” still grants this) */
+  const canEditCustomerOnDetailPage = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_EDIT) ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT);
+
+  const canManageCustomerDetailBusinesses = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES) ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT);
+
+  const canViewCustomerDetailInvoicesSection = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_INVOICES_SECTION) ||
+    hasPermission(GRANULAR_PERMISSIONS.INVOICES_VIEW);
+
+  const canViewCustomerDetailCrmLeads = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_CRM_LEADS) ||
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_VIEW_ALL);
+
+  const canViewCustomerDetailAuditLog = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_AUDIT_LOG);
+
+  /** Customer detail: internal IDs (record id, company scope, business doc ids) */
+  const canViewCustomerDetailTechnicalIds = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW_TECHNICAL_IDS);
+
+  /** Lead detail: WhatsApp block on Details tab */
+  const canViewLeadDetailWhatsApp = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_DETAIL_WHATSAPP);
 
   // Product permissions
   const canCreateProduct = (): boolean => hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_CREATE);
   const canEditProduct = (): boolean => hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_EDIT);
   const canDeleteProduct = (): boolean => hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_DELETE);
+  const canBulkDeleteProducts = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_BULK_DELETE);
+  /** Company-wide catalog (admin products) for list + invoice line items */
+  const canUseCompanyProductCatalog = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_USE_COMPANY_CATALOG);
 
   // Bank account permissions
   const canCreateBankAccount = (): boolean => hasPermission(GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE);
@@ -65,9 +130,13 @@ export const usePermissions = () => {
   const canCreateExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CREATE);
   const canEditExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_EDIT);
   const canDeleteExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_DELETE);
+  const canBulkDeleteExpenses = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE);
 
   // Company activity permissions
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
+  const canBulkDeleteCompanyActivity = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_BULK_DELETE);
 
   // User management permissions
   const canViewUserManagement = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_VIEW);
@@ -75,6 +144,8 @@ export const usePermissions = () => {
   const canLoginAsUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS);
   const canEditUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT);
   const canActivateDeactivateUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE);
+  const canBulkDeleteCompanyUsers = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_BULK_DELETE);
 
   // Custom roles permissions
   const canViewCustomRoles = (): boolean => hasPermission(GRANULAR_PERMISSIONS.CUSTOM_ROLES_VIEW);
@@ -98,6 +169,7 @@ export const usePermissions = () => {
   const canCreateLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CREATE);
   const canEditLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_EDIT);
   const canDeleteLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE);
+  const canBulkDeleteLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_BULK_DELETE);
   const canAssignLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_ASSIGN);
   const canLogLeadCalls = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_LOG_CALLS);
   const canDeleteLeadCallLogs = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS);
@@ -150,7 +222,12 @@ export const usePermissions = () => {
       case "customers":
         return canViewCustomers();
       case "products":
-        return canCreateProduct() || canEditProduct() || canDeleteProduct();
+        return (
+          canCreateProduct() ||
+          canEditProduct() ||
+          canDeleteProduct() ||
+          canUseCompanyProductCatalog()
+        );
       case "bank-accounts":
       case "bank-accounts-view":
         return canCreateBankAccount() || canEditBankAccount() || canDeleteBankAccount() || canViewDashboardBankAccounts();
@@ -271,6 +348,10 @@ export const usePermissions = () => {
     canAccessInvoiceVerification,
     canViewDebugInfo,
     canViewDashboardMyAssignedLeads,
+    canViewLeadGenAnalytics,
+    canViewLeadGenCreated,
+    canViewLeadGenAssigned,
+    canViewLeadGenConverted,
 
     // Invoice permissions
     canViewInvoices,
@@ -279,18 +360,31 @@ export const usePermissions = () => {
     canAccessPaymentTracking,
     canEditInvoice,
     canDeleteInvoice,
+    canBulkDeleteInvoices,
     canViewInvoiceStatus,
+    canMarkInvoicePaid,
 
     // Customer permissions
     canViewCustomers,
     canCreateCustomer,
     canEditCustomer,
     canDeleteCustomer,
+    canBulkDeleteCustomers,
+    canAccessCustomerDetailPage,
+    canEditCustomerOnDetailPage,
+    canManageCustomerDetailBusinesses,
+    canViewCustomerDetailInvoicesSection,
+    canViewCustomerDetailCrmLeads,
+    canViewCustomerDetailAuditLog,
+    canViewCustomerDetailTechnicalIds,
+    canViewLeadDetailWhatsApp,
 
     // Product permissions
     canCreateProduct,
     canEditProduct,
     canDeleteProduct,
+    canBulkDeleteProducts,
+    canUseCompanyProductCatalog,
 
     // Bank account permissions
     canCreateBankAccount,
@@ -302,9 +396,11 @@ export const usePermissions = () => {
     canCreateExpense,
     canEditExpense,
     canDeleteExpense,
+    canBulkDeleteExpenses,
 
     // Company activity permissions
     canViewCompanyActivity,
+    canBulkDeleteCompanyActivity,
 
     // User management permissions
     canViewUserManagement,
@@ -312,6 +408,7 @@ export const usePermissions = () => {
     canLoginAsUser,
     canEditUser,
     canActivateDeactivateUser,
+    canBulkDeleteCompanyUsers,
 
     // Custom roles permissions
     canViewCustomRoles,
@@ -334,6 +431,7 @@ export const usePermissions = () => {
     canCreateLead,
     canEditLead,
     canDeleteLead,
+    canBulkDeleteLeads,
     canAssignLeads,
     canLogLeadCalls,
     canDeleteLeadCallLogs,

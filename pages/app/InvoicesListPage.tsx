@@ -1,14 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
 import { usePermissions } from "../../hooks/usePermissions";
 import { db } from "../../services/firebase";
+import { ActivityLogger } from "../../services/activityLogger";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
 import type { Invoice } from "../../types";
 import Spinner from "../../components/Spinner";
 import PDFDownloadWrapper from "../../components/PDFDownloadWrapper";
 import PaymentTrackingModal from "../../components/PaymentTrackingModal";
+import { getInvoiceBankDisplayName } from "../../utils/bankAccountDisplay";
 
 const currencySymbols: { [key: string]: string } = {
   USD: "$",
@@ -35,9 +44,11 @@ const InvoicesListPage: React.FC = () => {
     canCreateInvoice,
     canEditInvoice,
     canDeleteInvoice,
+    canBulkDeleteInvoices,
     canViewInvoicePDF,
     canAccessPaymentTracking,
     canViewInvoiceStatus,
+    canMarkInvoicePaid,
     isOwner,
     isAdmin
   } = usePermissions();
@@ -61,9 +72,15 @@ const InvoicesListPage: React.FC = () => {
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<string>("");
+  const [selectedCreatedBy, setSelectedCreatedBy] = useState<string>("");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const invoicesPerPage = 20;
   const navigate = useNavigate();
+  const companyUserOptions = useCompanyUserOptions(user, userProfile);
+  const allowBulkRowSelect = canBulkDeleteInvoices();
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [bulkDeletingInvoices, setBulkDeletingInvoices] = useState(false);
+  const selectAllInvoicesRef = useRef<HTMLInputElement>(null);
 
   // Check if user has permission to view invoices page
   useEffect(() => {
@@ -176,6 +193,15 @@ const InvoicesListPage: React.FC = () => {
   ) => {
     if (!user) return;
 
+    const touchesPaid =
+      newStatus === "paid" || invoice.status === "paid";
+    if (touchesPaid && newStatus !== invoice.status && !canMarkInvoicePaid()) {
+      window.alert(
+        "You do not have permission to mark invoices as Paid or change Paid status. Ask an administrator to grant “Mark invoices as paid”.",
+      );
+      return;
+    }
+
     // Optimistic update for better performance
     setInvoices((prevInvoices) =>
       prevInvoices.map((inv) =>
@@ -196,15 +222,7 @@ const InvoicesListPage: React.FC = () => {
     }
   };
 
-  if (loading || !userProfile) {
-    return (
-      <div className="flex justify-center items-center h-full">
-        <Spinner />
-      </div>
-    );
-  }
-
-  const filterInvoices = (invoices: Invoice[]) => {
+  const filteredInvoices = useMemo(() => {
     const now = new Date();
     let filtered = invoices;
     switch (filterType) {
@@ -260,16 +278,143 @@ const InvoicesListPage: React.FC = () => {
         (inv) => inv.customerName === selectedCustomer,
       );
     }
+    if (selectedCreatedBy && (isOwner || isAdmin)) {
+      filtered = filtered.filter(
+        (inv) => (inv.createdById || "") === selectedCreatedBy,
+      );
+    }
 
     return filtered;
-  };
+  }, [
+    invoices,
+    filterType,
+    customDateRange,
+    selectedBankAccount,
+    selectedStatus,
+    selectedCustomer,
+    selectedCreatedBy,
+    isOwner,
+    isAdmin,
+  ]);
 
-  const filteredInvoices = filterInvoices(invoices);
-  const totalPages = Math.ceil(filteredInvoices.length / invoicesPerPage);
-  const currentInvoices = filteredInvoices.slice(
-    (currentPage - 1) * invoicesPerPage,
-    currentPage * invoicesPerPage,
+  const totalPages = Math.ceil(filteredInvoices.length / invoicesPerPage) || 1;
+  const currentInvoices = useMemo(
+    () =>
+      filteredInvoices.slice(
+        (currentPage - 1) * invoicesPerPage,
+        currentPage * invoicesPerPage,
+      ),
+    [filteredInvoices, currentPage, invoicesPerPage],
   );
+
+  const selectedInvoiceSet = useMemo(
+    () => new Set(selectedInvoiceIds),
+    [selectedInvoiceIds],
+  );
+
+  const allInvoicesOnPageSelected =
+    allowBulkRowSelect &&
+    currentInvoices.length > 0 &&
+    currentInvoices.every((inv) => selectedInvoiceSet.has(inv.id));
+
+  const allFilteredInvoicesSelected =
+    allowBulkRowSelect &&
+    filteredInvoices.length > 0 &&
+    filteredInvoices.every((inv) => selectedInvoiceSet.has(inv.id));
+
+  useEffect(() => {
+    const el = selectAllInvoicesRef.current;
+    if (!el || !allowBulkRowSelect || currentInvoices.length === 0) {
+      if (el) el.indeterminate = false;
+      return;
+    }
+    const onPage = currentInvoices.filter((inv) =>
+      selectedInvoiceSet.has(inv.id),
+    ).length;
+    el.indeterminate = onPage > 0 && onPage < currentInvoices.length;
+  }, [allowBulkRowSelect, currentInvoices, selectedInvoiceSet]);
+
+  const toggleInvoiceSelected = useCallback((id: string) => {
+    setSelectedInvoiceIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const toggleSelectAllInvoicesOnPage = useCallback(() => {
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev);
+      const everyOnPage =
+        currentInvoices.length > 0 &&
+        currentInvoices.every((inv) => next.has(inv.id));
+      if (everyOnPage) {
+        currentInvoices.forEach((inv) => next.delete(inv.id));
+      } else {
+        currentInvoices.forEach((inv) => next.add(inv.id));
+      }
+      return Array.from(next);
+    });
+  }, [currentInvoices]);
+
+  const selectAllFilteredInvoices = useCallback(() => {
+    setSelectedInvoiceIds(filteredInvoices.map((inv) => inv.id));
+  }, [filteredInvoices]);
+
+  const clearInvoiceSelection = useCallback(() => {
+    setSelectedInvoiceIds([]);
+  }, []);
+
+  const handleBulkDeleteInvoicesList = useCallback(async () => {
+    if (!user || !userProfile || !allowBulkRowSelect || selectedInvoiceIds.length === 0) {
+      return;
+    }
+    const n = selectedInvoiceIds.length;
+    if (
+      !window.confirm(
+        `Delete ${n} invoice${n === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeletingInvoices(true);
+    try {
+      for (const invoiceId of selectedInvoiceIds) {
+        const inv = invoices.find((i) => i.id === invoiceId);
+        await InvoiceService.deleteInvoice(invoiceId);
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "invoice_deleted",
+          `Bulk deleted invoice: ${inv?.invoiceNumber ?? invoiceId}`,
+          {
+            entityId: invoiceId,
+            entityType: "invoice",
+            oldValue: inv ? { invoiceNumber: inv.invoiceNumber } : undefined,
+          },
+        );
+      }
+      clearInvoiceSelection();
+    } catch (error) {
+      console.error(error);
+      alert("Some invoices could not be deleted.");
+    } finally {
+      setBulkDeletingInvoices(false);
+    }
+  }, [
+    user,
+    userProfile,
+    allowBulkRowSelect,
+    selectedInvoiceIds,
+    invoices,
+    clearInvoiceSelection,
+  ]);
+
+  if (loading || !userProfile) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -342,7 +487,7 @@ const InvoicesListPage: React.FC = () => {
           <option value="">All Bank Accounts</option>
           {bankAccounts.map((b) => (
             <option key={b.id} value={b.id}>
-              {b.accountName} - {b.bankName}
+              {b.accountName} — {getInvoiceBankDisplayName(b)}
             </option>
           ))}
         </select>
@@ -375,12 +520,87 @@ const InvoicesListPage: React.FC = () => {
             </option>
           ))}
         </select>
+        {(isOwner || isAdmin) && (
+          <select
+            value={selectedCreatedBy}
+            onChange={(e) => {
+              setSelectedCreatedBy(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[160px]"
+            aria-label="Filter by creator"
+          >
+            <option value="">All creators</option>
+            {companyUserOptions.map((u) => (
+              <option key={u.uid} value={u.uid}>
+                {u.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
+
+      {allowBulkRowSelect && selectedInvoiceIds.length > 0 ? (
+        <div
+          className="mb-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50/90 p-3 dark:border-primary-800 dark:bg-primary-950/40 sm:flex-row sm:flex-wrap sm:items-end"
+          role="region"
+          aria-label="Bulk actions for invoices"
+        >
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            {selectedInvoiceIds.length} invoice
+            {selectedInvoiceIds.length === 1 ? "" : "s"} selected
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkDeletingInvoices}
+              onClick={() => void handleBulkDeleteInvoicesList()}
+              className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkDeletingInvoices ? "Deleting…" : "Delete selected"}
+            </button>
+            <button
+              type="button"
+              disabled={bulkDeletingInvoices}
+              onClick={clearInvoiceSelection}
+              className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
+            >
+              Clear selection
+            </button>
+          </div>
+          {!allFilteredInvoicesSelected &&
+          filteredInvoices.length > currentInvoices.length ? (
+            <button
+              type="button"
+              disabled={bulkDeletingInvoices}
+              onClick={selectAllFilteredInvoices}
+              className="text-sm text-primary-700 hover:underline dark:text-primary-400 sm:ml-auto"
+            >
+              Select all {filteredInvoices.length} matching invoices
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="table-responsive">
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
               <tr>
+                {allowBulkRowSelect ? (
+                  <th scope="col" className="w-10 px-2 py-3">
+                    <span className="sr-only">Select row</span>
+                    <input
+                      ref={selectAllInvoicesRef}
+                      type="checkbox"
+                      checked={allInvoicesOnPageSelected}
+                      onChange={toggleSelectAllInvoicesOnPage}
+                      disabled={currentInvoices.length === 0}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                      aria-label="Select all invoices on this page"
+                    />
+                  </th>
+                ) : null}
                 <th scope="col" className="px-6 py-3">
                   Number
                 </th>
@@ -415,6 +635,17 @@ const InvoicesListPage: React.FC = () => {
                     key={invoice.id}
                     className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
                   >
+                    {allowBulkRowSelect ? (
+                      <td className="w-10 px-2 py-4 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoiceSet.has(invoice.id)}
+                          onChange={() => toggleInvoiceSelected(invoice.id)}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                          aria-label={`Select invoice ${invoice.invoiceNumber}`}
+                        />
+                      </td>
+                    ) : null}
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                       {invoice.invoiceNumber}
                     </td>
@@ -430,41 +661,53 @@ const InvoicesListPage: React.FC = () => {
                     </td>
                     {canViewInvoiceStatus() && (
                       <td className="px-6 py-4">
-                        <select
-                          value={invoice.status}
-                          onChange={(e) =>
-                            handleStatusChange(
-                              invoice.id,
-                              e.target.value,
-                              invoice,
-                            )
-                          }
-                          className={`px-2 py-1 text-xs font-medium rounded border-0 cursor-pointer w-24 text-center ${
-                            invoice.status === "paid"
-                              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                              : invoice.status === "sent"
-                                ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
-                                : invoice.status === "overdue"
-                                  ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                                  : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                          }`}
-                        >
-                          <option value="draft">Draft</option>
-                          <option value="sent">Sent</option>
-                          <option
-                            value="paid"
-                            disabled={
-                              invoice.paymentType === "milestone" ||
-                              invoice.paymentType === "upfront"
-                            }
+                        {!canMarkInvoicePaid() &&
+                        invoice.status === "paid" ? (
+                          <span
+                            className="inline-block px-2 py-1 text-xs font-medium rounded w-24 text-center bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                            title="Only users with permission can change Paid status"
                           >
-                            {invoice.paymentType === "milestone" ||
-                            invoice.paymentType === "upfront"
-                              ? "Paid (Auto-tracked)"
-                              : "Paid"}
-                          </option>
-                          <option value="overdue">Overdue</option>
-                        </select>
+                            Paid
+                          </span>
+                        ) : (
+                          <select
+                            value={invoice.status}
+                            onChange={(e) =>
+                              handleStatusChange(
+                                invoice.id,
+                                e.target.value,
+                                invoice,
+                              )
+                            }
+                            className={`px-2 py-1 text-xs font-medium rounded border-0 cursor-pointer w-24 text-center ${
+                              invoice.status === "paid"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                                : invoice.status === "sent"
+                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                                  : invoice.status === "overdue"
+                                    ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                                    : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                            }`}
+                          >
+                            <option value="draft">Draft</option>
+                            <option value="sent">Sent</option>
+                            {canMarkInvoicePaid() && (
+                              <option
+                                value="paid"
+                                disabled={
+                                  invoice.paymentType === "milestone" ||
+                                  invoice.paymentType === "upfront"
+                                }
+                              >
+                                {invoice.paymentType === "milestone" ||
+                                invoice.paymentType === "upfront"
+                                  ? "Paid (Auto-tracked)"
+                                  : "Paid"}
+                              </option>
+                            )}
+                            <option value="overdue">Overdue</option>
+                          </select>
+                        )}
                       </td>
                     )}
                     {(isOwner || isAdmin) && (
@@ -533,6 +776,7 @@ const InvoicesListPage: React.FC = () => {
                 <tr>
                   <td
                     colSpan={
+                      (allowBulkRowSelect ? 1 : 0) +
                       (isOwner || isAdmin ? 1 : 0) +
                       (canViewInvoiceStatus() ? 1 : 0) +
                       5 // Number, Customer, Issue Date, Total, Actions

@@ -146,6 +146,7 @@ const LeadDetailPage: React.FC = () => {
     canAccessLeadConversionHub,
     canCreateInvoice,
     canViewCustomers,
+    canViewLeadDetailWhatsApp,
     leadsListViewAll,
     isOwner,
     isAdmin,
@@ -410,7 +411,12 @@ const LeadDetailPage: React.FC = () => {
       alert("Country / location and business category are required.");
       return;
     }
-    if (hasWhatsapp && !whatsappSameAsPhone && !whatsappPhone.trim()) {
+    if (
+      canViewLeadDetailWhatsApp() &&
+      hasWhatsapp &&
+      !whatsappSameAsPhone &&
+      !whatsappPhone.trim()
+    ) {
       alert("Enter the WhatsApp number or choose “Same as phone number”.");
       return;
     }
@@ -431,18 +437,35 @@ const LeadDetailPage: React.FC = () => {
       if (!extrasPayload.address) delete extrasPayload.address;
       if (!extrasPayload.extraNotes) delete extrasPayload.extraNotes;
 
-      if (hasWhatsapp) {
-        extrasPayload.hasWhatsapp = true;
-        extrasPayload.whatsappSameAsPhone = whatsappSameAsPhone;
-        if (!whatsappSameAsPhone && whatsappPhone.trim()) {
-          extrasPayload.whatsappPhone = whatsappPhone.trim();
+      if (canViewLeadDetailWhatsApp()) {
+        if (hasWhatsapp) {
+          extrasPayload.hasWhatsapp = true;
+          extrasPayload.whatsappSameAsPhone = whatsappSameAsPhone;
+          if (!whatsappSameAsPhone && whatsappPhone.trim()) {
+            extrasPayload.whatsappPhone = whatsappPhone.trim();
+          } else {
+            delete extrasPayload.whatsappPhone;
+          }
         } else {
+          extrasPayload.hasWhatsapp = false;
+          delete extrasPayload.whatsappSameAsPhone;
           delete extrasPayload.whatsappPhone;
         }
       } else {
-        extrasPayload.hasWhatsapp = false;
-        delete extrasPayload.whatsappSameAsPhone;
-        delete extrasPayload.whatsappPhone;
+        const ex = lead.extras || {};
+        if (ex.hasWhatsapp) {
+          extrasPayload.hasWhatsapp = true;
+          extrasPayload.whatsappSameAsPhone = ex.whatsappSameAsPhone !== false;
+          if (ex.whatsappPhone) {
+            extrasPayload.whatsappPhone = ex.whatsappPhone;
+          } else {
+            delete extrasPayload.whatsappPhone;
+          }
+        } else {
+          extrasPayload.hasWhatsapp = false;
+          delete extrasPayload.whatsappSameAsPhone;
+          delete extrasPayload.whatsappPhone;
+        }
       }
 
       await LeadService.updateLeadFields(lead.id, {
@@ -965,78 +988,80 @@ const LeadDetailPage: React.FC = () => {
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
-          <div className="space-y-3 sm:col-span-2 rounded-md border border-gray-200 dark:border-gray-600 p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200">
-                <input
-                  type="checkbox"
-                  className="rounded border-gray-300 dark:border-gray-600"
-                  checked={hasWhatsapp}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setHasWhatsapp(on);
-                    if (!on) {
-                      setWhatsappSameAsPhone(true);
-                      setWhatsappPhone("");
-                    }
-                  }}
-                  disabled={!canEditLead()}
-                />
-                Has WhatsApp
-              </label>
-              <FieldInfoTip text="Turn on if this contact uses WhatsApp. Use the same number as phone or enter a separate WhatsApp number." />
-            </div>
-            {hasWhatsapp ? (
-              <div className="space-y-3 pl-1 border-l-2 border-primary-200 dark:border-primary-800 ml-1">
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300">WhatsApp number</p>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+          {canViewLeadDetailWhatsApp() ? (
+            <div className="space-y-3 sm:col-span-2 rounded-md border border-gray-200 dark:border-gray-600 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200">
                   <input
-                    type="radio"
-                    name="lead-detail-whatsapp-mode"
-                    className="border-gray-300 dark:border-gray-600"
-                    checked={whatsappSameAsPhone}
-                    onChange={() => {
-                      setWhatsappSameAsPhone(true);
-                      setWhatsappPhone("");
+                    type="checkbox"
+                    className="rounded border-gray-300 dark:border-gray-600"
+                    checked={hasWhatsapp}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setHasWhatsapp(on);
+                      if (!on) {
+                        setWhatsappSameAsPhone(true);
+                        setWhatsappPhone("");
+                      }
                     }}
                     disabled={!canEditLead()}
                   />
-                  Same as phone number above
+                  Has WhatsApp
                 </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="lead-detail-whatsapp-mode"
-                    className="border-gray-300 dark:border-gray-600"
-                    checked={!whatsappSameAsPhone}
-                    onChange={() => setWhatsappSameAsPhone(false)}
-                    disabled={!canEditLead()}
-                  />
-                  Different WhatsApp number
-                </label>
-                {!whatsappSameAsPhone ? (
-                  <div className="space-y-1 max-w-md">
-                    <div className="flex items-center gap-1">
-                      <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-whatsapp">
-                        WhatsApp number
-                      </label>
-                      <FieldInfoTip text="Enter the number they use on WhatsApp, including country code if needed." />
-                    </div>
-                    <input
-                      id="lead-detail-whatsapp"
-                      type="tel"
-                      inputMode="tel"
-                      disabled={!canEditLead()}
-                      placeholder="e.g. +92 300 1234567"
-                      className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
-                      value={whatsappPhone}
-                      onChange={(e) => setWhatsappPhone(e.target.value)}
-                    />
-                  </div>
-                ) : null}
+                <FieldInfoTip text="Turn on if this contact uses WhatsApp. Use the same number as phone or enter a separate WhatsApp number." />
               </div>
-            ) : null}
-          </div>
+              {hasWhatsapp ? (
+                <div className="space-y-3 pl-1 border-l-2 border-primary-200 dark:border-primary-800 ml-1">
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">WhatsApp number</p>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="lead-detail-whatsapp-mode"
+                      className="border-gray-300 dark:border-gray-600"
+                      checked={whatsappSameAsPhone}
+                      onChange={() => {
+                        setWhatsappSameAsPhone(true);
+                        setWhatsappPhone("");
+                      }}
+                      disabled={!canEditLead()}
+                    />
+                    Same as phone number above
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="lead-detail-whatsapp-mode"
+                      className="border-gray-300 dark:border-gray-600"
+                      checked={!whatsappSameAsPhone}
+                      onChange={() => setWhatsappSameAsPhone(false)}
+                      disabled={!canEditLead()}
+                    />
+                    Different WhatsApp number
+                  </label>
+                  {!whatsappSameAsPhone ? (
+                    <div className="space-y-1 max-w-md">
+                      <div className="flex items-center gap-1">
+                        <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-whatsapp">
+                          WhatsApp number
+                        </label>
+                        <FieldInfoTip text="Enter the number they use on WhatsApp, including country code if needed." />
+                      </div>
+                      <input
+                        id="lead-detail-whatsapp"
+                        type="tel"
+                        inputMode="tel"
+                        disabled={!canEditLead()}
+                        placeholder="e.g. +92 300 1234567"
+                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
+                        value={whatsappPhone}
+                        onChange={(e) => setWhatsappPhone(e.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="space-y-1">
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1" htmlFor="lead-detail-status">
               Pipeline status

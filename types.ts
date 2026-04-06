@@ -121,6 +121,8 @@ export interface Invoice {
   dueDate: firebase.firestore.Timestamp;
   bankAccountId?: string;
   bankAccountCurrency?: string;
+  /** Customer-facing bank label at time of save (masked name if configured on the bank account). */
+  bankDisplayName?: string;
   // Payment tracking fields
   paymentType: PaymentType;
   totalAmountDue: number;
@@ -148,6 +150,8 @@ export interface BankAccount {
   userId: string;
   accountName: string;
   bankName: string;
+  /** Optional label for invoices: customers and invoice creators see this instead of the real bank name. */
+  invoiceDisplayBankName?: string;
   accountNumber: string;
   currency: string;
   currencySymbol: string;
@@ -178,6 +182,9 @@ export type ActivityType =
   | "customer_created"
   | "customer_updated"
   | "customer_deleted"
+  | "business_created"
+  | "business_updated"
+  | "business_deleted"
   | "product_created"
   | "product_updated"
   | "product_deleted"

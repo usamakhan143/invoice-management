@@ -36,6 +36,10 @@ const DashboardPage: React.FC = () => {
     canAccessInvoiceVerification,
     canViewDebugInfo,
     canViewDashboardMyAssignedLeads,
+    canViewLeadGenAnalytics,
+    canViewLeadGenCreated,
+    canViewLeadGenAssigned,
+    canViewLeadGenConverted,
     canAccessMyAssignedLeadsPage,
     canAccessLeadsPage,
     leadsListViewAll,
@@ -54,6 +58,7 @@ const DashboardPage: React.FC = () => {
   const [myAssignedLeads, setMyAssignedLeads] = useState<Lead[]>([]);
   const [companyLeadsTeamView, setCompanyLeadsTeamView] = useState<Lead[]>([]);
   const [teamAssigneeLabels, setTeamAssigneeLabels] = useState<{ uid: string; label: string }[]>([]);
+  const [leadAnalyticsLeads, setLeadAnalyticsLeads] = useState<Lead[]>([]);
 
   const leadsViewAll = leadsListViewAll();
   const canAssign = canAssignLeads();
@@ -62,6 +67,14 @@ const DashboardPage: React.FC = () => {
   const teamLeadsDashboardMode = (leadsViewAll || canAssign) && canLeadsPage;
 
   const mayViewMyAssignedDash = canViewDashboardMyAssignedLeads();
+  const showLeadGenAnalytics = canViewLeadGenAnalytics();
+
+  useEffect(() => {
+    if (!user || !userProfile) return;
+    if (!showLeadGenAnalytics) return;
+    const unsub = LeadService.getLeadsRealTime(user, userProfile, leadsViewAll, setLeadAnalyticsLeads);
+    return () => unsub();
+  }, [user, userProfile, leadsViewAll, showLeadGenAnalytics]);
 
   useEffect(() => {
     if (!user || !userProfile || teamLeadsDashboardMode) return;
@@ -162,6 +175,29 @@ const DashboardPage: React.FC = () => {
     });
     return keys.map((k) => ({ uid: k, label: label(k), ...byUid.get(k)! }));
   }, [companyLeadsTeamView, teamAssigneeLabels]);
+
+  const leadAnalyticsStats = React.useMemo(() => {
+    const companyScope = leadsViewAll || canAssign;
+    const base = companyScope
+      ? leadAnalyticsLeads
+      : leadAnalyticsLeads.filter((l) => (l.createdById || "") === user?.uid);
+
+    const totalAdded = base.length;
+    const assigned = base.filter((l) => !!(l.assignedUserId || "").trim()).length;
+    const converted = base.filter((l) => !!(l.convertedCustomerId || "").trim()).length;
+    const unassigned = Math.max(0, totalAdded - assigned);
+    const conversionRate =
+      totalAdded > 0 ? Math.round((converted / totalAdded) * 1000) / 10 : 0;
+
+    return {
+      companyScope,
+      totalAdded,
+      assigned,
+      converted,
+      unassigned,
+      conversionRate,
+    };
+  }, [leadAnalyticsLeads, leadsViewAll, canAssign, user?.uid]);
 
   useEffect(() => {
     if (!user || !userProfile) return;
@@ -357,6 +393,7 @@ const DashboardPage: React.FC = () => {
     canViewRecentInvoices() ||
     canAccessInvoiceVerification() ||
     canViewDashboardMyAssignedLeads() ||
+    canViewLeadGenAnalytics() ||
     teamLeadsDashboardMode;
 
   // Calculate real-time bank balances
@@ -456,6 +493,89 @@ const DashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {canViewLeadGenAnalytics() && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
+                Lead generation analytics
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                {leadAnalyticsStats.companyScope
+                  ? "Company-wide lead generation progress."
+                  : "Your lead generation progress (leads created by you)."}
+              </p>
+            </div>
+            {canLeadsPage ? (
+              <Link
+                to="/leads"
+                className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400 shrink-0"
+              >
+                Open leads →
+              </Link>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {canViewLeadGenCreated() && (
+              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Leads added
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  {leadAnalyticsStats.totalAdded}
+                </p>
+              </div>
+            )}
+            {canViewLeadGenAssigned() && (
+              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Assigned to agents
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  {leadAnalyticsStats.assigned}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Unassigned: {leadAnalyticsStats.unassigned}
+                </p>
+              </div>
+            )}
+            {canViewLeadGenConverted() && (
+              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Converted
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  {leadAnalyticsStats.converted}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Converted to customer
+                </p>
+              </div>
+            )}
+            {canViewLeadGenCreated() && canViewLeadGenConverted() && (
+              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Conversion rate
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  {leadAnalyticsStats.conversionRate}%
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Converted / added
+                </p>
+              </div>
+            )}
+          </div>
+          {!canViewLeadGenCreated() &&
+            !canViewLeadGenAssigned() &&
+            !canViewLeadGenConverted() && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
+                No lead analytics metrics are enabled for your role. Ask your admin to enable metric permissions.
+              </p>
+            )}
+        </div>
+      )}
 
       {teamLeadsDashboardMode && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">

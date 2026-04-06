@@ -30,6 +30,14 @@ export const GRANULAR_PERMISSIONS = {
   DASHBOARD_ACCESS_INVOICE_VERIFICATION: "dashboard_access_invoice_verification",
   DASHBOARD_VIEW_DEBUG_INFO: "dashboard_view_debug_info",
   DASHBOARD_VIEW_MY_ASSIGNED_LEADS: "dashboard_view_my_assigned_leads",
+  /** Master toggle for lead generation analytics block on dashboard */
+  DASHBOARD_VIEW_LEAD_GEN_ANALYTICS: "dashboard_view_lead_gen_analytics",
+  /** Lead analytics metric: how many leads were added */
+  DASHBOARD_VIEW_LEAD_GEN_CREATED: "dashboard_view_lead_gen_created",
+  /** Lead analytics metric: how many leads were assigned to an agent */
+  DASHBOARD_VIEW_LEAD_GEN_ASSIGNED: "dashboard_view_lead_gen_assigned",
+  /** Lead analytics metric: how many leads converted to customer */
+  DASHBOARD_VIEW_LEAD_GEN_CONVERTED: "dashboard_view_lead_gen_converted",
 
   // Invoices Page Permissions
   INVOICES_VIEW: "invoices_view",
@@ -38,18 +46,40 @@ export const GRANULAR_PERMISSIONS = {
   INVOICES_PAYMENT_TRACKING: "invoices_payment_tracking",
   INVOICES_EDIT: "invoices_edit",
   INVOICES_DELETE: "invoices_delete",
+  /** Delete multiple invoices from the list (separate from single-row delete) */
+  INVOICES_BULK_DELETE: "invoices_bulk_delete",
   INVOICES_VIEW_STATUS: "invoices_view_status",
+  /** Set invoice to Paid (and change away from Paid). Affects bank balance — assign to trusted users only. */
+  INVOICES_MARK_PAID: "invoices_mark_paid",
 
   // Customers Page Permissions
   CUSTOMERS_VIEW: "customers_view",
   CUSTOMERS_CREATE: "customers_create",
   CUSTOMERS_EDIT: "customers_edit",
   CUSTOMERS_DELETE: "customers_delete",
+  CUSTOMERS_BULK_DELETE: "customers_bulk_delete",
+  /** Open customer profile page (#/customers/:id) — list still uses CUSTOMERS_VIEW */
+  CUSTOMERS_DETAIL_VIEW: "customers_detail_view",
+  /** Edit customer fields from the detail page (modal) */
+  CUSTOMERS_DETAIL_EDIT: "customers_detail_edit",
+  /** Add / edit / delete businesses on customer detail */
+  CUSTOMERS_DETAIL_BUSINESSES: "customers_detail_businesses",
+  /** Show invoices table on customer detail */
+  CUSTOMERS_DETAIL_INVOICES_SECTION: "customers_detail_invoices_section",
+  /** Show CRM leads section on customer detail */
+  CUSTOMERS_DETAIL_CRM_LEADS: "customers_detail_crm_leads",
+  /** Show activity / audit section on customer detail */
+  CUSTOMERS_DETAIL_AUDIT_LOG: "customers_detail_audit_log",
+  /** Show internal IDs on customer detail (Firestore record ID, company scope, business doc IDs) */
+  CUSTOMERS_DETAIL_VIEW_TECHNICAL_IDS: "customers_detail_view_technical_ids",
 
   // Products Page Permissions
   PRODUCTS_CREATE: "products_create",
   PRODUCTS_EDIT: "products_edit",
   PRODUCTS_DELETE: "products_delete",
+  PRODUCTS_BULK_DELETE: "products_bulk_delete",
+  /** See company-wide products (including admin catalog) on the Products page and when creating invoices */
+  PRODUCTS_USE_COMPANY_CATALOG: "products_use_company_catalog",
 
   // Bank Accounts Page Permissions
   BANK_ACCOUNTS_CREATE: "bank_accounts_create",
@@ -61,9 +91,12 @@ export const GRANULAR_PERMISSIONS = {
   EXPENSES_CREATE: "expenses_create",
   EXPENSES_EDIT: "expenses_edit",
   EXPENSES_DELETE: "expenses_delete",
+  EXPENSES_BULK_DELETE: "expenses_bulk_delete",
 
   // Company Activity Section (Admin only)
   COMPANY_ACTIVITY_VIEW: "company_activity_view",
+  /** Delete selected activity log entries (company timeline) */
+  COMPANY_ACTIVITY_BULK_DELETE: "company_activity_bulk_delete",
 
   // User Management Page Permissions
   USER_MANAGEMENT_VIEW: "user_management_view",
@@ -71,6 +104,8 @@ export const GRANULAR_PERMISSIONS = {
   USER_MANAGEMENT_LOGIN_AS: "user_management_login_as",
   USER_MANAGEMENT_EDIT: "user_management_edit",
   USER_MANAGEMENT_ACTIVATE_DEACTIVATE: "user_management_activate_deactivate",
+  /** Remove users from company (bulk or single Remove) — separate from edit/deactivate */
+  USER_MANAGEMENT_BULK_DELETE: "user_management_bulk_delete",
 
   // Custom Roles Page Permissions
   CUSTOM_ROLES_VIEW: "custom_roles_view",
@@ -92,6 +127,8 @@ export const GRANULAR_PERMISSIONS = {
   LEADS_CREATE: "leads_create",
   LEADS_EDIT: "leads_edit",
   LEADS_DELETE: "leads_delete",
+  /** Delete multiple leads from the list (separate from single-row / detail delete) */
+  LEADS_BULK_DELETE: "leads_bulk_delete",
   LEADS_ASSIGN: "leads_assign",
   LEADS_LOG_CALLS: "leads_log_calls",
   /** Delete entries from a lead’s call log history */
@@ -113,6 +150,8 @@ export const GRANULAR_PERMISSIONS = {
   LEADS_AGENT_QUICK_CALL: "leads_agent_quick_call",
   /** My assigned workspace: set or clear next follow-up from the quick modal (also allowed if user has leads_edit) */
   LEADS_AGENT_QUICK_FOLLOWUP: "leads_agent_quick_followup",
+  /** WhatsApp block on lead detail (Details tab) — hide for users without this permission */
+  LEADS_DETAIL_WHATSAPP: "leads_detail_whatsapp",
 } as const;
 
 // Permission descriptions for the role management UI
@@ -128,6 +167,14 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO]: "View Debug Info (Real-time) section on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS]:
     "View “My assigned leads” summary (counts & follow-ups) on the dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ANALYTICS]:
+    "Show Lead Generation Analytics block on dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CREATED]:
+    "Lead analytics: view “Leads added” metric",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ASSIGNED]:
+    "Lead analytics: view “Assigned to agents” metric",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CONVERTED]:
+    "Lead analytics: view “Converted” metric",
 
   // Invoices
   [GRANULAR_PERMISSIONS.INVOICES_VIEW]: "Access invoices page and view invoice list",
@@ -136,7 +183,12 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING]: "Open Payment Tracking popup",
   [GRANULAR_PERMISSIONS.INVOICES_EDIT]: "Edit invoices",
   [GRANULAR_PERMISSIONS.INVOICES_DELETE]: "Delete invoices",
-  [GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS]: "View and modify invoice status column",
+  [GRANULAR_PERMISSIONS.INVOICES_BULK_DELETE]:
+    "Delete multiple invoices at once from the invoices list (checkboxes + bulk action)",
+  [GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS]:
+    "View status and change draft / sent / overdue (column dropdown). Does not include marking as Paid.",
+  [GRANULAR_PERMISSIONS.INVOICES_MARK_PAID]:
+    "Mark invoices as Paid and change status away from Paid (verified payment; updates bank balance)",
   [GRANULAR_PERMISSIONS.INVOICES_CREATE_FROM_LEAD]:
     "Start a new invoice from a lead (customer pre-filled after conversion). Still requires “Create invoice” to save.",
 
@@ -145,11 +197,31 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.CUSTOMERS_CREATE]: "Show 'Add Customer' button",
   [GRANULAR_PERMISSIONS.CUSTOMERS_EDIT]: "Edit customers",
   [GRANULAR_PERMISSIONS.CUSTOMERS_DELETE]: "Delete customers",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_BULK_DELETE]:
+    "Delete multiple customers at once from the customers list",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW]:
+    "Open customer detail page (profile) from the customers list — required in addition to list access",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_EDIT]:
+    "Edit customer contact fields from the customer detail page (also covered by “Edit customers” if you prefer one toggle)",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES]:
+    "Manage businesses (add / edit / delete) on customer detail (also covered by “Edit customers”)",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_INVOICES_SECTION]:
+    "Show the invoices section on customer detail (also covered by “Access invoices”)",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_CRM_LEADS]:
+    "Show the CRM leads section on customer detail (also covered by lead access permissions)",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_AUDIT_LOG]:
+    "Show the activity / audit trail section on customer detail",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW_TECHNICAL_IDS]:
+    "Customer detail: show internal IDs (customer record ID, company scope, business document IDs) — for admins / support",
 
   // Products
   [GRANULAR_PERMISSIONS.PRODUCTS_CREATE]: "Show 'Add Product' button",
   [GRANULAR_PERMISSIONS.PRODUCTS_EDIT]: "Edit products",
   [GRANULAR_PERMISSIONS.PRODUCTS_DELETE]: "Delete products",
+  [GRANULAR_PERMISSIONS.PRODUCTS_BULK_DELETE]:
+    "Delete multiple products at once from the products list",
+  [GRANULAR_PERMISSIONS.PRODUCTS_USE_COMPANY_CATALOG]:
+    "Use company product catalog — see products added by admins/owner and pick them on invoices (read-only on Products page unless you also have create/edit)",
 
   // Bank Accounts
   [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE]: "Access form to add bank accounts",
@@ -161,9 +233,13 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.EXPENSES_CREATE]: "Show 'Add Expense' button",
   [GRANULAR_PERMISSIONS.EXPENSES_EDIT]: "Edit expenses",
   [GRANULAR_PERMISSIONS.EXPENSES_DELETE]: "Delete expenses",
+  [GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE]:
+    "Delete multiple expenses at once from the expenses list",
 
   // Company Activity
   [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
+  [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_BULK_DELETE]:
+    "Delete selected entries from the company activity timeline",
 
   // User Management
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_VIEW]: "Access user management page and view user list",
@@ -171,6 +247,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS]: "Show 'Login As' button",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT]: "Edit users",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE]: "Activate/Deactivate users",
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_BULK_DELETE]:
+    "Remove users from the company (bulk or single “Remove”) — does not delete the Firebase Auth account",
 
   // Custom Roles
   [GRANULAR_PERMISSIONS.CUSTOM_ROLES_VIEW]: "Access custom roles section and view roles list",
@@ -192,6 +270,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.LEADS_CREATE]: "Create new leads",
   [GRANULAR_PERMISSIONS.LEADS_EDIT]: "Edit lead fields, status, and follow-up date",
   [GRANULAR_PERMISSIONS.LEADS_DELETE]: "Delete leads",
+  [GRANULAR_PERMISSIONS.LEADS_BULK_DELETE]:
+    "Delete multiple leads at once from the leads list (bulk action)",
   [GRANULAR_PERMISSIONS.LEADS_ASSIGN]: "Assign or reassign leads to users",
   [GRANULAR_PERMISSIONS.LEADS_LOG_CALLS]: "Add and view call logs on leads",
   [GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS]: "Delete call log entries from a lead",
@@ -210,6 +290,8 @@ export const PERMISSION_DESCRIPTIONS = {
     "On “My assigned leads”: open call log modal to log calls and optional follow-up from the call",
   [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP]:
     "On “My assigned leads”: open follow-up modal to set or clear the next follow-up date",
+  [GRANULAR_PERMISSIONS.LEADS_DETAIL_WHATSAPP]:
+    "On lead detail: show and edit the WhatsApp fields (checkbox, same/different number). Hidden if unchecked.",
 };
 
 // Group permissions by category for better organization in UI
@@ -224,6 +306,10 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ANALYTICS,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CREATED,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ASSIGNED,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CONVERTED,
   ],
   [PERMISSION_CATEGORIES.INVOICES]: [
     GRANULAR_PERMISSIONS.INVOICES_VIEW,
@@ -233,18 +319,30 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.INVOICES_PAYMENT_TRACKING,
     GRANULAR_PERMISSIONS.INVOICES_EDIT,
     GRANULAR_PERMISSIONS.INVOICES_DELETE,
+    GRANULAR_PERMISSIONS.INVOICES_BULK_DELETE,
     GRANULAR_PERMISSIONS.INVOICES_VIEW_STATUS,
+    GRANULAR_PERMISSIONS.INVOICES_MARK_PAID,
   ],
   [PERMISSION_CATEGORIES.CUSTOMERS]: [
     GRANULAR_PERMISSIONS.CUSTOMERS_VIEW,
     GRANULAR_PERMISSIONS.CUSTOMERS_CREATE,
     GRANULAR_PERMISSIONS.CUSTOMERS_EDIT,
     GRANULAR_PERMISSIONS.CUSTOMERS_DELETE,
+    GRANULAR_PERMISSIONS.CUSTOMERS_BULK_DELETE,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_EDIT,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_INVOICES_SECTION,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_CRM_LEADS,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_AUDIT_LOG,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW_TECHNICAL_IDS,
   ],
   [PERMISSION_CATEGORIES.PRODUCTS]: [
     GRANULAR_PERMISSIONS.PRODUCTS_CREATE,
     GRANULAR_PERMISSIONS.PRODUCTS_EDIT,
     GRANULAR_PERMISSIONS.PRODUCTS_DELETE,
+    GRANULAR_PERMISSIONS.PRODUCTS_BULK_DELETE,
+    GRANULAR_PERMISSIONS.PRODUCTS_USE_COMPANY_CATALOG,
   ],
   [PERMISSION_CATEGORIES.BANK_ACCOUNTS]: [
     GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE,
@@ -256,9 +354,11 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.EXPENSES_CREATE,
     GRANULAR_PERMISSIONS.EXPENSES_EDIT,
     GRANULAR_PERMISSIONS.EXPENSES_DELETE,
+    GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE,
   ],
   [PERMISSION_CATEGORIES.COMPANY_ACTIVITY]: [
     GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,
+    GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_BULK_DELETE,
   ],
   [PERMISSION_CATEGORIES.USER_MANAGEMENT]: [
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_VIEW,
@@ -266,6 +366,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE,
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_BULK_DELETE,
   ],
   [PERMISSION_CATEGORIES.CUSTOM_ROLES]: [
     GRANULAR_PERMISSIONS.CUSTOM_ROLES_VIEW,
@@ -287,6 +388,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_CREATE,
     GRANULAR_PERMISSIONS.LEADS_EDIT,
     GRANULAR_PERMISSIONS.LEADS_DELETE,
+    GRANULAR_PERMISSIONS.LEADS_BULK_DELETE,
     GRANULAR_PERMISSIONS.LEADS_ASSIGN,
     GRANULAR_PERMISSIONS.LEADS_LOG_CALLS,
     GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS,
@@ -298,6 +400,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP,
+    GRANULAR_PERMISSIONS.LEADS_DETAIL_WHATSAPP,
   ],
 };
 

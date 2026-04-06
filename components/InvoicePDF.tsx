@@ -228,6 +228,11 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, userProfile }) => (
             <Text style={{ fontFamily: "Helvetica-Bold", marginBottom: 5 }}>
               Payment Information
             </Text>
+            {invoice.bankDisplayName?.trim() ? (
+              <Text style={{ marginBottom: 3 }}>
+                Bank: {invoice.bankDisplayName.trim()}
+              </Text>
+            ) : null}
             <Text style={{ marginBottom: 3 }}>
               Payment Type:{" "}
               {invoice.paymentType === "full"

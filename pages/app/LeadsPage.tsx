@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
 import { usePermissions } from "../../hooks/usePermissions";
-import { db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { CustomerService } from "../../services/customerService";
 import { LeadService } from "../../services/leadService";
-import type { CompanyUser, Customer, Lead, LeadExtras, LeadStatus } from "../../types";
+import type { Customer, Lead, LeadExtras, LeadStatus } from "../../types";
 import {
   COUNTRY_CUSTOM_VALUE,
   CATEGORY_CUSTOM_VALUE,
@@ -184,6 +184,7 @@ const LeadsPage: React.FC = () => {
     canAccessLeadsPage,
     canCreateLead,
     canAssignLeads,
+    canBulkDeleteLeads,
     canLogLeadCalls,
     canConvertLead,
     leadsListViewAll,
@@ -196,25 +197,32 @@ const LeadsPage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [filterAssignee, setFilterAssignee] = useState("");
+  const [filterCreatedBy, setFilterCreatedBy] = useState("");
   const [filterContact, setFilterContact] = useState<ContactPresenceFilter>("");
   const [filterTargetGender, setFilterTargetGender] = useState<FilterTargetSalesGender>("");
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [assignees, setAssignees] = useState<{ uid: string; label: string }[]>([]);
+  const assignees = useCompanyUserOptions(user, userProfile);
   const [currentPage, setCurrentPage] = useState(1);
   const perPage = 20;
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const copyToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [bulkLeadAction, setBulkLeadAction] = useState<"assign" | "delete">("assign");
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("__pick__");
   const [bulkAssignReason, setBulkAssignReason] = useState("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const selectAllHeaderRef = useRef<HTMLInputElement>(null);
 
   const viewAll = leadsListViewAll();
+  /** Assignee + creator filters/columns are for company admins only */
+  const isLeadsAdmin = isOwner || isAdmin;
+  /** "Assigned" column + assignee search match — same as Leads Assign permission */
+  const showAssigneeColumn = canAssignLeads();
 
   const [form, setForm] = useState({
     name: "",
@@ -333,46 +341,6 @@ const LeadsPage: React.FC = () => {
     })();
   }, [user, userProfile, modalOpen, isOwner, isAdmin]);
 
-  useEffect(() => {
-    if (!userProfile?.companyId && !userProfile?.isOwner) return;
-    const companyId = userProfile.isOwner ? user?.uid : userProfile.companyId;
-    if (!companyId || !user) return;
-
-    const load = async () => {
-      const out: { uid: string; label: string }[] = [];
-      const ownerSnap = await db.collection("users").doc(companyId).get();
-      if (ownerSnap.exists) {
-        const d = ownerSnap.data();
-        out.push({
-          uid: companyId,
-          label: d?.displayName || d?.companyName || "Owner",
-        });
-      }
-      const snap = await db
-        .collection("companyUsers")
-        .where("companyId", "==", companyId)
-        .get();
-      snap.docs.forEach((doc) => {
-        const u = doc.data() as CompanyUser;
-        const uid = u.uid || doc.id;
-        if (!out.some((x) => x.uid === uid)) {
-          out.push({
-            uid,
-            label: u.displayName || u.email || uid,
-          });
-        }
-      });
-      if (!out.some((x) => x.uid === user.uid)) {
-        out.push({
-          uid: user.uid,
-          label: userProfile.displayName || userProfile.email || "Me",
-        });
-      }
-      setAssignees(out);
-    };
-    load();
-  }, [user, userProfile]);
-
   const assigneeLabel = useCallback((uid: string) => {
     if (!uid?.trim()) return "Unassigned";
     return assignees.find((a) => a.uid === uid)?.label || uid;
@@ -432,8 +400,12 @@ const LeadsPage: React.FC = () => {
       rows = rows.filter((l) => {
         const createdUid = (l.createdById || "").trim();
         const createdMatch =
-          createdUid.toLowerCase().includes(q) ||
-          (createdUid && assigneeLabel(createdUid).toLowerCase().includes(q));
+          isLeadsAdmin &&
+          (createdUid.toLowerCase().includes(q) ||
+            (createdUid && assigneeLabel(createdUid).toLowerCase().includes(q)));
+        const assigneeSearchMatch =
+          showAssigneeColumn &&
+          assigneeLabel(l.assignedUserId).toLowerCase().includes(q);
         return (
           (l.name || "").toLowerCase().includes(q) ||
           (l.company || "").toLowerCase().includes(q) ||
@@ -443,19 +415,22 @@ const LeadsPage: React.FC = () => {
           (l.status || "").toLowerCase().includes(q) ||
           (l.country || "").toLowerCase().includes(q) ||
           (l.category || "").toLowerCase().includes(q) ||
-          assigneeLabel(l.assignedUserId).toLowerCase().includes(q) ||
+          assigneeSearchMatch ||
           createdMatch
         );
       });
     }
     if (filterStatus) rows = rows.filter((l) => l.status === filterStatus);
     if (filterSource) rows = rows.filter((l) => (l.source || "").trim() === filterSource);
-    if (filterAssignee) {
+    if (isLeadsAdmin && filterAssignee) {
       if (filterAssignee === "__unassigned__") {
         rows = rows.filter((l) => !(l.assignedUserId || "").trim());
       } else {
         rows = rows.filter((l) => (l.assignedUserId || "") === filterAssignee);
       }
+    }
+    if (isLeadsAdmin && filterCreatedBy) {
+      rows = rows.filter((l) => (l.createdById || "") === filterCreatedBy);
     }
     if (filterContact) {
       rows = rows.filter((l) => {
@@ -487,14 +462,17 @@ const LeadsPage: React.FC = () => {
     filterStatus,
     filterSource,
     filterAssignee,
+    filterCreatedBy,
     filterContact,
     filterTargetGender,
     assigneeLabel,
+    isLeadsAdmin,
+    showAssigneeColumn,
   ]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterSource, filterAssignee, filterContact, filterTargetGender]);
+  }, [searchTerm, filterStatus, filterSource, filterAssignee, filterCreatedBy, filterContact, filterTargetGender]);
 
   /** Primary line + subtitle for name/company column (consistent layout). */
   function leadNameCompanyLines(l: Lead): { primary: string; secondary: string | null } {
@@ -720,25 +698,33 @@ const LeadsPage: React.FC = () => {
   );
 
   const allowBulkAssign = canAssignLeads();
+  const allowBulkDelete = canBulkDeleteLeads();
+  const allowBulkRowSelect = allowBulkAssign || allowBulkDelete;
+
+  useEffect(() => {
+    if (allowBulkAssign && !allowBulkDelete) setBulkLeadAction("assign");
+    else if (!allowBulkAssign && allowBulkDelete) setBulkLeadAction("delete");
+  }, [allowBulkAssign, allowBulkDelete]);
+
   const selectedSet = useMemo(() => new Set(selectedLeadIds), [selectedLeadIds]);
   const allPageIdsSelected =
-    allowBulkAssign &&
+    allowBulkRowSelect &&
     pageRows.length > 0 &&
     pageRows.every((l) => selectedSet.has(l.id));
   const allFilteredIdsSelected =
-    allowBulkAssign &&
+    allowBulkRowSelect &&
     filteredRows.length > 0 &&
     filteredRows.every((l) => selectedSet.has(l.id));
 
   useEffect(() => {
     const el = selectAllHeaderRef.current;
-    if (!el || !allowBulkAssign || pageRows.length === 0) {
+    if (!el || !allowBulkRowSelect || pageRows.length === 0) {
       if (el) el.indeterminate = false;
       return;
     }
     const onPage = pageRows.filter((l) => selectedSet.has(l.id)).length;
     el.indeterminate = onPage > 0 && onPage < pageRows.length;
-  }, [allowBulkAssign, pageRows, selectedSet]);
+  }, [allowBulkRowSelect, pageRows, selectedSet]);
 
   const toggleLeadSelected = useCallback((leadId: string) => {
     setSelectedLeadIds((prev) =>
@@ -768,6 +754,45 @@ const LeadsPage: React.FC = () => {
     setBulkAssignUserId("__pick__");
     setBulkAssignReason("");
   }, []);
+
+  const handleBulkDeleteLeads = useCallback(async () => {
+    if (!user || !userProfile || !allowBulkDelete || selectedLeadIds.length === 0 || bulkDeleting) {
+      return;
+    }
+    const n = selectedLeadIds.length;
+    if (
+      !window.confirm(
+        `Delete ${n} lead${n === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeleting(true);
+    try {
+      for (const leadId of selectedLeadIds) {
+        const lead = leads.find((l) => l.id === leadId);
+        await LeadService.deleteLead(leadId);
+        await ActivityLogger.logActivity(user, userProfile, "lead_deleted", "Bulk deleted lead", {
+          entityId: leadId,
+          entityType: "lead",
+          oldValue: lead ? { name: lead.name, company: lead.company } : undefined,
+        });
+      }
+      clearLeadSelection();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Bulk delete failed.");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }, [
+    user,
+    userProfile,
+    allowBulkDelete,
+    selectedLeadIds,
+    bulkDeleting,
+    leads,
+    clearLeadSelection,
+  ]);
 
   const handleBulkAssign = useCallback(async () => {
     if (!user || !userProfile || !allowBulkAssign || bulkAssignUserId === "__pick__" || selectedLeadIds.length === 0) {
@@ -860,7 +885,15 @@ const LeadsPage: React.FC = () => {
         <div className="relative">
           <input
             type="search"
-            placeholder="Search name, company, email, phone, source, status, country, category, assignee…"
+            placeholder={
+              (() => {
+                let h =
+                  "Search name, company, email, phone, source, status, country, category";
+                if (isLeadsAdmin) h += ", creator";
+                if (showAssigneeColumn) h += ", assignee";
+                return `${h}…`;
+              })()
+            }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-4 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -893,20 +926,37 @@ const LeadsPage: React.FC = () => {
               </option>
             ))}
           </select>
-          <select
-            value={filterAssignee}
-            onChange={(e) => setFilterAssignee(e.target.value)}
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[10rem]"
-            aria-label="Filter by assignee"
-          >
-            <option value="">All assignees</option>
-            <option value="__unassigned__">Unassigned</option>
-            {assignees.map((a) => (
-              <option key={a.uid} value={a.uid}>
-                {a.label}
-              </option>
-            ))}
-          </select>
+          {isLeadsAdmin && (
+            <select
+              value={filterAssignee}
+              onChange={(e) => setFilterAssignee(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[10rem]"
+              aria-label="Filter by assignee"
+            >
+              <option value="">All assignees</option>
+              <option value="__unassigned__">Unassigned</option>
+              {assignees.map((a) => (
+                <option key={a.uid} value={a.uid}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {isLeadsAdmin && (
+            <select
+              value={filterCreatedBy}
+              onChange={(e) => setFilterCreatedBy(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[11rem]"
+              aria-label="Filter by creator"
+            >
+              <option value="">All creators</option>
+              {assignees.map((a) => (
+                <option key={a.uid} value={a.uid}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={filterContact}
             onChange={(e) => setFilterContact(e.target.value as ContactPresenceFilter)}
@@ -936,7 +986,8 @@ const LeadsPage: React.FC = () => {
           </select>
           {(filterStatus ||
             filterSource ||
-            filterAssignee ||
+            (isLeadsAdmin && filterAssignee) ||
+            (isLeadsAdmin && filterCreatedBy) ||
             filterContact ||
             filterTargetGender) && (
             <button
@@ -946,6 +997,7 @@ const LeadsPage: React.FC = () => {
                 setFilterStatus("");
                 setFilterSource("");
                 setFilterAssignee("");
+                setFilterCreatedBy("");
                 setFilterContact("");
                 setFilterTargetGender("");
               }}
@@ -958,7 +1010,8 @@ const LeadsPage: React.FC = () => {
           {searchTerm ||
           filterStatus ||
           filterSource ||
-          filterAssignee ||
+          (isLeadsAdmin && filterAssignee) ||
+          (isLeadsAdmin && filterCreatedBy) ||
           filterContact ||
           filterTargetGender
             ? `Showing ${filteredRows.length} of ${leads.length} lead(s)`
@@ -966,54 +1019,89 @@ const LeadsPage: React.FC = () => {
         </div>
       </div>
 
-      {allowBulkAssign && selectedLeadIds.length > 0 ? (
+      {allowBulkRowSelect && selectedLeadIds.length > 0 ? (
         <div
           className="mb-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50/90 p-3 dark:border-primary-800 dark:bg-primary-950/40 sm:flex-row sm:flex-wrap sm:items-end"
           role="region"
-          aria-label="Bulk assign leads"
+          aria-label="Bulk actions for leads"
         >
           <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
             {selectedLeadIds.length} lead{selectedLeadIds.length === 1 ? "" : "s"} selected
           </div>
+          {allowBulkAssign && allowBulkDelete ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="bulk-lead-action" className="sr-only">
+                Bulk action
+              </label>
+              <select
+                id="bulk-lead-action"
+                value={bulkLeadAction}
+                onChange={(e) =>
+                  setBulkLeadAction(e.target.value as "assign" | "delete")
+                }
+                disabled={bulkAssigning || bulkDeleting}
+                className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[10rem]"
+              >
+                <option value="assign">Assign</option>
+                <option value="delete">Delete</option>
+              </select>
+            </div>
+          ) : null}
+          {bulkLeadAction === "assign" && allowBulkAssign ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="sr-only" htmlFor="bulk-assign-user">
+                Assign to user
+              </label>
+              <select
+                id="bulk-assign-user"
+                value={bulkAssignUserId}
+                onChange={(e) => setBulkAssignUserId(e.target.value)}
+                disabled={bulkAssigning}
+                className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[12rem]"
+              >
+                <option value="__pick__">Select user…</option>
+                <option value="">Unassign</option>
+                {assignees.map((a) => (
+                  <option key={a.uid} value={a.uid}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                placeholder="Note (optional)"
+                value={bulkAssignReason}
+                onChange={(e) => setBulkAssignReason(e.target.value)}
+                disabled={bulkAssigning}
+                className="text-sm border border-gray-300 rounded-md px-2 py-1.5 min-w-[10rem] max-w-[16rem] dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                aria-label="Optional note for assignment history"
+              />
+              <button
+                type="button"
+                disabled={bulkAssigning || bulkAssignUserId === "__pick__"}
+                onClick={() => void handleBulkAssign()}
+                className="text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {bulkAssigning ? "Applying…" : "Apply assignment"}
+              </button>
+            </div>
+          ) : null}
+          {bulkLeadAction === "delete" && allowBulkDelete ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={bulkDeleting}
+                onClick={() => void handleBulkDeleteLeads()}
+                className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {bulkDeleting ? "Deleting…" : "Delete selected"}
+              </button>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
-            <label className="sr-only" htmlFor="bulk-assign-user">
-              Assign to user
-            </label>
-            <select
-              id="bulk-assign-user"
-              value={bulkAssignUserId}
-              onChange={(e) => setBulkAssignUserId(e.target.value)}
-              disabled={bulkAssigning}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[12rem]"
-            >
-              <option value="__pick__">Select user…</option>
-              <option value="">Unassign</option>
-              {assignees.map((a) => (
-                <option key={a.uid} value={a.uid}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              placeholder="Note (optional)"
-              value={bulkAssignReason}
-              onChange={(e) => setBulkAssignReason(e.target.value)}
-              disabled={bulkAssigning}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 min-w-[10rem] max-w-[16rem] dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-              aria-label="Optional note for assignment history"
-            />
             <button
               type="button"
-              disabled={bulkAssigning || bulkAssignUserId === "__pick__"}
-              onClick={() => void handleBulkAssign()}
-              className="text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {bulkAssigning ? "Applying…" : "Apply assignment"}
-            </button>
-            <button
-              type="button"
-              disabled={bulkAssigning}
+              disabled={bulkAssigning || bulkDeleting}
               onClick={clearLeadSelection}
               className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
             >
@@ -1023,7 +1111,7 @@ const LeadsPage: React.FC = () => {
           {!allFilteredIdsSelected && filteredRows.length > pageRows.length ? (
             <button
               type="button"
-              disabled={bulkAssigning}
+              disabled={bulkAssigning || bulkDeleting}
               onClick={selectAllFilteredLeads}
               className="text-sm text-primary-700 hover:underline dark:text-primary-400 sm:ml-auto"
             >
@@ -1038,7 +1126,7 @@ const LeadsPage: React.FC = () => {
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
               <tr>
-                {allowBulkAssign ? (
+                {allowBulkRowSelect ? (
                   <th scope="col" className="w-10 px-2 py-3">
                     <span className="sr-only">Select row</span>
                     <input
@@ -1057,8 +1145,10 @@ const LeadsPage: React.FC = () => {
                 <th className="px-6 py-3">Country</th>
                 <th className="px-6 py-3">Category</th>
                 <th className="px-6 py-3">Contact</th>
-                <th className="px-6 py-3">Created by</th>
-                <th className="px-6 py-3">Assigned</th>
+                {isLeadsAdmin ? <th className="px-6 py-3">Created by</th> : null}
+                {showAssigneeColumn ? (
+                  <th className="px-6 py-3">Assigned</th>
+                ) : null}
                 <th className="px-4 py-3 w-0 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
@@ -1069,7 +1159,7 @@ const LeadsPage: React.FC = () => {
                   className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer"
                   onClick={() => navigate(`/leads/${lead.id}`)}
                 >
-                  {allowBulkAssign ? (
+                  {allowBulkRowSelect ? (
                     <td
                       className="w-10 px-2 py-4 align-top"
                       onClick={(e) => e.stopPropagation()}
@@ -1152,12 +1242,16 @@ const LeadsPage: React.FC = () => {
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-xs">
-                    {creatorLabel(lead.createdById)}
-                  </td>
-                  <td className="px-6 py-4 text-xs">
-                    {assigneeLabel(lead.assignedUserId)}
-                  </td>
+                  {isLeadsAdmin ? (
+                    <td className="px-6 py-4 text-xs">
+                      {creatorLabel(lead.createdById)}
+                    </td>
+                  ) : null}
+                  {showAssigneeColumn ? (
+                    <td className="px-6 py-4 text-xs">
+                      {assigneeLabel(lead.assignedUserId)}
+                    </td>
+                  ) : null}
                   <td className="px-3 py-3 align-top whitespace-nowrap">
                     <div className="inline-flex flex-col gap-0.5">
                       {canLogLeadCalls() ? (

@@ -92,6 +92,18 @@ export class ActivityLogger {
     }
   }
 
+  /** Delete activity documents by id (Firestore batch, chunks of 400). */
+  static async deleteActivitiesByIds(activityIds: string[]): Promise<void> {
+    if (activityIds.length === 0) return;
+    const chunkSize = 400;
+    for (let i = 0; i < activityIds.length; i += chunkSize) {
+      const chunk = activityIds.slice(i, i + chunkSize);
+      const batch = db.batch();
+      chunk.forEach((id) => batch.delete(db.collection("activities").doc(id)));
+      await batch.commit();
+    }
+  }
+
   static getActivityIcon(type: ActivityType): string {
     const icons: Record<ActivityType, string> = {
       invoice_created: "📄",
@@ -100,6 +112,9 @@ export class ActivityLogger {
       customer_created: "👤",
       customer_updated: "✏️",
       customer_deleted: "🗑️",
+      business_created: "🏢",
+      business_updated: "✏️",
+      business_deleted: "🗑️",
       product_created: "📦",
       product_updated: "✏️",
       product_deleted: "🗑️",
@@ -114,6 +129,13 @@ export class ActivityLogger {
       user_deleted: "🗑️",
       login: "🔐",
       logout: "🚪",
+      lead_created: "📋",
+      lead_updated: "✏️",
+      lead_deleted: "🗑️",
+      lead_call_logged: "📞",
+      lead_assigned: "👤",
+      lead_converted: "✅",
+      lead_linked_customer: "🔗",
     };
     return icons[type] || "📋";
   }
