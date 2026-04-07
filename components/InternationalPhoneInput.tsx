@@ -15,6 +15,8 @@ export type InternationalPhoneInputProps = {
   countryIso?: CountryCode;
   disabled?: boolean;
   error?: boolean;
+  /** Non-blocking duplicate hint (amber); ignored when error is true. */
+  warning?: boolean;
   className?: string;
   placeholder?: string;
   autoComplete?: string;
@@ -27,6 +29,7 @@ export const InternationalPhoneInput: React.FC<InternationalPhoneInputProps> = (
   countryIso,
   disabled,
   error,
+  warning,
   className = "",
   placeholder = "Phone number",
   autoComplete = "tel",
@@ -93,7 +96,13 @@ export const InternationalPhoneInput: React.FC<InternationalPhoneInputProps> = (
 
   const baseInputClass = `w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
     disabled ? "opacity-60" : ""
-  } ${error ? "border-red-500 ring-1 ring-red-500" : "border-gray-300 dark:border-gray-600"}`;
+  } ${
+    error
+      ? "border-red-500 ring-1 ring-red-500"
+      : warning
+        ? "border-amber-500 ring-1 ring-amber-400/80 bg-amber-50/50 dark:bg-amber-900/15"
+        : "border-gray-300 dark:border-gray-600"
+  }`;
 
   return (
     <input

@@ -7,9 +7,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Helper: users/{uid} must exist before get(); missing doc used to fail whole rule (non-owners could not log in).
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserCompanyId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId;
+    }
+
     // Helper function to check if user is admin/owner
     function isAdmin() {
       return isAuthenticated() &&
+             userDocExists() &&
              (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isOwner == true ||
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
@@ -17,15 +27,18 @@ service cloud.firestore {
     // Helper function to check if user belongs to same company
     function isSameCompany(targetUserId) {
       return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId ==
+             userDocExists() &&
+             exists(/databases/$(database)/documents/users/$(targetUserId)) &&
+             currentUserCompanyId() ==
              get(/databases/$(database)/documents/users/$(targetUserId)).data.companyId;
     }
 
     // Helper function to check if user can access company data
+    // Put request.auth.uid == companyId first so owners match without reading users doc.
     function canAccessCompanyData(companyId) {
       return isAuthenticated() &&
-             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId ||
-              request.auth.uid == companyId ||
+             (request.auth.uid == companyId ||
+              (userDocExists() && currentUserCompanyId() == companyId) ||
               isAdmin());
     }
 
@@ -47,8 +60,13 @@ service cloud.firestore {
 
     // Company users collection
     match /companyUsers/{docId} {
-      // Allow read if user is admin or belongs to same company
+      // Allow read if user is admin or belongs to same company.
+      // Also allow reading your own row by uid/email so login queries work even if users/{uid} is missing or lacks companyId.
       allow read: if isAdmin() ||
+                     (isAuthenticated() && resource.data.uid == request.auth.uid) ||
+                     (isAuthenticated() &&
+                      request.auth.token.email != null &&
+                      request.auth.token.email == resource.data.email) ||
                      (isAuthenticated() &&
                       canAccessCompanyData(resource.data.companyId));
 

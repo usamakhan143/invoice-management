@@ -86,6 +86,9 @@ See `.env.example` for comments and examples.
 | `/activity` | Activity log (user-scoped where applicable) |
 | `/company-activity` | Company-wide activity (permission-gated) |
 | `/profile` | Profile |
+| `/leads` | Leads list / CRM |
+| `/leads/:id` | Lead detail (tabs by permission) |
+| `/my-assigned-leads` | Agent workspace for assigned leads |
 | `/data-management` | Data overview, backup export/import, history |
 | `/super-admin` | Platform operator dashboard (restricted; see below) |
 
@@ -107,6 +110,15 @@ Summary metrics (revenue, outstanding, expenses, customers, bank snapshot, recen
 
 CRUD scoped to the company; used when composing invoices.
 
+Customer detail (`/customers/:id`) includes permission-gated sections:
+- profile edit
+- businesses add/edit
+- businesses delete (separate granular permission)
+- invoices section
+- CRM leads section
+- audit/activity section
+- technical IDs visibility
+
 ### Bank accounts & expenses
 
 Track accounts and expenses per company, per respective pages and services.
@@ -114,6 +126,12 @@ Track accounts and expenses per company, per respective pages and services.
 ### User management (`/users`)
 
 Invite and manage team members, roles, activation, and optional **login-as** (impersonation), gated by `USER_MANAGEMENT_*` permissions.
+
+Also includes enterprise session control:
+- open active sessions for a specific user
+- revoke a single session
+- revoke all sessions for that user
+- dedicated permission: `USER_MANAGEMENT_SESSIONS_CONTROL`
 
 ### Activity (`/activity`, `/company-activity`)
 
@@ -123,6 +141,32 @@ Audit-style logs where the app writes to the activity collection (subject to Fir
 
 User/company profile; editable where rules and permissions allow.
 
+Includes self-service security sessions:
+- view active sessions/devices
+- revoke one session
+- logout other devices
+- relative last-active display and current-device indicator
+
+### Leads / CRM
+
+- Leads list with permission-gated actions and bulk delete.
+- Lead detail supports permission-gated tabs such as:
+  - call logs tab (`LEADS_LOG_CALLS`)
+  - conversion & billing hub (link/convert/invoice permissions)
+  - assignment tab (`LEADS_DETAIL_ASSIGNMENT_TAB`)
+- My Assigned Leads workspace with quick actions (status, call, follow-up) via dedicated permissions.
+
+### Bulk actions
+
+Bulk delete is available with dedicated permissions for:
+- invoices
+- customers
+- products
+- expenses
+- leads
+- company activity
+- user removal from company (team members)
+
 ---
 
 ## Permissions
@@ -130,6 +174,11 @@ User/company profile; editable where rules and permissions allow.
 - **Source of truth** — `config/permissions.ts` (`PERMISSION_CATEGORIES`, `GRANULAR_PERMISSIONS`).
 - **Runtime** — Custom roles and assignments in Firestore; `hooks/usePermissions.tsx` resolves access for navigation and UI actions.
 - **Super Admin** — The sidebar item uses a separate `superAdminOnly` flag in `components/Sidebar.tsx`, not the general permission map.
+- Recent granular additions include:
+  - `USER_MANAGEMENT_SESSIONS_CONTROL`
+  - `LEADS_DETAIL_ASSIGNMENT_TAB`
+  - `CUSTOMERS_DETAIL_BUSINESSES_DELETE`
+  - all `*_BULK_DELETE` permissions for key modules
 
 ---
 

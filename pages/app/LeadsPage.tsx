@@ -17,6 +17,7 @@ import {
 } from "../../config/leadFormOptions";
 import Spinner from "../../components/Spinner";
 import FieldInfoTip from "../../components/FieldInfoTip";
+import DuplicateContactTip from "../../components/DuplicateContactTip";
 import { SearchableLeadOptionSelect } from "../../components/SearchableLeadOptionSelect";
 import { InternationalPhoneInput } from "../../components/InternationalPhoneInput";
 import { getIsoFromLeadCountryName } from "../../utils/internationalPhone";
@@ -103,6 +104,67 @@ const SOCIAL_PLATFORM_ROWS = [
   { flagKey: "socialTwitter" as const, urlKey: "twitterUrl" as const, label: "Twitter (X)", urlLabel: "Twitter (X) URL" },
   { flagKey: "socialTiktok" as const, urlKey: "tiktokUrl" as const, label: "TikTok", urlLabel: "TikTok URL" },
 ];
+
+function createEmptyLeadForm() {
+  return {
+    name: "",
+    company: "",
+    countrySelect: "",
+    countryCustom: "",
+    categorySelect: "",
+    categoryCustom: "",
+    phone: "",
+    email: "",
+    sourceSelect: "",
+    sourceCustom: "",
+    targetSalesGender: TARGET_SALES_GENDER.ANY as LeadTargetSalesGender,
+    notes: "",
+    socialFacebook: false,
+    socialInstagram: false,
+    socialLinkedin: false,
+    socialTwitter: false,
+    socialTiktok: false,
+    facebookUrl: "",
+    instagramUrl: "",
+    linkedinUrl: "",
+    twitterUrl: "",
+    tiktokUrl: "",
+    website: "",
+    address: "",
+    extraNotes: "",
+    hasWhatsapp: false,
+    whatsappSameAsPhone: true,
+    whatsappPhone: "",
+  };
+}
+
+function buildDuplicateTooltipText(
+  kind: "email" | "phone",
+  leadRows: Lead[],
+  customerRows: Customer[],
+): string {
+  const bits: string[] = [];
+  if (leadRows.length) {
+    const names = leadRows
+      .slice(0, 3)
+      .map((l) => (l.name || l.company || "Lead").trim())
+      .join(", ");
+    bits.push(
+      `${leadRows.length} lead${leadRows.length === 1 ? "" : "s"}${leadRows.length > 3 ? " (showing first 3)" : ""}: ${names}`,
+    );
+  }
+  if (customerRows.length) {
+    const names = customerRows
+      .slice(0, 3)
+      .map((c) => c.name.trim())
+      .join(", ");
+    bits.push(
+      `${customerRows.length} customer${customerRows.length === 1 ? "" : "s"}${customerRows.length > 3 ? " (showing first 3)" : ""}: ${names}`,
+    );
+  }
+  const field = kind === "email" ? "email" : "phone number";
+  return `This ${field} matches existing data in your company. ${bits.join(" ")} You can still create this lead if it is a different person.`;
+}
 
 function isValidHttpOrHttpsUrl(value: string): boolean {
   const t = value.trim();
@@ -224,36 +286,7 @@ const LeadsPage: React.FC = () => {
   /** "Assigned" column + assignee search match — same as Leads Assign permission */
   const showAssigneeColumn = canAssignLeads();
 
-  const [form, setForm] = useState({
-    name: "",
-    company: "",
-    countrySelect: "",
-    countryCustom: "",
-    categorySelect: "",
-    categoryCustom: "",
-    phone: "",
-    email: "",
-    sourceSelect: "",
-    sourceCustom: "",
-    targetSalesGender: TARGET_SALES_GENDER.ANY as LeadTargetSalesGender,
-    notes: "",
-    socialFacebook: false,
-    socialInstagram: false,
-    socialLinkedin: false,
-    socialTwitter: false,
-    socialTiktok: false,
-    facebookUrl: "",
-    instagramUrl: "",
-    linkedinUrl: "",
-    twitterUrl: "",
-    tiktokUrl: "",
-    website: "",
-    address: "",
-    extraNotes: "",
-    hasWhatsapp: false,
-    whatsappSameAsPhone: true,
-    whatsappPhone: "",
-  });
+  const [form, setForm] = useState(() => createEmptyLeadForm());
   const [additionalExpanded, setAdditionalExpanded] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [submitFeedback, setSubmitFeedback] = useState<SubmitFeedback | null>(null);
@@ -278,30 +311,36 @@ const LeadsPage: React.FC = () => {
     [resolvedCountry],
   );
 
-  const duplicateCustomers = useMemo(() => {
+  /** Phone-only / email-only matches so we can warn on the specific field. */
+  const contactDuplicateDetails = useMemo(() => {
     const phoneOk = LeadService.isPhoneSufficientForDuplicateHint(form.phone);
     const emailOk = LeadService.isEmailSufficientForDuplicateHint(form.email);
-    if (!phoneOk && !emailOk) return [] as Customer[];
-    return LeadService.findCustomersMatchingContact(
-      customers,
-      phoneOk ? form.phone : "",
-      emailOk ? form.email : "",
-    );
-  }, [customers, form.phone, form.email]);
+    const phoneStr = phoneOk ? form.phone : "";
+    const emailStr = emailOk ? form.email : "";
+    const leadsPhone = phoneOk
+      ? LeadService.findLeadsMatchingContact(leads, phoneStr, "")
+      : ([] as Lead[]);
+    const leadsEmail = emailOk
+      ? LeadService.findLeadsMatchingContact(leads, "", emailStr)
+      : ([] as Lead[]);
+    const custPhone = phoneOk
+      ? LeadService.findCustomersMatchingContact(customers, phoneStr, "")
+      : ([] as Customer[]);
+    const custEmail = emailOk
+      ? LeadService.findCustomersMatchingContact(customers, "", emailStr)
+      : ([] as Customer[]);
+    return { leadsPhone, leadsEmail, custPhone, custEmail, phoneOk, emailOk };
+  }, [leads, customers, form.phone, form.email]);
 
-  const duplicateLeads = useMemo(() => {
-    const phoneOk = LeadService.isPhoneSufficientForDuplicateHint(form.phone);
-    const emailOk = LeadService.isEmailSufficientForDuplicateHint(form.email);
-    if (!phoneOk && !emailOk) return [] as Lead[];
-    return LeadService.findLeadsMatchingContact(
-      leads,
-      phoneOk ? form.phone : "",
-      emailOk ? form.email : "",
-    );
-  }, [leads, form.phone, form.email]);
+  const emailDuplicateWarn =
+    contactDuplicateDetails.emailOk &&
+    (contactDuplicateDetails.leadsEmail.length > 0 ||
+      contactDuplicateDetails.custEmail.length > 0);
 
-  const showDuplicateWarning =
-    duplicateCustomers.length > 0 || duplicateLeads.length > 0;
+  const phoneDuplicateWarn =
+    contactDuplicateDetails.phoneOk &&
+    (contactDuplicateDetails.leadsPhone.length > 0 ||
+      contactDuplicateDetails.custPhone.length > 0);
 
   const mayAccessLeads = canAccessLeadsPage();
 
@@ -485,36 +524,7 @@ const LeadsPage: React.FC = () => {
   }
 
   const resetModalState = () => {
-    setForm({
-      name: "",
-      company: "",
-      countrySelect: "",
-      countryCustom: "",
-      categorySelect: "",
-      categoryCustom: "",
-      phone: "",
-      email: "",
-      sourceSelect: "",
-      sourceCustom: "",
-      targetSalesGender: TARGET_SALES_GENDER.ANY,
-      notes: "",
-      socialFacebook: false,
-      socialInstagram: false,
-      socialLinkedin: false,
-      socialTwitter: false,
-      socialTiktok: false,
-      facebookUrl: "",
-      instagramUrl: "",
-      linkedinUrl: "",
-      twitterUrl: "",
-      tiktokUrl: "",
-      website: "",
-      address: "",
-      extraNotes: "",
-      hasWhatsapp: false,
-      whatsappSameAsPhone: true,
-      whatsappPhone: "",
-    });
+    setForm(createEmptyLeadForm());
     setAdditionalExpanded(false);
     setFormErrors({});
     setSubmitFeedback(null);
@@ -678,6 +688,9 @@ const LeadsPage: React.FC = () => {
         message: "Lead created successfully.",
         leadId,
       });
+      setForm(createEmptyLeadForm());
+      setFormErrors({});
+      setAdditionalExpanded(false);
     } catch (e) {
       console.error(e);
       const msg =
@@ -1515,7 +1528,7 @@ const LeadsPage: React.FC = () => {
               <div className="space-y-1">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <div className="mb-1 flex items-center gap-1">
+                    <div className="mb-1 flex items-center gap-1 flex-wrap">
                       <label
                         htmlFor="lead-email"
                         className="text-xs font-medium text-gray-600 dark:text-gray-300"
@@ -1523,6 +1536,15 @@ const LeadsPage: React.FC = () => {
                         Email address
                       </label>
                       <FieldInfoTip text="At least one of email or phone is required. Use a valid address if you enter one (e.g. name@company.com)." />
+                      {emailDuplicateWarn && !(formErrors.email || formErrors.contact) ? (
+                        <DuplicateContactTip
+                          text={buildDuplicateTooltipText(
+                            "email",
+                            contactDuplicateDetails.leadsEmail,
+                            contactDuplicateDetails.custEmail,
+                          )}
+                        />
+                      ) : null}
                     </div>
                     <input
                       id="lead-email"
@@ -1530,7 +1552,9 @@ const LeadsPage: React.FC = () => {
                       className={`w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white ${
                         formErrors.email || formErrors.contact
                           ? "border-red-500 ring-1 ring-red-500"
-                          : ""
+                          : emailDuplicateWarn
+                            ? "border-amber-500 ring-1 ring-amber-400/80 bg-amber-50/50 dark:bg-amber-900/15"
+                            : ""
                       }`}
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -1542,7 +1566,7 @@ const LeadsPage: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <div className="mb-1 flex items-center gap-1">
+                    <div className="mb-1 flex items-center gap-1 flex-wrap">
                       <label
                         htmlFor="lead-phone"
                         className="text-xs font-medium text-gray-600 dark:text-gray-300"
@@ -1556,6 +1580,15 @@ const LeadsPage: React.FC = () => {
                             : "Pick a country first for the right +country code and formatting, or enter an international number starting with +."
                         }
                       />
+                      {phoneDuplicateWarn && !formErrors.contact ? (
+                        <DuplicateContactTip
+                          text={buildDuplicateTooltipText(
+                            "phone",
+                            contactDuplicateDetails.leadsPhone,
+                            contactDuplicateDetails.custPhone,
+                          )}
+                        />
+                      ) : null}
                     </div>
                     <InternationalPhoneInput
                       id="lead-phone"
@@ -1563,6 +1596,7 @@ const LeadsPage: React.FC = () => {
                       onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
                       countryIso={phoneCountryIso}
                       error={!!formErrors.contact}
+                      warning={phoneDuplicateWarn && !formErrors.contact}
                       disabled={formLocked}
                       autoComplete="tel"
                       placeholder={
@@ -1903,46 +1937,6 @@ const LeadsPage: React.FC = () => {
                 </div>
               )}
 
-              {showDuplicateWarning && (
-                <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-900 dark:text-amber-100">
-                  <p className="font-medium">Possible duplicates (you can still create)</p>
-                  <p className="mt-1 text-xs opacity-90">
-                    This shows when the <strong>phone number</strong> or <strong>email</strong> you entered is the same as a lead or customer already in your list (the name or company can be different).
-                  </p>
-                  {duplicateLeads.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide opacity-90">
-                        Existing leads
-                      </p>
-                      <ul className="mt-1 list-disc list-inside text-xs">
-                        {duplicateLeads.slice(0, 5).map((l) => (
-                          <li key={l.id}>
-                            {(l.name || l.company || "Lead").trim()} —{" "}
-                            {[l.email, l.phone].filter(Boolean).join(" · ") || "—"}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {duplicateCustomers.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide opacity-90">
-                        Customers
-                      </p>
-                      <ul className="mt-1 list-disc list-inside text-xs">
-                        {duplicateCustomers.slice(0, 5).map((c) => (
-                          <li key={c.id}>
-                            {c.name} — {c.email || c.phone}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs opacity-90">
-                    Review on the lead detail page or link to an existing customer if needed.
-                  </p>
-                </div>
-              )}
             </div>
 
             {submitFeedback?.type !== "success" && (

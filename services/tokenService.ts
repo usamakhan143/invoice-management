@@ -76,8 +76,12 @@ class TokenService {
       const storedToken = localStorage.getItem("userToken");
       const storedUserId = localStorage.getItem("tokenUserId");
 
-      if (!storedToken || !storedUserId || storedUserId !== user.uid) {
-        console.log("No valid token found in localStorage");
+      if (!storedToken || !storedUserId) {
+        return false;
+      }
+      if (storedUserId !== user.uid) {
+        // Stale browser session (e.g. another account on same device); clear so next login can mint a fresh token
+        this.clearLocalToken();
         return false;
       }
 

@@ -316,16 +316,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         try {
           const storedUserId = localStorage.getItem("tokenUserId");
 
+          let skipFreshSessionSetup = false;
           if (storedToken && storedUserId && !storedToken.startsWith("impersonation_")) {
-            // Regular session - validate token
             const isValidToken = await TokenService.validateToken(firebaseUser);
-            if (!isValidToken) {
-              await auth.signOut();
-              setUserProfile(null);
-              setLoading(false);
-              return;
+            if (isValidToken) {
+              skipFreshSessionSetup = true;
+            } else {
+              // Stale or revoked session token (common after password reset or admin revoke). Clear and establish a new session instead of signing out.
+              TokenService.clearLocalToken();
             }
-          } else {
+          }
+
+          if (!skipFreshSessionSetup) {
             // Fresh login - FIRST check if user is allowed to login
 
             // Check by EMAIL in companyUsers first (more reliable)
