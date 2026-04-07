@@ -137,6 +137,7 @@ const LeadDetailPage: React.FC = () => {
     canEditLead,
     canDeleteLead,
     canAssignLeads,
+    canAccessLeadDetailAssignmentTab,
     canLogLeadCalls,
     canDeleteLeadCallLogs,
     canApproveCallLogs,
@@ -155,6 +156,8 @@ const LeadDetailPage: React.FC = () => {
   const viewAll = leadsListViewAll();
   /** Boolean — do not pass permission *functions* into effect deps (new ref every render resets tabs). */
   const conversionHubAllowed = canAccessLeadConversionHub();
+  const callLogsTabAllowed = canLogLeadCalls();
+  const assignmentTabAllowed = canAccessLeadDetailAssignmentTab();
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
@@ -198,8 +201,14 @@ const LeadDetailPage: React.FC = () => {
     if (next === "conversion" && !conversionHubAllowed) {
       next = "details";
     }
+    if (next === "calls" && !callLogsTabAllowed) {
+      next = "details";
+    }
+    if (next === "assignment" && !assignmentTabAllowed) {
+      next = "details";
+    }
     setActiveTab(next);
-  }, [id, searchParams, conversionHubAllowed]);
+  }, [id, searchParams, conversionHubAllowed, callLogsTabAllowed, assignmentTabAllowed]);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -222,6 +231,18 @@ const LeadDetailPage: React.FC = () => {
   const [convertBizName, setConvertBizName] = useState("");
   const [converting, setConverting] = useState(false);
   const [convertFeedback, setConvertFeedback] = useState<null | { type: "success" | "error"; message: string }>(null);
+
+  useEffect(() => {
+    if (!callLogsTabAllowed && activeTab === "calls") {
+      setActiveTab("details");
+    }
+  }, [callLogsTabAllowed, activeTab]);
+
+  useEffect(() => {
+    if (!assignmentTabAllowed && activeTab === "assignment") {
+      setActiveTab("details");
+    }
+  }, [assignmentTabAllowed, activeTab]);
 
   const phoneCountryIso = useMemo(() => {
     const name =
@@ -315,13 +336,23 @@ const LeadDetailPage: React.FC = () => {
 
   useEffect(() => {
     if (!id) return;
+    if (!callLogsTabAllowed) {
+      setLogs([]);
+      return;
+    }
     const u1 = LeadService.subscribeCallLogs(id, setLogs);
+    return () => u1();
+  }, [id, callLogsTabAllowed]);
+
+  useEffect(() => {
+    if (!id) return;
+    if (!assignmentTabAllowed) {
+      setEvents([]);
+      return;
+    }
     const u2 = LeadService.subscribeAssignmentEvents(id, setEvents);
-    return () => {
-      u1();
-      u2();
-    };
-  }, [id]);
+    return () => u2();
+  }, [id, assignmentTabAllowed]);
 
   useEffect(() => {
     if (!userProfile?.companyId && !userProfile?.isOwner) return;
@@ -687,9 +718,9 @@ const LeadDetailPage: React.FC = () => {
 
   const tabItems: { id: LeadDetailTab; label: string }[] = [
     { id: "details", label: "Details" },
-    { id: "calls", label: "Call logs" },
+    ...(callLogsTabAllowed ? [{ id: "calls" as const, label: "Call logs" }] : []),
     ...(conversionHubAllowed ? [{ id: "conversion" as const, label: "Conversion & billing" }] : []),
-    { id: "assignment", label: "Assignment" },
+    ...(assignmentTabAllowed ? [{ id: "assignment" as const, label: "Assignment" }] : []),
   ];
 
   return (
@@ -713,14 +744,16 @@ const LeadDetailPage: React.FC = () => {
               >
                 {lead.status}
               </span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                Assigned to:{" "}
-                <strong className="font-medium text-gray-800 dark:text-gray-200">
-                  {(lead.assignedUserId || "").trim()
-                    ? resolveUserLabel(lead.assignedUserId)
-                    : "Unassigned"}
-                </strong>
-              </span>
+              {canAssignLeads() ? (
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Assigned to:{" "}
+                  <strong className="font-medium text-gray-800 dark:text-gray-200">
+                    {(lead.assignedUserId || "").trim()
+                      ? resolveUserLabel(lead.assignedUserId)
+                      : "Unassigned"}
+                  </strong>
+                </span>
+              ) : null}
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Lead ID: {lead.id}</p>
           </div>
@@ -788,7 +821,14 @@ const LeadDetailPage: React.FC = () => {
           <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40 px-4 py-3">
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Lead closed as Lost</p>
             <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-              No customer or invoice steps apply. You can still review call logs and history on this page.
+              No customer or invoice steps apply.
+              {callLogsTabAllowed && assignmentTabAllowed
+                ? " You can still review call logs and assignment history on this page."
+                : callLogsTabAllowed
+                  ? " You can still review call logs on this page."
+                  : assignmentTabAllowed
+                    ? " You can still review assignment history on this page."
+                    : " You can still review details on this page."}
             </p>
           </div>
         ) : null}
@@ -1255,7 +1295,7 @@ const LeadDetailPage: React.FC = () => {
       </section>
       )}
 
-      {activeTab === "assignment" && (
+      {activeTab === "assignment" && assignmentTabAllowed && (
         <>
           {canAssignLeads() && (
             <section className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
@@ -1598,14 +1638,13 @@ const LeadDetailPage: React.FC = () => {
         </section>
       )}
 
-      {activeTab === "calls" && (
+      {activeTab === "calls" && callLogsTabAllowed ? (
         <section className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
           <h2 className="font-semibold text-gray-800 dark:text-white mb-1">Call logs</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
             Log outcomes and follow-up dates. History is shown newest-first below.
           </p>
-          {canLogLeadCalls() && (
-            <div className="flex flex-col gap-3 mb-6 rounded-lg border border-gray-200 dark:border-gray-600 p-4 bg-gray-50/50 dark:bg-gray-900/20">
+          <div className="flex flex-col gap-3 mb-6 rounded-lg border border-gray-200 dark:border-gray-600 p-4 bg-gray-50/50 dark:bg-gray-900/20">
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="call-outcome">
                   Call outcome
@@ -1661,7 +1700,6 @@ const LeadDetailPage: React.FC = () => {
                 Add call log
               </button>
             </div>
-          )}
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
             Previous logs ({logs.length})
           </h3>
@@ -1738,7 +1776,7 @@ const LeadDetailPage: React.FC = () => {
             )}
           </ul>
         </section>
-      )}
+      ) : null}
     </div>
   );
 };

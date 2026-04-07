@@ -277,7 +277,29 @@ export class LeadService {
     return id;
   }
 
+  /**
+   * Deletes all documents in a subcollection under a lead (batched; repeats until empty).
+   * Firestore does not remove subcollections when the parent doc is deleted.
+   */
+  private static async deleteLeadSubcollection(
+    leadRef: firebase.firestore.DocumentReference,
+    subcollectionName: string,
+  ): Promise<void> {
+    const sub = leadRef.collection(subcollectionName);
+    const batchSize = 400;
+    let snap = await sub.limit(batchSize).get();
+    while (!snap.empty) {
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      snap = await sub.limit(batchSize).get();
+    }
+  }
+
   static async deleteLead(leadId: string): Promise<void> {
+    const leadRef = db.collection("leads").doc(leadId);
+    await this.deleteLeadSubcollection(leadRef, "callLogs");
+    await this.deleteLeadSubcollection(leadRef, "assignmentEvents");
     const ok = await FirebaseHealth.safeDeleteDocument("leads", leadId);
     if (!ok) throw new Error("Failed to delete lead");
   }

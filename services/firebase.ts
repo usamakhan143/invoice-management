@@ -122,8 +122,12 @@ export const connectToFirebase = async (
                 continue;
             }
 
-            // Test Firebase Firestore directly
-            const testPromise = db.collection('_connection_test').limit(1).get();
+            // Test Firestore using a rules-safe probe.
+            // `_connection_test` can be blocked by rules and cause false "DB issues" toasts.
+            const currentUser = auth.currentUser;
+            const testPromise = currentUser
+                ? db.collection('users').doc(currentUser.uid).get()
+                : Promise.resolve(true);
             const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('Firebase connection timeout after 8 seconds')), 8000)
             );

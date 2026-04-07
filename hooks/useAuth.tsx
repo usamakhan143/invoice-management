@@ -15,6 +15,17 @@ import { isEmergencyOfflineMode, offlineServices, mockUserProfile } from "../ser
 import type { UserProfile } from "../types";
 import type firebase from "firebase/compat/app";
 
+/** Activity log copy: who did the action — person name / email, not company legal name */
+function activityActorDisplayLabel(
+  firebaseUser: firebase.User,
+  profile?: Pick<UserProfile, "displayName" | "email"> | null,
+): string {
+  const authName = firebaseUser.displayName?.trim();
+  const profileName = profile?.displayName?.trim();
+  const mail = (profile?.email || firebaseUser.email || "").trim();
+  return authName || profileName || mail || "User";
+}
+
 interface AuthContextType {
   user: firebase.User | null;
   userProfile: UserProfile | null;
@@ -214,6 +225,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       return () => {}; // Return empty cleanup function
     }
 
+    /** Tracks Firebase uid across auth callbacks (React state in this effect is stale). */
+    let lastFirebaseUidForLoginMarker: string | null = null;
+
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       // Clean up previous listeners
       if (userDocUnsubscribe) {
@@ -298,6 +312,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       }
 
       if (firebaseUser) {
+        lastFirebaseUidForLoginMarker = firebaseUser.uid;
         try {
           const storedUserId = localStorage.getItem("tokenUserId");
 
@@ -412,25 +427,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
                 setUserProfile(userData);
 
-                // Log login activity only on actual login (not on refresh)
-                // Use a more specific session key with timestamp
+                // One login log per tab session (sessionStorage survives refresh, cleared on logout / tab close)
                 const loginKey = `loginLogged_${firebaseUser.uid}`;
-                const lastLoginTime = sessionStorage.getItem(loginKey);
-                const currentTime = Date.now();
-                const fiveMinutesAgo = currentTime - 5 * 60 * 1000;
-
-                if (
-                  !previousUser &&
-                  firebaseUser &&
-                  (!lastLoginTime ||
-                    parseInt(lastLoginTime) < fiveMinutesAgo)
-                ) {
-                  sessionStorage.setItem(loginKey, currentTime.toString());
+                if (!sessionStorage.getItem(loginKey)) {
+                  sessionStorage.setItem(loginKey, String(Date.now()));
                   ActivityLogger.logActivity(
                     firebaseUser,
                     userData,
                     "login",
-                    `${userData.displayName || userData.companyName || firebaseUser.email} logged in`,
+                    `${activityActorDisplayLabel(firebaseUser, userData)} logged in`,
                   );
                 }
               } else {
@@ -489,25 +494,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
                     setUserProfile(userData);
 
-                    // Log login activity only on actual login (not on refresh)
-                    // Use a more specific session key with timestamp
                     const loginKey = `loginLogged_${firebaseUser.uid}`;
-                    const lastLoginTime = sessionStorage.getItem(loginKey);
-                    const currentTime = Date.now();
-                    const fiveMinutesAgo = currentTime - 5 * 60 * 1000;
-
-                    if (
-                      !previousUser &&
-                      firebaseUser &&
-                      (!lastLoginTime ||
-                        parseInt(lastLoginTime) < fiveMinutesAgo)
-                    ) {
-                      sessionStorage.setItem(loginKey, currentTime.toString());
+                    if (!sessionStorage.getItem(loginKey)) {
+                      sessionStorage.setItem(loginKey, String(Date.now()));
                       ActivityLogger.logActivity(
                         firebaseUser,
                         userData,
                         "login",
-                        `${userData.displayName || userData.companyName || firebaseUser.email} logged in`,
+                        `${activityActorDisplayLabel(firebaseUser, userData)} logged in`,
                       );
                     }
                   } else {
@@ -571,12 +565,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
             previousUser,
             userProfile,
             "logout",
-            `${userProfile.displayName || userProfile.companyName || previousUser.email} logged out`,
+            `${activityActorDisplayLabel(previousUser, userProfile)} logged out`,
           );
         }
-        // Clear login session tracking
-        if (previousUser) {
-          sessionStorage.removeItem(`loginLogged_${previousUser.uid}`);
+        // Clear login-once marker so the next sign-in can log (any sign-out path)
+        if (lastFirebaseUidForLoginMarker) {
+          sessionStorage.removeItem(`loginLogged_${lastFirebaseUidForLoginMarker}`);
+          lastFirebaseUidForLoginMarker = null;
         }
         setUserProfile(null);
         setLoading(false);
@@ -629,7 +624,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           user,
           userProfile,
           "logout",
-          `${userProfile.companyName || user.email} logged out`,
+          `${activityActorDisplayLabel(user, userProfile)} logged out`,
         );
       } catch (error) {
         console.error("Failed to log logout activity:", error);

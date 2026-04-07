@@ -778,13 +778,15 @@ const MyAssignedLeadsPage: React.FC = () => {
                                         }
                                       >
                                         <div className="inline-flex flex-nowrap items-center justify-end gap-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => openModal(l.id, "details")}
-                                            className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                                          >
-                                            Details
-                                          </button>
+                                          {workspaceTab !== "closed" ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => openModal(l.id, "details")}
+                                              className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                                            >
+                                              Details
+                                            </button>
+                                          ) : null}
                                           {!hidePipelineClosedNormal && canStatus ? (
                                             <button
                                               type="button"

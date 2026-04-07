@@ -86,6 +86,13 @@ export const usePermissions = () => {
     hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES) ||
     hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT);
 
+  /** Remove a business line on customer detail — granular delete; global edit/delete still allow (legacy) */
+  const canDeleteCustomerDetailBusinesses = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES_DELETE) ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DELETE) ||
+    hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_EDIT);
+
   const canViewCustomerDetailInvoicesSection = (): boolean =>
     userProfile?.isOwner === true ||
     hasPermission(GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_INVOICES_SECTION) ||
@@ -144,6 +151,8 @@ export const usePermissions = () => {
   const canLoginAsUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS);
   const canEditUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT);
   const canActivateDeactivateUser = (): boolean => hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE);
+  const canManageUserSessions = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_SESSIONS_CONTROL);
   const canBulkDeleteCompanyUsers = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.USER_MANAGEMENT_BULK_DELETE);
 
@@ -171,6 +180,8 @@ export const usePermissions = () => {
   const canDeleteLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE);
   const canBulkDeleteLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_BULK_DELETE);
   const canAssignLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_ASSIGN);
+  const canAccessLeadDetailAssignmentTab = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_DETAIL_ASSIGNMENT_TAB);
   const canLogLeadCalls = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_LOG_CALLS);
   const canDeleteLeadCallLogs = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS);
   /** Recording ref + verify call log (admin QA) */
@@ -373,6 +384,7 @@ export const usePermissions = () => {
     canAccessCustomerDetailPage,
     canEditCustomerOnDetailPage,
     canManageCustomerDetailBusinesses,
+    canDeleteCustomerDetailBusinesses,
     canViewCustomerDetailInvoicesSection,
     canViewCustomerDetailCrmLeads,
     canViewCustomerDetailAuditLog,
@@ -408,6 +420,7 @@ export const usePermissions = () => {
     canLoginAsUser,
     canEditUser,
     canActivateDeactivateUser,
+    canManageUserSessions,
     canBulkDeleteCompanyUsers,
 
     // Custom roles permissions
@@ -433,6 +446,7 @@ export const usePermissions = () => {
     canDeleteLead,
     canBulkDeleteLeads,
     canAssignLeads,
+    canAccessLeadDetailAssignmentTab,
     canLogLeadCalls,
     canDeleteLeadCallLogs,
     canApproveCallLogs,

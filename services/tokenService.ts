@@ -163,6 +163,40 @@ class TokenService {
     }
   }
 
+  static async revokeTokenById(tokenId: string): Promise<void> {
+    await db.collection("userTokens").doc(tokenId).delete();
+  }
+
+  static async revokeAllUserTokens(userId: string): Promise<number> {
+    const query = await db
+      .collection("userTokens")
+      .where("userId", "==", userId)
+      .get();
+    if (query.empty) return 0;
+    const batch = db.batch();
+    query.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    return query.size;
+  }
+
+  static async revokeAllUserTokensExceptCurrent(user: firebase.User): Promise<number> {
+    const currentToken = localStorage.getItem("userToken");
+    if (!currentToken) return 0;
+    const query = await db
+      .collection("userTokens")
+      .where("userId", "==", user.uid)
+      .get();
+    if (query.empty) return 0;
+
+    const docsToDelete = query.docs.filter((doc) => doc.data().token !== currentToken);
+    if (docsToDelete.length === 0) return 0;
+
+    const batch = db.batch();
+    docsToDelete.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    return docsToDelete.length;
+  }
+
   static clearLocalToken(): void {
     localStorage.removeItem("userToken");
     localStorage.removeItem("tokenUserId");
@@ -194,17 +228,23 @@ class TokenService {
 
   static async getUserActiveSessions(userId: string): Promise<UserToken[]> {
     try {
-      const activeSessionsQuery = await db
+      // Fetch by user only, then filter/sort in app to avoid strict index/schema coupling.
+      const sessionsQuery = await db
         .collection("userTokens")
         .where("userId", "==", userId)
-        .where("isActive", "==", true)
-        .orderBy("lastActiveAt", "desc")
         .get();
 
-      return activeSessionsQuery.docs.map(doc => ({
+      const rows = sessionsQuery.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as UserToken[];
+      return rows
+        .filter((row) => row.isActive !== false)
+        .sort((a, b) => {
+          const aMs = a.lastActiveAt?.toDate?.()?.getTime?.() || 0;
+          const bMs = b.lastActiveAt?.toDate?.()?.getTime?.() || 0;
+          return bMs - aMs;
+        });
     } catch (error) {
       return [];
     }

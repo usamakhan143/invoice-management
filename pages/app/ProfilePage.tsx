@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { auth, db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
+import { TokenService, type UserToken } from "../../services/tokenService";
 import Spinner from "../../components/Spinner";
 import firebase from "firebase/compat/app";
 
@@ -25,6 +26,10 @@ const ProfilePage: React.FC = () => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [sessions, setSessions] = useState<UserToken[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [revokingOthers, setRevokingOthers] = useState(false);
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +144,119 @@ const ProfilePage: React.FC = () => {
       console.error("Password change error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const currentToken = useMemo(() => localStorage.getItem("userToken"), []);
+  const timezoneLabel = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown timezone",
+    [],
+  );
+
+  const loadSessions = async () => {
+    if (!user) return;
+    setSessionsLoading(true);
+    try {
+      const rows = await TokenService.getUserActiveSessions(user.uid);
+      setSessions(rows);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSessions();
+  }, [user?.uid]);
+
+  const isCurrentSession = (row: UserToken): boolean => {
+    return !!currentToken && row.token === currentToken;
+  };
+
+  const formatTs = (ts: any): string => {
+    try {
+      return ts?.toDate?.().toLocaleString?.() || "—";
+    } catch {
+      return "—";
+    }
+  };
+
+  const formatRelativeTime = (ts: any): string => {
+    const d = ts?.toDate?.();
+    if (!d) return "unknown";
+    const diffMs = Date.now() - d.getTime();
+    if (diffMs < 60_000) return "just now";
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
+  const getLocationHint = (row: UserToken, isCurrent: boolean): string => {
+    if (row.ipAddress && row.ipAddress.trim()) return row.ipAddress.trim();
+    if (isCurrent) return timezoneLabel;
+    return "Location unavailable";
+  };
+
+  const handleRevokeSingleSession = async (session: UserToken) => {
+    if (!session.id || !user || !userProfile) return;
+    if (isCurrentSession(session)) return;
+    setRevokingSessionId(session.id);
+    setError("");
+    setSuccess("");
+    try {
+      await TokenService.revokeTokenById(session.id);
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_updated",
+        `Revoked one active session from profile`,
+        {
+          entityId: user.uid,
+          entityType: "security",
+          newValue: { revokeSessionId: session.id },
+        },
+      );
+      setSuccess("Session revoked.");
+      await loadSessions();
+    } catch (err) {
+      console.error(err);
+      setError("Could not revoke this session.");
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
+  const handleRevokeOtherSessions = async () => {
+    if (!user || !userProfile) return;
+    setRevokingOthers(true);
+    setError("");
+    setSuccess("");
+    try {
+      const removed = await TokenService.revokeAllUserTokensExceptCurrent(user);
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_updated",
+        `Revoked other sessions from profile (${removed})`,
+        {
+          entityId: user.uid,
+          entityType: "security",
+          newValue: { revokedOtherSessions: removed },
+        },
+      );
+      setSuccess(
+        removed > 0
+          ? `${removed} other session${removed === 1 ? "" : "s"} revoked.`
+          : "No other sessions found.",
+      );
+      await loadSessions();
+    } catch (err) {
+      console.error(err);
+      setError("Could not revoke other sessions.");
+    } finally {
+      setRevokingOthers(false);
     }
   };
 
@@ -404,6 +522,85 @@ const ProfilePage: React.FC = () => {
             </button>
           </form>
         </div>
+      </div>
+
+      <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+              Active Sessions
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Manage devices where your account is signed in.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadSessions()}
+              disabled={sessionsLoading}
+              className="px-3 py-2 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              {sessionsLoading ? "Refreshing..." : "Refresh"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRevokeOtherSessions()}
+              disabled={revokingOthers}
+              className="px-3 py-2 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {revokingOthers ? "Revoking..." : "Logout Other Devices"}
+            </button>
+          </div>
+        </div>
+
+        {sessionsLoading ? (
+          <p className="text-sm text-gray-600 dark:text-gray-300">Loading sessions...</p>
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-gray-600 dark:text-gray-300">No active sessions found.</p>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((s) => {
+              const current = isCurrentSession(s);
+              return (
+                <div
+                  key={s.id || `${s.userId}-${s.token}`}
+                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-gray-900 dark:text-white">
+                        {s.deviceInfo || "Unknown Device"}
+                      </p>
+                      {current ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                          Current session
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {s.userAgent || "Unknown browser"}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Location: {getLocationHint(s, current)}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Last active: {formatRelativeTime(s.lastActiveAt)} ({formatTs(s.lastActiveAt)}) • Created: {formatTs(s.createdAt)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleRevokeSingleSession(s)}
+                    disabled={current || revokingSessionId === s.id}
+                    className="px-3 py-1.5 text-xs rounded-md border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
+                  >
+                    {revokingSessionId === s.id ? "Revoking..." : "Revoke"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

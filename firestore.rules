@@ -88,9 +88,12 @@ service cloud.firestore {
 
     // User tokens collection
     match /userTokens/{tokenId} {
-      // Allow read/write if token belongs to the user or user is admin
-      allow read, write: if isAuthenticated() &&
-                          (resource.data.userId == request.auth.uid || isAdmin());
+      // Read/update/delete: own token docs or admins
+      allow read, update, delete: if isAuthenticated() &&
+                                   (resource.data.userId == request.auth.uid || isAdmin());
+      // Create: must create token only for yourself (or admin can create for any user)
+      allow create: if isAuthenticated() &&
+                    (request.resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // Activity logs collection

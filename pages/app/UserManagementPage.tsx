@@ -5,7 +5,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useNavigate } from "react-router-dom";
 import { db, auth as firebaseAuth, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
-import { TokenService } from "../../services/tokenService";
+import { TokenService, type UserToken } from "../../services/tokenService";
 import {
   PAGES,
 } from "../../config/permissions";
@@ -22,6 +22,7 @@ const UserManagementPage: React.FC = () => {
     canLoginAsUser,
     canEditUser,
     canActivateDeactivateUser,
+    canManageUserSessions,
     canViewCustomRoles,
     canCreateCustomRole,
     canEditCustomRole,
@@ -50,6 +51,16 @@ const UserManagementPage: React.FC = () => {
   });
   const [customRoles, setCustomRoles] = useState<any[]>([]);
   const [error, setError] = useState("");
+  const [sessionModalUser, setSessionModalUser] = useState<CompanyUser | null>(null);
+  const [sessionRows, setSessionRows] = useState<UserToken[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [revokingAllSessions, setRevokingAllSessions] = useState(false);
+  const currentToken = useMemo(() => localStorage.getItem("userToken"), []);
+  const timezoneLabel = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown timezone",
+    [],
+  );
 
   // Decrypt password function for Login As functionality
   const decryptPassword = (encryptedPassword: string): string | null => {
@@ -715,6 +726,128 @@ const UserManagementPage: React.FC = () => {
     }
   };
 
+  const formatTokenTs = (ts: any): string => {
+    try {
+      return ts?.toDate?.().toLocaleString?.() || "—";
+    } catch {
+      return "—";
+    }
+  };
+
+  const formatRelativeTime = (ts: any): string => {
+    const d = ts?.toDate?.();
+    if (!d) return "unknown";
+    const diffMs = Date.now() - d.getTime();
+    if (diffMs < 60_000) return "just now";
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
+  const getLocationHint = (row: UserToken, isCurrent: boolean): string => {
+    if (row.ipAddress && row.ipAddress.trim()) return row.ipAddress.trim();
+    if (isCurrent) return timezoneLabel;
+    return "Location unavailable";
+  };
+
+  const openSessionsModal = async (targetUser: CompanyUser) => {
+    setSessionModalUser(targetUser);
+    setSessionsLoading(true);
+    setSessionRows([]);
+    try {
+      const rows = await TokenService.getUserActiveSessions(targetUser.uid);
+      setSessionRows(rows);
+    } catch (e) {
+      console.error("Load sessions failed:", e);
+      alert("Failed to load active sessions.");
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const closeSessionsModal = () => {
+    setSessionModalUser(null);
+    setSessionRows([]);
+    setRevokingSessionId(null);
+    setRevokingAllSessions(false);
+  };
+
+  const refreshSessionsModal = async () => {
+    if (!sessionModalUser) return;
+    setSessionsLoading(true);
+    try {
+      const rows = await TokenService.getUserActiveSessions(sessionModalUser.uid);
+      setSessionRows(rows);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const revokeSession = async (token: UserToken) => {
+    if (!token.id || !sessionModalUser || !user || !userProfile) return;
+    setRevokingSessionId(token.id);
+    try {
+      await TokenService.revokeTokenById(token.id);
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_updated",
+        `Revoked one session for ${sessionModalUser.displayName} (${sessionModalUser.email})`,
+        {
+          entityId: sessionModalUser.uid,
+          entityType: "user_session",
+          newValue: { tokenId: token.id },
+        },
+      );
+      await refreshSessionsModal();
+    } catch (e) {
+      console.error("Revoke session failed:", e);
+      alert("Failed to revoke session.");
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
+  const revokeAllSessions = async () => {
+    if (!sessionModalUser || !user || !userProfile) return;
+    if (
+      !window.confirm(
+        `Revoke all active sessions for ${sessionModalUser.displayName}? They will be logged out on all devices.`,
+      )
+    ) {
+      return;
+    }
+    setRevokingAllSessions(true);
+    try {
+      const removed = await TokenService.revokeAllUserTokens(sessionModalUser.uid);
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_updated",
+        `Revoked all sessions for ${sessionModalUser.displayName} (${sessionModalUser.email})`,
+        {
+          entityId: sessionModalUser.uid,
+          entityType: "user_session",
+          newValue: { revokedSessions: removed },
+        },
+      );
+      await refreshSessionsModal();
+      alert(
+        removed > 0
+          ? `${removed} session${removed === 1 ? "" : "s"} revoked.`
+          : "No active sessions found.",
+      );
+    } catch (e) {
+      console.error("Revoke all sessions failed:", e);
+      alert("Failed to revoke all sessions.");
+    } finally {
+      setRevokingAllSessions(false);
+    }
+  };
+
   // Helper function to create impersonation session
   const createImpersonationSession = async (targetUser: CompanyUser) => {
     try {
@@ -934,7 +1067,7 @@ const UserManagementPage: React.FC = () => {
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === "users"
                 ? "border-primary-500 text-primary-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 hover:text-primary-600 hover:border-primary-300 dark:text-gray-400 dark:hover:text-primary-300 dark:hover:border-primary-500/60"
             }`}
           >
             Team Members
@@ -945,7 +1078,7 @@ const UserManagementPage: React.FC = () => {
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === "roles"
                   ? "border-primary-500 text-primary-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  : "border-transparent text-gray-500 hover:text-primary-600 hover:border-primary-300 dark:text-gray-400 dark:hover:text-primary-300 dark:hover:border-primary-500/60"
               }`}
             >
               Roles
@@ -1201,15 +1334,16 @@ const UserManagementPage: React.FC = () => {
                       {member.createdAt?.toDate().toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-1.5">
                         {(canLoginAsUser() || isOwner || isAdmin) && member.isActive && (
                           <button
                             onClick={() => handleDirectLogin(member)}
-                            className="inline-flex items-center px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
+                            className="inline-flex items-center justify-center w-8 h-8 text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
                             title="Login as this user"
+                            aria-label={`Login as ${member.displayName}`}
                           >
                             <svg
-                              className="w-3 h-3 mr-1"
+                              className="w-4 h-4"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -1221,17 +1355,18 @@ const UserManagementPage: React.FC = () => {
                                 d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
                               />
                             </svg>
-                            Login As
                           </button>
                         )}
                         {canEditUser() &&
                           member.role !== "owner" && (
                             <button
                               onClick={() => openEditModal(member)}
-                              className="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-blue-800 dark:text-blue-200 dark:border-blue-600 dark:hover:bg-blue-700"
+                              className="inline-flex items-center justify-center w-8 h-8 text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-blue-800 dark:text-blue-200 dark:border-blue-600 dark:hover:bg-blue-700"
+                              title="Edit user"
+                              aria-label={`Edit ${member.displayName}`}
                             >
                               <svg
-                                className="w-3 h-3 mr-1"
+                                className="w-4 h-4"
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -1243,7 +1378,6 @@ const UserManagementPage: React.FC = () => {
                                   d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                                 />
                               </svg>
-                              Edit
                             </button>
                           )}
                         {canActivateDeactivateUser() && member.role !== "owner" && (
@@ -1251,14 +1385,16 @@ const UserManagementPage: React.FC = () => {
                             onClick={() =>
                               toggleUserStatus(member.id, member.isActive)
                             }
-                            className={`inline-flex items-center px-3 py-1 text-xs font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                            className={`inline-flex items-center justify-center w-8 h-8 border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                               member.isActive
                                 ? "text-red-700 bg-red-100 border-red-300 hover:bg-red-200 focus:ring-red-500 dark:bg-red-800 dark:text-red-200 dark:border-red-600 dark:hover:bg-red-700"
                                 : "text-green-700 bg-green-100 border-green-300 hover:bg-green-200 focus:ring-green-500 dark:bg-green-800 dark:text-green-200 dark:border-green-600 dark:hover:bg-green-700"
                             }`}
+                            title={member.isActive ? "Deactivate user" : "Activate user"}
+                            aria-label={`${member.isActive ? "Deactivate" : "Activate"} ${member.displayName}`}
                           >
                             <svg
-                              className="w-3 h-3 mr-1"
+                              className="w-4 h-4"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -1274,21 +1410,58 @@ const UserManagementPage: React.FC = () => {
                                 }
                               />
                             </svg>
-                            {member.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                        )}
+                        {canManageUserSessions() && member.role !== "owner" && (
+                          <button
+                            type="button"
+                            onClick={() => void openSessionsModal(member)}
+                            className="inline-flex items-center justify-center w-8 h-8 text-indigo-700 bg-indigo-100 border border-indigo-300 rounded-md hover:bg-indigo-200 hover:text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200 dark:border-indigo-700 dark:hover:bg-indigo-800/70 dark:hover:text-indigo-100"
+                            title="Manage sessions"
+                            aria-label={`Manage sessions for ${member.displayName}`}
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M9.75 17L6 20.75M6 20.75V17m0 3.75h3.75M14.25 7L18 3.25M18 3.25V7m0-3.75h-3.75M4 8.5A4.5 4.5 0 018.5 4h7A4.5 4.5 0 0120 8.5v7a4.5 4.5 0 01-4.5 4.5h-7A4.5 4.5 0 014 15.5v-7z"
+                              />
+                            </svg>
                           </button>
                         )}
                         {canBulkDeleteCompanyUsers() && member.role !== "owner" && (
                           <button
                             type="button"
                             onClick={() => void deleteUser(member.id, member.email)}
-                            className="inline-flex items-center px-3 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 dark:bg-red-950/40 dark:text-red-200 dark:border-red-800"
+                            className="inline-flex items-center justify-center w-8 h-8 text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 dark:bg-red-950/40 dark:text-red-200 dark:border-red-800"
+                            title="Remove user"
+                            aria-label={`Remove ${member.displayName}`}
                           >
-                            Remove
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8"
+                              />
+                            </svg>
                           </button>
                         )}
                         {!canLoginAsUser() &&
                           !canEditUser() &&
                           !canActivateDeactivateUser() &&
+                          !canManageUserSessions() &&
                           !(canBulkDeleteCompanyUsers() && member.role !== "owner") && (
                           <span className="text-gray-400 text-xs">No actions available</span>
                         )}
@@ -1469,6 +1642,99 @@ const UserManagementPage: React.FC = () => {
                 Update User
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {sessionModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Active Sessions
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  {sessionModalUser.displayName} ({sessionModalUser.email})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeSessionsModal}
+                className="px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => void refreshSessionsModal()}
+                disabled={sessionsLoading}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {sessionsLoading ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void revokeAllSessions()}
+                disabled={revokingAllSessions}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {revokingAllSessions ? "Revoking..." : "Revoke All"}
+              </button>
+            </div>
+
+            {sessionsLoading ? (
+              <p className="text-sm text-gray-600 dark:text-gray-300">Loading sessions...</p>
+            ) : sessionRows.length === 0 ? (
+              <p className="text-sm text-gray-600 dark:text-gray-300">No active sessions.</p>
+            ) : (
+              <div className="space-y-3">
+                {sessionRows.map((row) => {
+                  const isCurrent =
+                    sessionModalUser?.uid === user?.uid &&
+                    !!currentToken &&
+                    row.token === currentToken;
+                  return (
+                  <div
+                    key={row.id || `${row.userId}-${row.token}`}
+                    className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {row.deviceInfo || "Unknown Device"}
+                        </p>
+                        {isCurrent ? (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                            Current device
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {row.userAgent || "Unknown browser"}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Location: {getLocationHint(row, isCurrent)}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Last active: {formatRelativeTime(row.lastActiveAt)} ({formatTokenTs(row.lastActiveAt)}) • Created: {formatTokenTs(row.createdAt)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!row.id || revokingSessionId === row.id || isCurrent}
+                      onClick={() => void revokeSession(row)}
+                      className="px-3 py-1.5 text-xs rounded-md border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
+                    >
+                      {revokingSessionId === row.id ? "Revoking..." : "Revoke"}
+                    </button>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

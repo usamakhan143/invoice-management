@@ -155,6 +155,7 @@ const CustomerDetailPage: React.FC = () => {
     canAccessCustomerDetailPage,
     canEditCustomerOnDetailPage,
     canManageCustomerDetailBusinesses,
+    canDeleteCustomerDetailBusinesses,
     canViewCustomerDetailInvoicesSection,
     canViewCustomerDetailCrmLeads,
     canViewCustomerDetailAuditLog,
@@ -495,6 +496,7 @@ const CustomerDetailPage: React.FC = () => {
 
   const removeBusiness = async (b: Business) => {
     if (!companyId) return;
+    if (!canDeleteCustomerDetailBusinesses()) return;
     if (
       !window.confirm(
         `Delete business “${b.name}”? Lead references will be cleared. This cannot be undone.`,
@@ -844,24 +846,28 @@ const CustomerDetailPage: React.FC = () => {
                     ) : null}
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    {canManageCustomerDetailBusinesses() && (
+                    {canManageCustomerDetailBusinesses() || canDeleteCustomerDetailBusinesses() ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => openEditBusiness(b)}
-                          className="text-xs font-medium text-primary-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeBusiness(b)}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Delete
-                        </button>
+                        {canManageCustomerDetailBusinesses() ? (
+                          <button
+                            type="button"
+                            onClick={() => openEditBusiness(b)}
+                            className="text-xs font-medium text-primary-600 hover:underline"
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                        {canDeleteCustomerDetailBusinesses() ? (
+                          <button
+                            type="button"
+                            onClick={() => removeBusiness(b)}
+                            className="text-xs font-medium text-red-600 hover:underline"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </li>
               ))}

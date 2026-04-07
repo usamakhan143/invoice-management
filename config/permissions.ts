@@ -62,8 +62,10 @@ export const GRANULAR_PERMISSIONS = {
   CUSTOMERS_DETAIL_VIEW: "customers_detail_view",
   /** Edit customer fields from the detail page (modal) */
   CUSTOMERS_DETAIL_EDIT: "customers_detail_edit",
-  /** Add / edit / delete businesses on customer detail */
+  /** Add / edit businesses on customer detail (delete uses CUSTOMERS_DETAIL_BUSINESSES_DELETE) */
   CUSTOMERS_DETAIL_BUSINESSES: "customers_detail_businesses",
+  /** Delete a business from customer detail (separate from add/edit) */
+  CUSTOMERS_DETAIL_BUSINESSES_DELETE: "customers_detail_businesses_delete",
   /** Show invoices table on customer detail */
   CUSTOMERS_DETAIL_INVOICES_SECTION: "customers_detail_invoices_section",
   /** Show CRM leads section on customer detail */
@@ -104,6 +106,8 @@ export const GRANULAR_PERMISSIONS = {
   USER_MANAGEMENT_LOGIN_AS: "user_management_login_as",
   USER_MANAGEMENT_EDIT: "user_management_edit",
   USER_MANAGEMENT_ACTIVATE_DEACTIVATE: "user_management_activate_deactivate",
+  /** Open and control user device sessions (view/revoke single/revoke all) */
+  USER_MANAGEMENT_SESSIONS_CONTROL: "user_management_sessions_control",
   /** Remove users from company (bulk or single Remove) — separate from edit/deactivate */
   USER_MANAGEMENT_BULK_DELETE: "user_management_bulk_delete",
 
@@ -130,6 +134,8 @@ export const GRANULAR_PERMISSIONS = {
   /** Delete multiple leads from the list (separate from single-row / detail delete) */
   LEADS_BULK_DELETE: "leads_bulk_delete",
   LEADS_ASSIGN: "leads_assign",
+  /** Assignment tab on lead detail (history + UI; reassign still needs Leads Assign) */
+  LEADS_DETAIL_ASSIGNMENT_TAB: "leads_detail_assignment_tab",
   LEADS_LOG_CALLS: "leads_log_calls",
   /** Delete entries from a lead’s call log history */
   LEADS_DELETE_CALL_LOGS: "leads_delete_call_logs",
@@ -204,7 +210,9 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_EDIT]:
     "Edit customer contact fields from the customer detail page (also covered by “Edit customers” if you prefer one toggle)",
   [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES]:
-    "Manage businesses (add / edit / delete) on customer detail (also covered by “Edit customers”)",
+    "Add and edit businesses on customer detail (also covered by “Edit customers”)",
+  [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES_DELETE]:
+    "Delete businesses on customer detail — separate from add/edit (also granted with Edit or Delete customers)",
   [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_INVOICES_SECTION]:
     "Show the invoices section on customer detail (also covered by “Access invoices”)",
   [GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_CRM_LEADS]:
@@ -247,6 +255,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS]: "Show 'Login As' button",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT]: "Edit users",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE]: "Activate/Deactivate users",
+  [GRANULAR_PERMISSIONS.USER_MANAGEMENT_SESSIONS_CONTROL]:
+    "Open and manage user sessions (view active devices, revoke one, revoke all)",
   [GRANULAR_PERMISSIONS.USER_MANAGEMENT_BULK_DELETE]:
     "Remove users from the company (bulk or single “Remove”) — does not delete the Firebase Auth account",
 
@@ -273,6 +283,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.LEADS_BULK_DELETE]:
     "Delete multiple leads at once from the leads list (bulk action)",
   [GRANULAR_PERMISSIONS.LEADS_ASSIGN]: "Assign or reassign leads to users",
+  [GRANULAR_PERMISSIONS.LEADS_DETAIL_ASSIGNMENT_TAB]:
+    "Open the Assignment tab on lead detail (reassignment history; changing assignee still requires Leads Assign)",
   [GRANULAR_PERMISSIONS.LEADS_LOG_CALLS]: "Add and view call logs on leads",
   [GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS]: "Delete call log entries from a lead",
   [GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE]:
@@ -332,6 +344,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_VIEW,
     GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_EDIT,
     GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES,
+    GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_BUSINESSES_DELETE,
     GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_INVOICES_SECTION,
     GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_CRM_LEADS,
     GRANULAR_PERMISSIONS.CUSTOMERS_DETAIL_AUDIT_LOG,
@@ -366,6 +379,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_LOGIN_AS,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_EDIT,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_ACTIVATE_DEACTIVATE,
+    GRANULAR_PERMISSIONS.USER_MANAGEMENT_SESSIONS_CONTROL,
     GRANULAR_PERMISSIONS.USER_MANAGEMENT_BULK_DELETE,
   ],
   [PERMISSION_CATEGORIES.CUSTOM_ROLES]: [
@@ -390,6 +404,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_DELETE,
     GRANULAR_PERMISSIONS.LEADS_BULK_DELETE,
     GRANULAR_PERMISSIONS.LEADS_ASSIGN,
+    GRANULAR_PERMISSIONS.LEADS_DETAIL_ASSIGNMENT_TAB,
     GRANULAR_PERMISSIONS.LEADS_LOG_CALLS,
     GRANULAR_PERMISSIONS.LEADS_DELETE_CALL_LOGS,
     GRANULAR_PERMISSIONS.LEADS_CALL_LOG_APPROVE,
