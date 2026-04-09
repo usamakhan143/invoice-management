@@ -9,6 +9,7 @@ import AgentWorkspaceModals, {
 import { LeadService } from "../../services/leadService";
 import type { Lead, LeadStatus } from "../../types";
 import Spinner from "../../components/Spinner";
+import LeadPitchReadyIcon, { leadHasPitchNotes } from "../../components/LeadPitchReadyIcon";
 
 const MailIcon: React.FC<{ className?: string }> = ({ className = "text-current" }) => (
   <svg className={`w-4 h-4 shrink-0 ${className}`.trim()} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
@@ -138,6 +139,7 @@ const MyAssignedLeadsPage: React.FC = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | LeadStatus>("");
   const [followFilter, setFollowFilter] = useState<FollowFilter>("all");
+  const [filterPitchReady, setFilterPitchReady] = useState<"" | "ready" | "not_ready">("");
   const [sortKey, setSortKey] = useState<SortKey>("assigned");
 
   const [modal, setModal] = useState<{ mode: AgentWorkspaceModalMode; leadId: string } | null>(null);
@@ -286,6 +288,11 @@ const MyAssignedLeadsPage: React.FC = () => {
         return true;
       });
     }
+    if (filterPitchReady === "ready") {
+      rows = rows.filter((l) => leadHasPitchNotes(l.notes));
+    } else if (filterPitchReady === "not_ready") {
+      rows = rows.filter((l) => !leadHasPitchNotes(l.notes));
+    }
     const out = [...rows];
     out.sort((a, b) => {
       if (sortKey === "name") {
@@ -308,6 +315,7 @@ const MyAssignedLeadsPage: React.FC = () => {
     search,
     statusFilter,
     followFilter,
+    filterPitchReady,
     sortKey,
     assignedAtMs,
     sevenDaysAhead,
@@ -519,7 +527,7 @@ const MyAssignedLeadsPage: React.FC = () => {
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
                 Filters &amp; sort
               </p>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <label className="block min-w-0">
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Search</span>
                   <input
@@ -565,6 +573,24 @@ const MyAssignedLeadsPage: React.FC = () => {
                     </option>
                     <option value="none" className={FILTER_OPT}>
                       None set
+                    </option>
+                  </select>
+                </label>
+                <label className="block min-w-0">
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Call-ready (notes)</span>
+                  <select
+                    value={filterPitchReady}
+                    onChange={(e) => setFilterPitchReady((e.target.value || "") as "" | "ready" | "not_ready")}
+                    className={FILTER_FIELD}
+                  >
+                    <option value="" className={FILTER_OPT}>
+                      All
+                    </option>
+                    <option value="ready" className={FILTER_OPT}>
+                      Has notes (ready)
+                    </option>
+                    <option value="not_ready" className={FILTER_OPT}>
+                      No notes
                     </option>
                   </select>
                 </label>
@@ -650,6 +676,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                   setSearch("");
                   setStatusFilter("");
                   setFollowFilter("all");
+                  setFilterPitchReady("");
                 }}
                 className="mt-3 text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
               >
@@ -709,14 +736,23 @@ const MyAssignedLeadsPage: React.FC = () => {
                                 className="border-b border-gray-100 dark:border-gray-700/80 last:border-0 hover:bg-gray-50/90 dark:hover:bg-gray-800/50 align-top"
                               >
                                 <td className="px-3 py-2">
-                                  <div className="font-medium text-gray-900 dark:text-white leading-snug">
-                                    {name || company || "—"}
-                                  </div>
-                                  {name && company ? (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                                      {company}
+                                  <div className="flex items-start gap-2 min-w-0">
+                                    {leadHasPitchNotes(l.notes) ? (
+                                      <span className="shrink-0 pt-0.5">
+                                        <LeadPitchReadyIcon />
+                                      </span>
+                                    ) : null}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-medium text-gray-900 dark:text-white leading-snug">
+                                        {name || company || "—"}
+                                      </div>
+                                      {name && company ? (
+                                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                                          {company}
+                                        </div>
+                                      ) : null}
                                     </div>
-                                  ) : null}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-2">
                                   <div className="flex items-center gap-1">

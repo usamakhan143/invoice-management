@@ -16,6 +16,7 @@ import {
   LEAD_SOURCE_PRESETS,
 } from "../../config/leadFormOptions";
 import Spinner from "../../components/Spinner";
+import LeadPitchReadyIcon, { leadHasPitchNotes } from "../../components/LeadPitchReadyIcon";
 import FieldInfoTip from "../../components/FieldInfoTip";
 import DuplicateContactTip from "../../components/DuplicateContactTip";
 import { SearchableLeadOptionSelect } from "../../components/SearchableLeadOptionSelect";
@@ -94,6 +95,9 @@ function leadListStatusBadgeClasses(status: LeadStatus): string {
 }
 
 type ContactPresenceFilter = "" | "has_email" | "has_phone" | "has_both" | "has_any";
+
+/** Notes filled = pitch/call context on file (matches green check in list). */
+type PitchReadyFilter = "" | "ready" | "not_ready";
 
 type FilterTargetSalesGender = "" | LeadTargetSalesGender;
 
@@ -261,6 +265,7 @@ const LeadsPage: React.FC = () => {
   const [filterAssignee, setFilterAssignee] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("");
   const [filterContact, setFilterContact] = useState<ContactPresenceFilter>("");
+  const [filterPitchReady, setFilterPitchReady] = useState<PitchReadyFilter>("");
   const [filterTargetGender, setFilterTargetGender] = useState<FilterTargetSalesGender>("");
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -489,6 +494,11 @@ const LeadsPage: React.FC = () => {
         }
       });
     }
+    if (filterPitchReady === "ready") {
+      rows = rows.filter((l) => leadHasPitchNotes(l.notes));
+    } else if (filterPitchReady === "not_ready") {
+      rows = rows.filter((l) => !leadHasPitchNotes(l.notes));
+    }
     if (filterTargetGender) {
       rows = rows.filter(
         (l) => normalizeLeadTargetSalesGender(l.targetSalesGender) === filterTargetGender,
@@ -503,6 +513,7 @@ const LeadsPage: React.FC = () => {
     filterAssignee,
     filterCreatedBy,
     filterContact,
+    filterPitchReady,
     filterTargetGender,
     assigneeLabel,
     isLeadsAdmin,
@@ -511,7 +522,16 @@ const LeadsPage: React.FC = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterSource, filterAssignee, filterCreatedBy, filterContact, filterTargetGender]);
+  }, [
+    searchTerm,
+    filterStatus,
+    filterSource,
+    filterAssignee,
+    filterCreatedBy,
+    filterContact,
+    filterPitchReady,
+    filterTargetGender,
+  ]);
 
   /** Primary line + subtitle for name/company column (consistent layout). */
   function leadNameCompanyLines(l: Lead): { primary: string; secondary: string | null } {
@@ -983,6 +1003,16 @@ const LeadsPage: React.FC = () => {
             <option value="has_any">Has email or phone</option>
           </select>
           <select
+            value={filterPitchReady}
+            onChange={(e) => setFilterPitchReady(e.target.value as PitchReadyFilter)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[12rem]"
+            aria-label="Filter by call-ready notes"
+          >
+            <option value="">All leads (notes filter)</option>
+            <option value="ready">Ready for calls (has notes)</option>
+            <option value="not_ready">Not ready (no notes)</option>
+          </select>
+          <select
             value={filterTargetGender}
             onChange={(e) =>
               setFilterTargetGender((e.target.value || "") as FilterTargetSalesGender)
@@ -1002,6 +1032,7 @@ const LeadsPage: React.FC = () => {
             (isLeadsAdmin && filterAssignee) ||
             (isLeadsAdmin && filterCreatedBy) ||
             filterContact ||
+            filterPitchReady ||
             filterTargetGender) && (
             <button
               type="button"
@@ -1012,6 +1043,7 @@ const LeadsPage: React.FC = () => {
                 setFilterAssignee("");
                 setFilterCreatedBy("");
                 setFilterContact("");
+                setFilterPitchReady("");
                 setFilterTargetGender("");
               }}
             >
@@ -1026,6 +1058,7 @@ const LeadsPage: React.FC = () => {
           (isLeadsAdmin && filterAssignee) ||
           (isLeadsAdmin && filterCreatedBy) ||
           filterContact ||
+          filterPitchReady ||
           filterTargetGender
             ? `Showing ${filteredRows.length} of ${leads.length} lead(s)`
             : `Total ${leads.length} lead(s)`}
@@ -1189,22 +1222,30 @@ const LeadsPage: React.FC = () => {
                   <td className="px-6 py-4 font-medium max-w-[26ch] min-w-0 align-top">
                     {(() => {
                       const { primary, secondary } = leadNameCompanyLines(lead);
+                      const pitchReady = leadHasPitchNotes(lead.notes);
                       return (
-                        <div className="min-w-0 space-y-0.5">
-                          <div
-                            className="truncate text-gray-900 dark:text-white"
-                            title={primary}
-                          >
-                            {primary}
-                          </div>
-                          {secondary ? (
-                            <div
-                              className="truncate text-xs text-gray-500 dark:text-gray-400"
-                              title={secondary}
-                            >
-                              {secondary}
-                            </div>
+                        <div className="flex items-start gap-2 min-w-0">
+                          {pitchReady ? (
+                            <span className="shrink-0 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                              <LeadPitchReadyIcon />
+                            </span>
                           ) : null}
+                          <div className="min-w-0 space-y-0.5 flex-1">
+                            <div
+                              className="truncate text-gray-900 dark:text-white"
+                              title={primary}
+                            >
+                              {primary}
+                            </div>
+                            {secondary ? (
+                              <div
+                                className="truncate text-xs text-gray-500 dark:text-gray-400"
+                                title={secondary}
+                              >
+                                {secondary}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       );
                     })()}
