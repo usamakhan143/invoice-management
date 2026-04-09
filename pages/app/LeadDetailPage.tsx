@@ -79,6 +79,89 @@ function minDatetimeLocalToday(): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T00:00`;
 }
 
+/** Returns normalized href when value is a valid http(s) URL; otherwise null (no open button). */
+function openableHttpUrl(value: string): string | null {
+  const t = value.trim();
+  if (!t) return null;
+  try {
+    const u = new URL(t);
+    if (u.protocol === "http:" || u.protocol === "https:") return u.href;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+const UrlOpenInNewTabIcon: React.FC<{ className?: string }> = ({
+  className = "h-5 w-5 shrink-0",
+}) => (
+  <svg
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    aria-hidden
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+    />
+  </svg>
+);
+
+function LeadDetailUrlInputRow({
+  id,
+  label,
+  value,
+  onChange,
+  disabled,
+  placeholder,
+  openLabel,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+  placeholder: string;
+  openLabel: string;
+}) {
+  const href = openableHttpUrl(value);
+  return (
+    <div className="space-y-1 min-w-0">
+      <label
+        htmlFor={id}
+        className="block text-xs font-medium text-gray-600 dark:text-gray-300"
+      >
+        {label}
+      </label>
+      <div className="flex gap-1.5 items-stretch">
+        <input
+          id={id}
+          disabled={disabled}
+          className="flex-1 min-w-0 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {href ? (
+          <button
+            type="button"
+            className="shrink-0 inline-flex items-center justify-center px-2.5 rounded-md border border-gray-300 bg-gray-50 text-gray-600 hover:bg-primary-50 hover:text-primary-700 hover:border-primary-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-primary-900/30 dark:hover:text-primary-300"
+            aria-label={`Open ${openLabel} in new tab`}
+            title="Open link in new tab"
+            onClick={() => window.open(href, "_blank", "noopener,noreferrer")}
+          >
+            <UrlOpenInNewTabIcon />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function startOfTodayLocal(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -182,6 +265,8 @@ const LeadDetailPage: React.FC = () => {
   const [facebookUrl, setFacebookUrl] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [twitterUrl, setTwitterUrl] = useState("");
+  const [tiktokUrl, setTiktokUrl] = useState("");
   const [website, setWebsite] = useState("");
   const [address, setAddress] = useState("");
   const [extraNotes, setExtraNotes] = useState("");
@@ -313,6 +398,8 @@ const LeadDetailPage: React.FC = () => {
           setFacebookUrl(row.extras?.facebookUrl || "");
           setInstagramUrl(row.extras?.instagramUrl || "");
           setLinkedinUrl(row.extras?.linkedinUrl || "");
+          setTwitterUrl(row.extras?.twitterUrl || "");
+          setTiktokUrl(row.extras?.tiktokUrl || "");
           setWebsite(row.extras?.website || "");
           setAddress(row.extras?.address || "");
           setExtraNotes(row.extras?.extraNotes || "");
@@ -458,12 +545,16 @@ const LeadDetailPage: React.FC = () => {
       extrasPayload.facebookUrl = facebookUrl.trim() || undefined;
       extrasPayload.instagramUrl = instagramUrl.trim() || undefined;
       extrasPayload.linkedinUrl = linkedinUrl.trim() || undefined;
+      extrasPayload.twitterUrl = twitterUrl.trim() || undefined;
+      extrasPayload.tiktokUrl = tiktokUrl.trim() || undefined;
       extrasPayload.website = website.trim() || undefined;
       extrasPayload.address = address.trim() || undefined;
       extrasPayload.extraNotes = extraNotes.trim() || undefined;
       if (!extrasPayload.facebookUrl) delete extrasPayload.facebookUrl;
       if (!extrasPayload.instagramUrl) delete extrasPayload.instagramUrl;
       if (!extrasPayload.linkedinUrl) delete extrasPayload.linkedinUrl;
+      if (!extrasPayload.twitterUrl) delete extrasPayload.twitterUrl;
+      if (!extrasPayload.tiktokUrl) delete extrasPayload.tiktokUrl;
       if (!extrasPayload.website) delete extrasPayload.website;
       if (!extrasPayload.address) delete extrasPayload.address;
       if (!extrasPayload.extraNotes) delete extrasPayload.extraNotes;
@@ -1139,67 +1230,106 @@ const LeadDetailPage: React.FC = () => {
             />
           </div>
         </div>
-        <h3 className="text-sm font-semibold text-gray-800 dark:text-white mt-5 mb-2">Social &amp; web</h3>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex flex-wrap items-center gap-1">
-          <span>Optional links and extras.</span>
-          <FieldInfoTip text="Each URL should start with http:// or https://. Leave blank to remove a value when you save." />
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-white mt-5 mb-2">
+          Social media
+        </h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 flex flex-wrap items-center gap-1">
+          <span>Profile URLs (side by side on wider screens).</span>
+          <FieldInfoTip text="Use http:// or https://. Leave blank to clear on save. The link button appears only when the URL is valid." />
         </p>
-        <div className="grid grid-cols-1 gap-3">
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-fb">
-              Facebook URL
-            </label>
-            <input
-              id="lead-detail-fb"
-              disabled={!canEditLead()}
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
-              placeholder="https://facebook.com/…"
-              value={facebookUrl}
-              onChange={(e) => setFacebookUrl(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-ig">
-              Instagram URL
-            </label>
-            <input
-              id="lead-detail-ig"
-              disabled={!canEditLead()}
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
-              placeholder="https://instagram.com/…"
-              value={instagramUrl}
-              onChange={(e) => setInstagramUrl(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-li">
-              LinkedIn URL
-            </label>
-            <input
-              id="lead-detail-li"
-              disabled={!canEditLead()}
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
-              placeholder="https://linkedin.com/in/…"
-              value={linkedinUrl}
-              onChange={(e) => setLinkedinUrl(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+          <LeadDetailUrlInputRow
+            id="lead-detail-fb"
+            label="Facebook URL"
+            placeholder="https://facebook.com/…"
+            value={facebookUrl}
+            onChange={setFacebookUrl}
+            disabled={!canEditLead()}
+            openLabel="Facebook"
+          />
+          <LeadDetailUrlInputRow
+            id="lead-detail-ig"
+            label="Instagram URL"
+            placeholder="https://instagram.com/…"
+            value={instagramUrl}
+            onChange={setInstagramUrl}
+            disabled={!canEditLead()}
+            openLabel="Instagram"
+          />
+          <LeadDetailUrlInputRow
+            id="lead-detail-li"
+            label="LinkedIn URL"
+            placeholder="https://linkedin.com/in/…"
+            value={linkedinUrl}
+            onChange={setLinkedinUrl}
+            disabled={!canEditLead()}
+            openLabel="LinkedIn"
+          />
+          <LeadDetailUrlInputRow
+            id="lead-detail-tw"
+            label="Twitter (X) URL"
+            placeholder="https://twitter.com/… or https://x.com/…"
+            value={twitterUrl}
+            onChange={setTwitterUrl}
+            disabled={!canEditLead()}
+            openLabel="Twitter"
+          />
+          <LeadDetailUrlInputRow
+            id="lead-detail-tt"
+            label="TikTok URL"
+            placeholder="https://tiktok.com/@…"
+            value={tiktokUrl}
+            onChange={setTiktokUrl}
+            disabled={!canEditLead()}
+            openLabel="TikTok"
+          />
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-600">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-2">Website</h3>
+          <div className="space-y-1 max-w-3xl">
             <div className="mb-1 flex items-center gap-1">
-              <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-website">
+              <label
+                className="text-xs font-medium text-gray-600 dark:text-gray-300"
+                htmlFor="lead-detail-website"
+              >
                 Website URL
               </label>
-              <FieldInfoTip text="Optional public website for this lead or company." />
+              <FieldInfoTip text="Optional public website for this lead or company. Use http:// or https://." />
             </div>
-            <input
-              id="lead-detail-website"
-              disabled={!canEditLead()}
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
-              placeholder="https://…"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-            />
+            <div className="flex gap-1.5 items-stretch">
+              <input
+                id="lead-detail-website"
+                disabled={!canEditLead()}
+                className="flex-1 min-w-0 p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
+                placeholder="https://…"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+              />
+              {(() => {
+                const siteHref = openableHttpUrl(website);
+                return siteHref ? (
+                  <button
+                    type="button"
+                    className="shrink-0 inline-flex items-center justify-center px-2.5 rounded-md border border-gray-300 bg-gray-50 text-gray-600 hover:bg-primary-50 hover:text-primary-700 hover:border-primary-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-primary-900/30 dark:hover:text-primary-300"
+                    aria-label="Open website in new tab"
+                    title="Open link in new tab"
+                    onClick={() =>
+                      window.open(siteHref, "_blank", "noopener,noreferrer")
+                    }
+                  >
+                    <UrlOpenInNewTabIcon />
+                  </button>
+                ) : null;
+              })()}
+            </div>
           </div>
+        </div>
+
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-white mt-6 mb-2">
+          Other details
+        </h3>
+        <div className="grid grid-cols-1 gap-3 max-w-3xl">
           <div className="space-y-1">
             <div className="mb-1 flex items-center gap-1">
               <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-address">
@@ -1210,7 +1340,7 @@ const LeadDetailPage: React.FC = () => {
             <input
               id="lead-detail-address"
               disabled={!canEditLead()}
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
+              className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
               placeholder="Street, city, region"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
@@ -1226,7 +1356,7 @@ const LeadDetailPage: React.FC = () => {
             <textarea
               id="lead-detail-extra"
               disabled={!canEditLead()}
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
+              className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60"
               placeholder="Additional context (optional)"
               rows={2}
               value={extraNotes}

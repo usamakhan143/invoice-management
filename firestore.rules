@@ -116,8 +116,10 @@ service cloud.firestore {
 
     // Activity logs collection
     match /activities/{activityId} {
-      // Allow read if user is admin or activity belongs to their company
+      // Own rows: team members can read "My Activity" even if users/{uid}.companyId is missing/mismatched.
+      // Company-wide reads (e.g. admin) still use canAccessCompanyData / isAdmin.
       allow read: if isAdmin() ||
+                    (isAuthenticated() && resource.data.userId == request.auth.uid) ||
                     (isAuthenticated() &&
                      canAccessCompanyData(resource.data.companyId));
 
