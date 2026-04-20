@@ -133,9 +133,13 @@ export class ActivityLogger {
       lead_updated: "✏️",
       lead_deleted: "🗑️",
       lead_call_logged: "📞",
+      lead_outreach_logged: "📡",
       lead_assigned: "👤",
       lead_converted: "✅",
       lead_linked_customer: "🔗",
+      campaign_created: "🎯",
+      campaign_updated: "✏️",
+      campaign_deleted: "🗑️",
     };
     return icons[type] || "📋";
   }

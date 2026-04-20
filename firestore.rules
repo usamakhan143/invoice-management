@@ -204,6 +204,39 @@ service cloud.firestore {
         (canAccessCompanyData(resource.data.companyId) || isAdmin());
     }
 
+    // Campaigns — company-scoped; granular permissions enforced in the app
+    match /campaigns/{campaignId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(request.resource.data.companyId) || isAdmin());
+      allow update, delete: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
+    // Campaign tags — company-scoped; inherit campaign's company boundary
+    match /campaignTags/{tagId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(request.resource.data.companyId) || isAdmin());
+      allow update, delete: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
+    // Outreach events — unified timeline replacing callLogs subcollection
+    // Top-level collection keyed by companyId + leadId for efficient queries and scaling
+    match /outreachEvents/{eventId} {
+      allow get, list: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+      allow create: if isAuthenticated() &&
+        (canAccessCompanyData(request.resource.data.companyId) || isAdmin());
+      allow update: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+      allow delete: if isAuthenticated() &&
+        (canAccessCompanyData(resource.data.companyId) || isAdmin());
+    }
+
     // Default deny rule for any other collections
     match /{document=**} {
       allow read, write: if false;

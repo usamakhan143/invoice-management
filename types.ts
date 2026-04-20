@@ -203,9 +203,13 @@ export type ActivityType =
   | "lead_updated"
   | "lead_deleted"
   | "lead_call_logged"
+  | "lead_outreach_logged"
   | "lead_assigned"
   | "lead_converted"
-  | "lead_linked_customer";
+  | "lead_linked_customer"
+  | "campaign_created"
+  | "campaign_updated"
+  | "campaign_deleted";
 
 export interface Activity {
   id: string;
@@ -287,6 +291,10 @@ export interface Lead {
   extras?: LeadExtras;
   phoneNormalized?: string;
   emailNormalized?: string;
+  /** Campaign this lead belongs to (optional — existing leads unaffected) */
+  campaignId?: string | null;
+  /** Tag IDs within the campaign for segmentation */
+  campaignTagIds?: string[];
 }
 
 export interface LeadCallLog {
@@ -310,6 +318,67 @@ export interface LeadAssignmentEvent {
   toUserId: string;
   assignedByUserId: string;
   reason?: string;
+  createdAt: firebase.firestore.Timestamp;
+}
+
+// ─── Outreach Events (unified timeline, replaces callLogs subcollection) ───
+
+export type OutreachChannel = "call" | "email" | "whatsapp" | "sms" | "in_person" | "other";
+
+export interface OutreachEvent {
+  id: string;
+  companyId: string;
+  leadId: string;
+  channel: OutreachChannel;
+  notes: string;
+  /** For "call": No Answer / Busy / Connected / Wrong Number. Free text for other channels. */
+  outcome?: string | null;
+  nextFollowUpDate?: firebase.firestore.Timestamp | null;
+  createdAt: firebase.firestore.Timestamp;
+  createdByUserId: string;
+  createdByDisplayName: string;
+  /** Campaign context at time of outreach */
+  campaignId?: string | null;
+  campaignTagIds?: string[];
+  /** Admin QA: dialer ID / CRM link / ticket # */
+  recordingRef?: string | null;
+  /** Admin QA: when a verified call was marked */
+  callVerifiedAt?: firebase.firestore.Timestamp | null;
+  callVerifiedByUserId?: string | null;
+  /** Webhook / external integration idempotency */
+  externalSource?: string | null;
+  externalId?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+// ─── Campaigns ───
+
+export type CampaignStatus = "draft" | "active" | "archived";
+
+export interface Campaign {
+  id: string;
+  companyId: string;
+  name: string;
+  description?: string;
+  /** Informational hint for team about channels used in this campaign */
+  channelsHint?: string;
+  status: CampaignStatus;
+  createdAt: firebase.firestore.Timestamp;
+  updatedAt?: firebase.firestore.Timestamp;
+  createdById: string;
+}
+
+export interface CampaignTag {
+  id: string;
+  companyId: string;
+  campaignId: string;
+  /** Lowercase no-space identifier (auto-derived from label) */
+  slug: string;
+  label: string;
+  /** Tailwind color key, e.g. "emerald", "rose", "amber" */
+  color?: string;
+  description?: string;
+  sortOrder: number;
   createdAt: firebase.firestore.Timestamp;
 }
 

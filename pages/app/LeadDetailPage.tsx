@@ -8,6 +8,8 @@ import { ActivityLogger } from "../../services/activityLogger";
 import { BusinessService } from "../../services/businessService";
 import { CustomerService } from "../../services/customerService";
 import { LeadService } from "../../services/leadService";
+import { OutreachService } from "../../services/outreachService";
+import { CampaignService } from "../../services/campaignService";
 import {
   COUNTRY_CUSTOM_VALUE,
   CATEGORY_CUSTOM_VALUE,
@@ -27,13 +29,17 @@ import type {
   Business,
   Lead,
   LeadExtras,
-  LeadCallLog,
   LeadCallOutcome,
   LeadAssignmentEvent,
   LeadStatus,
+  OutreachEvent,
+  OutreachChannel,
+  Campaign,
+  CampaignTag,
 } from "../../types";
 import Spinner from "../../components/Spinner";
-import CallLogAdminControls from "../../components/leads/CallLogAdminControls";
+import CampaignTagPill from "../../components/CampaignTagPill";
+import OutreachEventAdminControls from "../../components/leads/OutreachEventAdminControls";
 import FieldInfoTip from "../../components/FieldInfoTip";
 import { SearchableLeadOptionSelect } from "../../components/SearchableLeadOptionSelect";
 import { InternationalPhoneInput } from "../../components/InternationalPhoneInput";
@@ -53,6 +59,15 @@ const CALL_OUTCOMES: LeadCallOutcome[] = [
   "Busy",
   "Connected",
   "Wrong Number",
+];
+
+const OUTREACH_CHANNELS: { value: OutreachChannel; label: string }[] = [
+  { value: "call",      label: "📞 Call" },
+  { value: "whatsapp",  label: "💬 WhatsApp" },
+  { value: "email",     label: "📧 Email" },
+  { value: "sms",       label: "✉️ SMS" },
+  { value: "in_person", label: "🤝 In-person" },
+  { value: "other",     label: "Other" },
 ];
 
 function pad2(n: number): string {
@@ -194,7 +209,7 @@ function splitStoredSource(stored: string | undefined): { select: string; custom
   return { select: SOURCE_CUSTOM_VALUE, custom: s };
 }
 
-type LeadDetailTab = "details" | "calls" | "conversion" | "assignment";
+type LeadDetailTab = "details" | "outreach" | "conversion" | "assignment";
 
 function statusBadgeClasses(status: LeadStatus): string {
   switch (status) {
@@ -231,6 +246,7 @@ const LeadDetailPage: React.FC = () => {
     canCreateInvoice,
     canViewCustomers,
     canViewLeadDetailWhatsApp,
+    canAssignLeadCampaign,
     leadsListViewAll,
     isOwner,
     isAdmin,
@@ -279,14 +295,16 @@ const LeadDetailPage: React.FC = () => {
 
   useEffect(() => {
     const raw = searchParams.get("tab");
+    // Accept legacy "calls" query param and redirect to "outreach"
+    const normalized = raw === "calls" ? "outreach" : raw;
     let next: LeadDetailTab =
-      raw === "details" || raw === "calls" || raw === "conversion" || raw === "assignment"
-        ? raw
+      normalized === "details" || normalized === "outreach" || normalized === "conversion" || normalized === "assignment"
+        ? (normalized as LeadDetailTab)
         : "details";
     if (next === "conversion" && !conversionHubAllowed) {
       next = "details";
     }
-    if (next === "calls" && !callLogsTabAllowed) {
+    if (next === "outreach" && !callLogsTabAllowed) {
       next = "details";
     }
     if (next === "assignment" && !assignmentTabAllowed) {
@@ -304,11 +322,18 @@ const LeadDetailPage: React.FC = () => {
   const [assignTo, setAssignTo] = useState("");
   const [assignReason, setAssignReason] = useState("");
 
+  // Outreach tab state (replaces call log state)
+  const [outreachChannel, setOutreachChannel] = useState<OutreachChannel>("call");
   const [callOutcome, setCallOutcome] = useState<LeadCallOutcome>("Connected");
   const [callNotes, setCallNotes] = useState("");
   const [callFollowUp, setCallFollowUp] = useState("");
+  const [outreachEvents, setOutreachEvents] = useState<OutreachEvent[]>([]);
 
-  const [logs, setLogs] = useState<LeadCallLog[]>([]);
+  // Campaign state on Details tab
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [leadCampaignId, setLeadCampaignId] = useState<string>("");
+  const [campaignTags, setCampaignTags] = useState<CampaignTag[]>([]);
+  const [leadCampaignTagIds, setLeadCampaignTagIds] = useState<string[]>([]);
   const [events, setEvents] = useState<LeadAssignmentEvent[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -318,7 +343,7 @@ const LeadDetailPage: React.FC = () => {
   const [convertFeedback, setConvertFeedback] = useState<null | { type: "success" | "error"; message: string }>(null);
 
   useEffect(() => {
-    if (!callLogsTabAllowed && activeTab === "calls") {
+    if (!callLogsTabAllowed && activeTab === "outreach") {
       setActiveTab("details");
     }
   }, [callLogsTabAllowed, activeTab]);
@@ -421,15 +446,18 @@ const LeadDetailPage: React.FC = () => {
     return () => unsubLead();
   }, [id, user, userProfile, viewAll]);
 
+  // Subscribe to outreach events (replaces callLogs subcollection)
   useEffect(() => {
-    if (!id) return;
+    if (!id || !lead) return;
     if (!callLogsTabAllowed) {
-      setLogs([]);
+      setOutreachEvents([]);
       return;
     }
-    const u1 = LeadService.subscribeCallLogs(id, setLogs);
-    return () => u1();
-  }, [id, callLogsTabAllowed]);
+    const companyId = lead.companyId;
+    if (!companyId) return;
+    const unsub = OutreachService.subscribeByLead(companyId, id, setOutreachEvents);
+    return () => unsub();
+  }, [id, lead?.companyId, callLogsTabAllowed]);
 
   useEffect(() => {
     if (!id) return;
@@ -440,6 +468,32 @@ const LeadDetailPage: React.FC = () => {
     const u2 = LeadService.subscribeAssignmentEvents(id, setEvents);
     return () => u2();
   }, [id, assignmentTabAllowed]);
+
+  // Load campaigns list for the dropdown on Details tab
+  useEffect(() => {
+    if (!userProfile) return;
+    const companyId = userProfile.isOwner ? user?.uid : userProfile.companyId;
+    if (!companyId) return;
+    const unsub = CampaignService.subscribe(companyId, setCampaigns);
+    return () => unsub();
+  }, [user?.uid, userProfile?.companyId, userProfile?.isOwner]);
+
+  // Load tags when leadCampaignId changes
+  useEffect(() => {
+    if (!leadCampaignId) {
+      setCampaignTags([]);
+      return;
+    }
+    const unsub = CampaignService.subscribeTags(leadCampaignId, setCampaignTags);
+    return () => unsub();
+  }, [leadCampaignId]);
+
+  // Sync lead's campaign fields into local state when lead loads
+  useEffect(() => {
+    if (!lead) return;
+    setLeadCampaignId(lead.campaignId ?? "");
+    setLeadCampaignTagIds(lead.campaignTagIds ?? []);
+  }, [lead?.id, lead?.campaignId, lead?.campaignTagIds]);
 
   useEffect(() => {
     if (!userProfile?.companyId && !userProfile?.isOwner) return;
@@ -603,6 +657,8 @@ const LeadDetailPage: React.FC = () => {
         notes: notes.trim(),
         nextFollowUpDate: fromDatetimeLocalValue(followUp),
         extras: extrasPayload,
+        campaignId: canAssignLeadCampaign() ? (leadCampaignId || null) : undefined,
+        campaignTagIds: canAssignLeadCampaign() ? leadCampaignTagIds : undefined,
       });
       await ActivityLogger.logActivity(user, userProfile, "lead_updated", `Updated lead: ${name || company}`, {
         entityId: lead.id,
@@ -661,7 +717,7 @@ const LeadDetailPage: React.FC = () => {
     }
   };
 
-  const handleCallLog = async () => {
+  const handleAddOutreachEvent = async () => {
     if (!user || !userProfile || !lead || !canLogLeadCalls()) return;
     let followTs: firebase.firestore.Timestamp | null = null;
     if (callFollowUp.trim()) {
@@ -677,38 +733,44 @@ const LeadDetailPage: React.FC = () => {
       followTs = parsed;
     }
     try {
-      await LeadService.addCallLog(
-        lead.id,
-        callOutcome,
-        callNotes,
-        followTs,
-        user,
-        userProfile,
-      );
+      const displayName =
+        userProfile.displayName || userProfile.companyName || user.email || "User";
+      await OutreachService.addEvent({
+        companyId: lead.companyId,
+        leadId: lead.id,
+        channel: outreachChannel,
+        notes: callNotes,
+        outcome: outreachChannel === "call" ? callOutcome : undefined,
+        nextFollowUpDate: followTs,
+        createdByUserId: user.uid,
+        createdByDisplayName: displayName,
+        campaignId: lead.campaignId ?? null,
+        campaignTagIds: lead.campaignTagIds ?? [],
+      });
       setCallNotes("");
       setCallFollowUp("");
-      await ActivityLogger.logActivity(user, userProfile, "lead_call_logged", `Call log on lead`, {
+      await ActivityLogger.logActivity(user, userProfile, "lead_outreach_logged", `Outreach logged (${outreachChannel})`, {
         entityId: lead.id,
         entityType: "lead",
       });
     } catch (e) {
       console.error(e);
-      alert("Failed to add call log");
+      alert("Failed to add outreach event");
     }
   };
 
-  const handleDeleteCallLog = async (logId: string) => {
+  const handleDeleteOutreachEvent = async (eventId: string) => {
     if (!user || !userProfile || !lead || !canDeleteLeadCallLogs()) return;
-    if (!window.confirm("Delete this call log? This cannot be undone.")) return;
+    if (!window.confirm("Delete this outreach event? This cannot be undone.")) return;
     try {
-      await LeadService.deleteCallLog(lead.id, logId);
-      await ActivityLogger.logActivity(user, userProfile, "lead_updated", `Deleted a call log on lead`, {
+      await OutreachService.deleteEvent(eventId);
+      await ActivityLogger.logActivity(user, userProfile, "lead_updated", `Deleted an outreach event on lead`, {
         entityId: lead.id,
         entityType: "lead",
       });
     } catch (e) {
       console.error(e);
-      alert("Failed to delete call log");
+      alert("Failed to delete outreach event");
     }
   };
 
@@ -809,7 +871,7 @@ const LeadDetailPage: React.FC = () => {
 
   const tabItems: { id: LeadDetailTab; label: string }[] = [
     { id: "details", label: "Details" },
-    ...(callLogsTabAllowed ? [{ id: "calls" as const, label: "Call logs" }] : []),
+    ...(callLogsTabAllowed ? [{ id: "outreach" as const, label: "Outreach" }] : []),
     ...(conversionHubAllowed ? [{ id: "conversion" as const, label: "Conversion & billing" }] : []),
     ...(assignmentTabAllowed ? [{ id: "assignment" as const, label: "Assignment" }] : []),
   ];
@@ -914,9 +976,9 @@ const LeadDetailPage: React.FC = () => {
             <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
               No customer or invoice steps apply.
               {callLogsTabAllowed && assignmentTabAllowed
-                ? " You can still review call logs and assignment history on this page."
+                ? " You can still review outreach history and assignment history on this page."
                 : callLogsTabAllowed
-                  ? " You can still review call logs on this page."
+                  ? " You can still review outreach history on this page."
                   : assignmentTabAllowed
                     ? " You can still review assignment history on this page."
                     : " You can still review details on this page."}
@@ -1230,6 +1292,66 @@ const LeadDetailPage: React.FC = () => {
             />
           </div>
         </div>
+        {/* Campaign assignment — only shown when user has permission */}
+        {canAssignLeadCampaign() && campaigns.length > 0 && (
+          <div className="sm:col-span-2 mt-2 rounded-lg border border-gray-200 dark:border-gray-600 p-3 bg-gray-50/50 dark:bg-gray-900/20">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Campaign</p>
+            <div className="space-y-2">
+              <select
+                className="w-full max-w-sm p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                value={leadCampaignId}
+                onChange={(e) => {
+                  setLeadCampaignId(e.target.value);
+                  setLeadCampaignTagIds([]);
+                }}
+                disabled={!canEditLead() && !canAssignLeadCampaign()}
+              >
+                <option value="">No campaign assigned</option>
+                {campaigns.filter((c) => c.status !== "archived").map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                {/* Show archived campaign if lead is currently assigned to it */}
+                {leadCampaignId && !campaigns.filter((c) => c.status !== "archived").some((c) => c.id === leadCampaignId) && (
+                  campaigns.filter((c) => c.id === leadCampaignId).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} (archived)</option>
+                  ))
+                )}
+              </select>
+              {leadCampaignId && campaignTags.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1.5">Tags</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">
+                    Hover a tag to read the team explanation. Click to select or clear.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {campaignTags.map((tag) => {
+                      const selected = leadCampaignTagIds.includes(tag.id);
+                      return (
+                        <CampaignTagPill
+                          key={tag.id}
+                          label={tag.label}
+                          description={tag.description}
+                          color={tag.color}
+                          selected={selected}
+                          onClick={() => {
+                            setLeadCampaignTagIds((prev) =>
+                              selected ? prev.filter((id) => id !== tag.id) : [...prev, tag.id],
+                            );
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">Save changes on this page to confirm tag selection.</p>
+                </div>
+              )}
+              {leadCampaignId && campaignTags.length === 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-500">No tags defined for this campaign yet.</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <h3 className="text-sm font-semibold text-gray-800 dark:text-white mt-5 mb-2">
           Social media
         </h3>
@@ -1768,140 +1890,160 @@ const LeadDetailPage: React.FC = () => {
         </section>
       )}
 
-      {activeTab === "calls" && callLogsTabAllowed ? (
+      {activeTab === "outreach" && callLogsTabAllowed ? (
         <section className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
-          <h2 className="font-semibold text-gray-800 dark:text-white mb-1">Call logs</h2>
+          <h2 className="font-semibold text-gray-800 dark:text-white mb-1">Outreach</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Log outcomes and follow-up dates. History is shown newest-first below.
+            Log every touchpoint — calls, WhatsApp, email, etc. Timeline shown newest-first.
           </p>
+
+          {/* Add outreach event form */}
           <div className="flex flex-col gap-3 mb-6 rounded-lg border border-gray-200 dark:border-gray-600 p-4 bg-gray-50/50 dark:bg-gray-900/20">
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="outreach-channel">
+                Channel
+              </label>
+              <select
+                id="outreach-channel"
+                className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white max-w-xs text-sm"
+                value={outreachChannel}
+                onChange={(e) => setOutreachChannel(e.target.value as OutreachChannel)}
+              >
+                {OUTREACH_CHANNELS.map((ch) => (
+                  <option key={ch.value} value={ch.value}>{ch.label}</option>
+                ))}
+              </select>
+            </div>
+            {outreachChannel === "call" && (
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="call-outcome">
                   Call outcome
                 </label>
                 <select
                   id="call-outcome"
-                  className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white max-w-xs"
+                  className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white max-w-xs text-sm"
                   value={callOutcome}
                   onChange={(e) => setCallOutcome(e.target.value as LeadCallOutcome)}
                 >
                   {CALL_OUTCOMES.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
+                    <option key={o} value={o}>{o}</option>
                   ))}
                 </select>
               </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="call-notes-input">
-                  Notes
-                </label>
-                <textarea
-                  id="call-notes-input"
-                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  placeholder="What was discussed?"
-                  rows={2}
-                  value={callNotes}
-                  onChange={(e) => setCallNotes(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="call-followup-input">
-                  Follow-up date &amp; time (optional)
-                </label>
-                <input
-                  id="call-followup-input"
-                  type="datetime-local"
-                  step={60}
-                  min={minDatetimeLocalToday()}
-                  className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white max-w-full sm:max-w-md"
-                  value={callFollowUp}
-                  onChange={(e) => setCallFollowUp(e.target.value)}
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Dates before today are not allowed. Time is required when a date is selected.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCallLog}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md w-fit text-sm font-medium"
-              >
-                Add call log
-              </button>
+            )}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="outreach-notes-input">
+                Notes
+              </label>
+              <textarea
+                id="outreach-notes-input"
+                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                placeholder="What was discussed or sent?"
+                rows={2}
+                value={callNotes}
+                onChange={(e) => setCallNotes(e.target.value)}
+              />
             </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="outreach-followup-input">
+                Follow-up date &amp; time (optional)
+              </label>
+              <input
+                id="outreach-followup-input"
+                type="datetime-local"
+                step={60}
+                min={minDatetimeLocalToday()}
+                className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm max-w-full sm:max-w-md"
+                value={callFollowUp}
+                onChange={(e) => setCallFollowUp(e.target.value)}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Dates before today are not allowed. Time is required when a date is selected.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleAddOutreachEvent()}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md w-fit text-sm font-medium hover:bg-primary-700"
+            >
+              Log outreach
+            </button>
+          </div>
+
+          {/* Timeline */}
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
-            Previous logs ({logs.length})
+            Timeline ({outreachEvents.length})
           </h3>
           <ul className="space-y-3 text-sm">
-            {[...logs]
-              .sort((a, b) => {
-                const ta = a.createdAt?.toMillis?.() ?? 0;
-                const tb = b.createdAt?.toMillis?.() ?? 0;
-                return tb - ta;
-              })
-              .map((log) => (
+            {outreachEvents.map((ev) => {
+              const channelLabel = OUTREACH_CHANNELS.find((c) => c.value === ev.channel)?.label ?? ev.channel;
+              return (
                 <li
-                  key={log.id}
+                  key={ev.id}
                   className="rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50/80 dark:bg-gray-900/30 p-3"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2 min-w-0">
                       <span className="inline-flex items-center rounded-full bg-white dark:bg-gray-800 px-2 py-0.5 text-xs font-semibold text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600">
-                        {log.outcome}
+                        {channelLabel}
                       </span>
+                      {ev.outcome ? (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-700 dark:text-gray-200">
+                          {ev.outcome}
+                        </span>
+                      ) : null}
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {log.createdAt?.toDate?.().toLocaleString?.() || ""}
+                        {ev.createdAt?.toDate?.().toLocaleString?.() || ""}
                       </span>
                       <span className="text-xs text-gray-400 dark:text-gray-500">
-                        · {log.createdBy}
+                        · {ev.createdByDisplayName}
                       </span>
                     </div>
                     {canDeleteLeadCallLogs() && (
                       <button
                         type="button"
-                        onClick={() => handleDeleteCallLog(log.id)}
+                        onClick={() => void handleDeleteOutreachEvent(ev.id)}
                         className="shrink-0 text-xs font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-2 py-1 rounded border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
                       >
                         Delete
                       </button>
                     )}
                   </div>
-                  {log.notes?.trim() ? (
-                    <p className="text-gray-700 dark:text-gray-200 mt-2 whitespace-pre-wrap">{log.notes}</p>
+                  {ev.notes?.trim() ? (
+                    <p className="text-gray-700 dark:text-gray-200 mt-2 whitespace-pre-wrap text-sm">{ev.notes}</p>
                   ) : (
                     <p className="text-gray-400 dark:text-gray-500 mt-2 text-xs italic">No notes</p>
                   )}
-                  {log.nextFollowUpDate?.toDate && (
+                  {ev.nextFollowUpDate?.toDate && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      Follow-up: {log.nextFollowUpDate.toDate().toLocaleString()}
+                      Follow-up: {ev.nextFollowUpDate.toDate().toLocaleString()}
                     </p>
                   )}
-                  {(log.recordingRef || "").trim() ? (
+                  {(ev.recordingRef || "").trim() ? (
                     <p className="text-xs text-gray-600 dark:text-gray-300 mt-2">
                       <span className="font-medium text-gray-500 dark:text-gray-400">Ref: </span>
-                      {(log.recordingRef || "").trim()}
+                      {(ev.recordingRef || "").trim()}
                     </p>
                   ) : null}
-                  {log.callVerifiedAt?.toDate ? (
+                  {ev.callVerifiedAt?.toDate ? (
                     <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300 mt-1">
                       Call verified by admin
                     </p>
                   ) : null}
                   {user && userProfile ? (
-                    <CallLogAdminControls
-                      leadId={lead.id}
-                      log={log}
+                    <OutreachEventAdminControls
+                      event={ev}
                       canApprove={canApproveCallLogs()}
                       user={user}
                       userProfile={userProfile}
                     />
                   ) : null}
                 </li>
-              ))}
-            {logs.length === 0 && (
+              );
+            })}
+            {outreachEvents.length === 0 && (
               <li className="text-gray-500 text-sm py-8 text-center border border-dashed border-gray-200 dark:border-gray-600 rounded-lg">
-                No call logs yet. Add one above when you reach out.
+                No outreach events yet. Log one above after reaching out.
               </li>
             )}
           </ul>

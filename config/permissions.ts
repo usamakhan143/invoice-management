@@ -16,6 +16,7 @@ export const PERMISSION_CATEGORIES = {
   DATA_MANAGEMENT: "data-management",
   SIDEBAR: "sidebar",
   LEADS: "leads",
+  CAMPAIGNS: "campaigns",
 } as const;
 
 // New granular permissions for each section/UI element
@@ -158,6 +159,14 @@ export const GRANULAR_PERMISSIONS = {
   LEADS_AGENT_QUICK_FOLLOWUP: "leads_agent_quick_followup",
   /** WhatsApp block on lead detail (Details tab) — hide for users without this permission */
   LEADS_DETAIL_WHATSAPP: "leads_detail_whatsapp",
+  /** Link a lead to a campaign and assign campaign tags */
+  LEADS_CAMPAIGN_ASSIGN: "leads_campaign_assign",
+
+  // Campaigns module
+  /** See the Campaigns sidebar link and browse campaigns (read-only without manage) */
+  CAMPAIGNS_VIEW: "campaigns_view",
+  /** Create, edit, archive campaigns and manage their tags */
+  CAMPAIGNS_MANAGE: "campaigns_manage",
 } as const;
 
 // Permission descriptions for the role management UI
@@ -304,6 +313,14 @@ export const PERMISSION_DESCRIPTIONS = {
     "On “My assigned leads”: open follow-up modal to set or clear the next follow-up date",
   [GRANULAR_PERMISSIONS.LEADS_DETAIL_WHATSAPP]:
     "On lead detail: show and edit the WhatsApp fields (checkbox, same/different number). Hidden if unchecked.",
+  [GRANULAR_PERMISSIONS.LEADS_CAMPAIGN_ASSIGN]:
+    "On lead detail: assign or change the lead's campaign and tags. Also granted when user has Leads Edit.",
+
+  // Campaigns
+  [GRANULAR_PERMISSIONS.CAMPAIGNS_VIEW]:
+    "Access the Campaigns page and view campaigns (read-only without Campaigns Manage)",
+  [GRANULAR_PERMISSIONS.CAMPAIGNS_MANAGE]:
+    "Create, edit, archive campaigns and manage their tags",
 };
 
 // Group permissions by category for better organization in UI
@@ -416,6 +433,11 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP,
     GRANULAR_PERMISSIONS.LEADS_DETAIL_WHATSAPP,
+    GRANULAR_PERMISSIONS.LEADS_CAMPAIGN_ASSIGN,
+  ],
+  [PERMISSION_CATEGORIES.CAMPAIGNS]: [
+    GRANULAR_PERMISSIONS.CAMPAIGNS_VIEW,
+    GRANULAR_PERMISSIONS.CAMPAIGNS_MANAGE,
   ],
 };
 

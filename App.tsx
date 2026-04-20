@@ -19,6 +19,7 @@ const InvoiceFormPage = lazy(() => import("./pages/app/InvoiceFormPage"));
 const CustomersPage = lazy(() => import("./pages/app/CustomersPage"));
 const CustomerDetailPage = lazy(() => import("./pages/app/CustomerDetailPage"));
 const LeadsPage = lazy(() => import("./pages/app/LeadsPage"));
+const CampaignsPage = lazy(() => import("./pages/app/CampaignsPage"));
 const LeadDetailPage = lazy(() => import("./pages/app/LeadDetailPage"));
 const MyAssignedLeadsPage = lazy(() => import("./pages/app/MyAssignedLeadsPage"));
 const ProductsPage = lazy(() => import("./pages/app/ProductsPage"));
@@ -167,6 +168,7 @@ const App: React.FC = () => {
                 <Route path="/leads" element={<LeadsPage />} />
                 <Route path="/leads/my-assigned" element={<MyAssignedLeadsPage />} />
                 <Route path="/leads/:id" element={<LeadDetailPage />} />
+                <Route path="/campaigns" element={<CampaignsPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/bank-accounts" element={<BankAccountsPage />} />
                 <Route path="/expenses" element={<ExpensesPage />} />

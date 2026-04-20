@@ -1,9 +1,11 @@
 import { db, FieldPath, Timestamp } from './firebase';
 import type firebase from 'firebase/compat/app';
 import { reviveFirestoreValues, serializeDocData } from '../utils/backupFirestore';
+import { CampaignService } from './campaignService';
+import { OutreachService } from './outreachService';
 
 /** Canonical on-device backup: root collections + companyId / owner userId. */
-export const FLAT_BACKUP_FORMAT_VERSION = 3;
+export const FLAT_BACKUP_FORMAT_VERSION = 4;
 
 const BACKUP_PAGE_SIZE = 400;
 const FIRESTORE_BATCH_LIMIT = 450;
@@ -235,6 +237,13 @@ export class DatabaseMigrationService {
       data.subscriptions = toRows(
         await this.queryAllByField("subscriptions", "companyId", companyId),
       );
+      // v4: campaigns, tags, outreach events
+      const campaigns = await CampaignService.getAllForCompany(companyId);
+      data.campaigns = campaigns.map((c) => ({ ...serializeDocData(c as unknown as Record<string, unknown>) }));
+      const campaignTags = await CampaignService.getAllTagsForCompany(companyId);
+      data.campaignTags = campaignTags.map((t) => ({ ...serializeDocData(t as unknown as Record<string, unknown>) }));
+      const outreachEvents = await OutreachService.getAllForCompany(companyId);
+      data.outreachEvents = outreachEvents.map((e) => ({ ...serializeDocData(e as unknown as Record<string, unknown>) }));
 
       data.users = toRows(await this.exportUsersForCompany(companyId));
 
@@ -420,6 +429,10 @@ export class DatabaseMigrationService {
         ["expenses", "expenses"],
         ["activities", "activities"],
         ["subscriptions", "subscriptions"],
+        // v4 additions
+        ["campaigns", "campaigns"],
+        ["campaignTags", "campaignTags"],
+        ["outreachEvents", "outreachEvents"],
       ];
 
       for (const [jsonKey, collection] of collectionOrder) {

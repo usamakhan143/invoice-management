@@ -4,9 +4,10 @@ import type firebase from "firebase/compat/app";
 import { Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { LeadService } from "../../services/leadService";
-import type { Lead, LeadCallLog, LeadCallOutcome, LeadStatus, UserProfile } from "../../types";
+import { OutreachService } from "../../services/outreachService";
+import type { Lead, LeadCallOutcome, LeadStatus, OutreachEvent, UserProfile } from "../../types";
 import { formatPhoneForDisplay, getIsoFromLeadCountryName } from "../../utils/internationalPhone";
-import CallLogAdminControls from "./CallLogAdminControls";
+import OutreachEventAdminControls from "./OutreachEventAdminControls";
 
 const LEAD_STATUSES: LeadStatus[] = [
   "New",
@@ -133,7 +134,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   const [callNotes, setCallNotes] = useState("");
   const [callFollowUp, setCallFollowUp] = useState("");
   const [callSaving, setCallSaving] = useState(false);
-  const [logs, setLogs] = useState<LeadCallLog[]>([]);
+  const [outreachEvents, setOutreachEvents] = useState<OutreachEvent[]>([]);
 
   const [followField, setFollowField] = useState("");
   const [followSaving, setFollowSaving] = useState(false);
@@ -175,13 +176,13 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   }, [lead?.id, mode]);
 
   useEffect(() => {
-    if (mode !== "call" || !lead?.id) {
-      setLogs([]);
+    if (mode !== "call" || !lead?.id || !lead?.companyId) {
+      setOutreachEvents([]);
       return;
     }
-    const unsub = LeadService.subscribeCallLogs(lead.id, setLogs);
+    const unsub = OutreachService.subscribeByLead(lead.companyId, lead.id, setOutreachEvents);
     return () => unsub();
-  }, [mode, lead?.id]);
+  }, [mode, lead?.id, lead?.companyId]);
 
   const phoneIso = lead ? getIsoFromLeadCountryName((lead.country || "").trim()) : "US";
 
@@ -226,8 +227,21 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
     }
     setCallSaving(true);
     try {
-      await LeadService.addCallLog(lead.id, callOutcome, callNotes, followTs, user, userProfile);
-      await ActivityLogger.logActivity(user, userProfile, "lead_call_logged", "Call logged (workspace)", {
+      const displayName =
+        userProfile?.displayName || userProfile?.companyName || user.email || "User";
+      await OutreachService.addEvent({
+        companyId: lead.companyId,
+        leadId: lead.id,
+        channel: "call",
+        notes: callNotes,
+        outcome: callOutcome,
+        nextFollowUpDate: followTs,
+        createdByUserId: user.uid,
+        createdByDisplayName: displayName,
+        campaignId: lead.campaignId ?? null,
+        campaignTagIds: lead.campaignTagIds ?? [],
+      });
+      await ActivityLogger.logActivity(user, userProfile, "lead_outreach_logged", "Call logged (workspace)", {
         entityId: lead.id,
         entityType: "lead",
       });
@@ -241,18 +255,18 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
     }
   };
 
-  const handleDeleteLog = async (logId: string) => {
+  const handleDeleteEvent = async (eventId: string) => {
     if (!lead || !canDeleteCallLog) return;
-    if (!window.confirm("Delete this call log?")) return;
+    if (!window.confirm("Delete this outreach event?")) return;
     try {
-      await LeadService.deleteCallLog(lead.id, logId);
-      await ActivityLogger.logActivity(user, userProfile, "lead_updated", "Deleted call log", {
+      await OutreachService.deleteEvent(eventId);
+      await ActivityLogger.logActivity(user, userProfile, "lead_updated", "Deleted outreach event", {
         entityId: lead.id,
         entityType: "lead",
       });
     } catch (e) {
       console.error(e);
-      alert("Could not delete log");
+      alert("Could not delete outreach event");
     }
   };
 
@@ -601,55 +615,59 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                   onClick={() => void handleSaveCall()}
                   className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {callSaving ? "Saving…" : "Save call log"}
+                  {callSaving ? "Saving…" : "Log call"}
                 </button>
               </div>
 
               <div>
-                <p className={sectionTitle + " mb-2"}>Recent calls</p>
-                {logs.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No calls logged yet.</p>
+                <p className={sectionTitle + " mb-2"}>Recent outreach</p>
+                {outreachEvents.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No outreach logged yet.</p>
                 ) : (
                   <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {logs.slice(0, 12).map((log) => (
+                    {outreachEvents.slice(0, 12).map((ev) => (
                       <li
-                        key={log.id}
+                        key={ev.id}
                         className="rounded-lg border border-gray-100 dark:border-gray-700/80 p-3 text-sm bg-gray-50/50 dark:bg-gray-800/30"
                       >
                         <div className="flex justify-between gap-2 items-start">
-                          <span className="font-medium text-gray-900 dark:text-white">{log.outcome}</span>
+                          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                            <span className="font-medium text-gray-900 dark:text-white capitalize">{ev.channel}</span>
+                            {ev.outcome ? (
+                              <span className="text-xs text-gray-600 dark:text-gray-400">· {ev.outcome}</span>
+                            ) : null}
+                          </div>
                           {canDeleteCallLog ? (
                             <button
                               type="button"
-                              onClick={() => void handleDeleteLog(log.id)}
+                              onClick={() => void handleDeleteEvent(ev.id)}
                               className="text-xs text-red-600 hover:underline dark:text-red-400 shrink-0"
                             >
                               Delete
                             </button>
                           ) : null}
                         </div>
-                        {log.createdAt?.toDate ? (
+                        {ev.createdAt?.toDate ? (
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {log.createdAt.toDate().toLocaleString()}
+                            {ev.createdAt.toDate().toLocaleString()} · {ev.createdByDisplayName}
                           </p>
                         ) : null}
-                        {(log.notes || "").trim() ? (
-                          <p className="text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{(log.notes || "").trim()}</p>
+                        {(ev.notes || "").trim() ? (
+                          <p className="text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{(ev.notes || "").trim()}</p>
                         ) : null}
-                        {(log.recordingRef || "").trim() ? (
+                        {(ev.recordingRef || "").trim() ? (
                           <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
                             <span className="text-gray-500 dark:text-gray-400">Ref: </span>
-                            {(log.recordingRef || "").trim()}
+                            {(ev.recordingRef || "").trim()}
                           </p>
                         ) : null}
-                        {log.callVerifiedAt?.toDate ? (
+                        {ev.callVerifiedAt?.toDate ? (
                           <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300 mt-1">
                             Call verified
                           </p>
                         ) : null}
-                        <CallLogAdminControls
-                          leadId={lead.id}
-                          log={log}
+                        <OutreachEventAdminControls
+                          event={ev}
                           canApprove={canApproveCallLog}
                           user={user}
                           userProfile={userProfile}

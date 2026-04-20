@@ -12,6 +12,7 @@ import type {
   LeadStatus,
   Customer,
 } from "../types";
+import { OutreachService } from "./outreachService";
 import { normalizeLeadTargetSalesGender } from "../config/leadTargetSalesGender";
 import type firebase from "firebase/compat/app";
 
@@ -298,8 +299,11 @@ export class LeadService {
 
   static async deleteLead(leadId: string): Promise<void> {
     const leadRef = db.collection("leads").doc(leadId);
+    // Clean subcollections (legacy callLogs + assignmentEvents)
     await this.deleteLeadSubcollection(leadRef, "callLogs");
     await this.deleteLeadSubcollection(leadRef, "assignmentEvents");
+    // Clean outreach events in the top-level collection (new model)
+    await OutreachService.batchDeleteByLead(leadId);
     const ok = await FirebaseHealth.safeDeleteDocument("leads", leadId);
     if (!ok) throw new Error("Failed to delete lead");
   }
@@ -460,6 +464,8 @@ export class LeadService {
       linkedBusinessId: string | null;
       assignedUserId: string;
       targetSalesGender: string;
+      campaignId: string | null;
+      campaignTagIds: string[];
     }>,
   ): Promise<void> {
     const update: Record<string, unknown> = {

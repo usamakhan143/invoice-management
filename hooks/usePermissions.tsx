@@ -117,6 +117,23 @@ export const usePermissions = () => {
     userProfile?.isOwner === true ||
     hasPermission(GRANULAR_PERMISSIONS.LEADS_DETAIL_WHATSAPP);
 
+  /** Lead detail: assign campaign + tags. Also true when user can edit the lead. */
+  const canAssignLeadCampaign = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_CAMPAIGN_ASSIGN) ||
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_EDIT);
+
+  /** Campaigns page: view */
+  const canViewCampaigns = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CAMPAIGNS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.CAMPAIGNS_MANAGE);
+
+  /** Campaigns page: create / edit / archive + tag management */
+  const canManageCampaigns = (): boolean =>
+    userProfile?.isOwner === true ||
+    hasPermission(GRANULAR_PERMISSIONS.CAMPAIGNS_MANAGE);
+
   // Product permissions
   const canCreateProduct = (): boolean => hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_CREATE);
   const canEditProduct = (): boolean => hasPermission(GRANULAR_PERMISSIONS.PRODUCTS_EDIT);
@@ -250,6 +267,8 @@ export const usePermissions = () => {
         return canAccessLeadsPage();
       case "my-assigned-leads":
         return canAccessMyAssignedLeadsPage();
+      case "campaigns":
+        return canViewCampaigns();
       default:
         return false;
     }
@@ -460,6 +479,11 @@ export const usePermissions = () => {
     canAgentQuickLogCall,
     canAgentQuickSetFollowup,
     leadsListViewAll,
+
+    // Campaigns
+    canViewCampaigns,
+    canManageCampaigns,
+    canAssignLeadCampaign,
 
     // Legacy compatibility
     hasPageAccess,
