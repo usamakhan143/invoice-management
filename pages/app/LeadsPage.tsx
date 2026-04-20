@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
@@ -6,7 +6,8 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { ActivityLogger } from "../../services/activityLogger";
 import { CustomerService } from "../../services/customerService";
 import { LeadService } from "../../services/leadService";
-import type { Customer, Lead, LeadExtras, LeadStatus } from "../../types";
+import { CampaignService } from "../../services/campaignService";
+import type { Campaign, CampaignTag, Customer, Lead, LeadExtras, LeadStatus } from "../../types";
 import {
   COUNTRY_CUSTOM_VALUE,
   CATEGORY_CUSTOM_VALUE,
@@ -251,6 +252,7 @@ const LeadsPage: React.FC = () => {
     canCreateLead,
     canAssignLeads,
     canBulkDeleteLeads,
+    canAssignLeadCampaign,
     canLogLeadCalls,
     canConvertLead,
     leadsListViewAll,
@@ -267,6 +269,10 @@ const LeadsPage: React.FC = () => {
   const [filterContact, setFilterContact] = useState<ContactPresenceFilter>("");
   const [filterPitchReady, setFilterPitchReady] = useState<PitchReadyFilter>("");
   const [filterTargetGender, setFilterTargetGender] = useState<FilterTargetSalesGender>("");
+  const [filterCampaignId, setFilterCampaignId] = useState("");
+  const [filterCampaignTagId, setFilterCampaignTagId] = useState("");
+  const [campaignsForFilter, setCampaignsForFilter] = useState<Campaign[]>([]);
+  const [tagsForCampaignFilter, setTagsForCampaignFilter] = useState<CampaignTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -278,11 +284,15 @@ const LeadsPage: React.FC = () => {
   const copyToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
-  const [bulkLeadAction, setBulkLeadAction] = useState<"assign" | "delete">("assign");
+  const [bulkLeadAction, setBulkLeadAction] = useState<"assign" | "delete" | "campaign">("assign");
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("__pick__");
   const [bulkAssignReason, setBulkAssignReason] = useState("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkTargetCampaignId, setBulkTargetCampaignId] = useState<string>("__pick__");
+  const [bulkTargetTagIds, setBulkTargetTagIds] = useState<string[]>([]);
+  const [tagsForBulkAssign, setTagsForBulkAssign] = useState<CampaignTag[]>([]);
+  const [bulkCampaignApplying, setBulkCampaignApplying] = useState(false);
   const selectAllHeaderRef = useRef<HTMLInputElement>(null);
 
   const viewAll = leadsListViewAll();
@@ -371,6 +381,47 @@ const LeadsPage: React.FC = () => {
     );
     return () => unsub();
   }, [user, userProfile, mayAccessLeads, viewAll]);
+
+  const leadsCompanyId =
+    user && userProfile ? LeadService.resolveCompanyId(user, userProfile) : "";
+
+  useEffect(() => {
+    if (!leadsCompanyId || !mayAccessLeads) {
+      setCampaignsForFilter([]);
+      return;
+    }
+    const unsub = CampaignService.subscribe(leadsCompanyId, setCampaignsForFilter);
+    return () => unsub();
+  }, [leadsCompanyId, mayAccessLeads]);
+
+  useEffect(() => {
+    if (!filterCampaignId.trim()) {
+      setTagsForCampaignFilter([]);
+      return;
+    }
+    const unsub = CampaignService.subscribeTags(filterCampaignId, setTagsForCampaignFilter);
+    return () => unsub();
+  }, [filterCampaignId]);
+
+  useEffect(() => {
+    if (bulkLeadAction !== "campaign") {
+      setTagsForBulkAssign([]);
+      return;
+    }
+    const id = bulkTargetCampaignId;
+    if (!id || id === "__pick__" || id === "__none__") {
+      setTagsForBulkAssign([]);
+      return;
+    }
+    const unsub = CampaignService.subscribeTags(id, setTagsForBulkAssign);
+    return () => unsub();
+  }, [bulkLeadAction, bulkTargetCampaignId]);
+
+  const campaignsFilterOptions = useMemo(() => {
+    const list = [...campaignsForFilter];
+    list.sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+    return list;
+  }, [campaignsForFilter]);
 
   useEffect(() => {
     if (!user || !userProfile || !modalOpen) return;
@@ -504,6 +555,12 @@ const LeadsPage: React.FC = () => {
         (l) => normalizeLeadTargetSalesGender(l.targetSalesGender) === filterTargetGender,
       );
     }
+    if (filterCampaignId) {
+      rows = rows.filter((l) => (l.campaignId || "").trim() === filterCampaignId);
+    }
+    if (filterCampaignTagId) {
+      rows = rows.filter((l) => (l.campaignTagIds || []).includes(filterCampaignTagId));
+    }
     return rows;
   }, [
     leads,
@@ -515,6 +572,8 @@ const LeadsPage: React.FC = () => {
     filterContact,
     filterPitchReady,
     filterTargetGender,
+    filterCampaignId,
+    filterCampaignTagId,
     assigneeLabel,
     isLeadsAdmin,
     showAssigneeColumn,
@@ -531,6 +590,8 @@ const LeadsPage: React.FC = () => {
     filterContact,
     filterPitchReady,
     filterTargetGender,
+    filterCampaignId,
+    filterCampaignTagId,
   ]);
 
   /** Primary line + subtitle for name/company column (consistent layout). */
@@ -732,12 +793,17 @@ const LeadsPage: React.FC = () => {
 
   const allowBulkAssign = canAssignLeads();
   const allowBulkDelete = canBulkDeleteLeads();
-  const allowBulkRowSelect = allowBulkAssign || allowBulkDelete;
+  const allowBulkCampaign = canAssignLeadCampaign();
+  const allowBulkRowSelect = allowBulkAssign || allowBulkDelete || allowBulkCampaign;
+  const bulkActionChoiceCount =
+    (allowBulkAssign ? 1 : 0) + (allowBulkDelete ? 1 : 0) + (allowBulkCampaign ? 1 : 0);
 
-  useEffect(() => {
-    if (allowBulkAssign && !allowBulkDelete) setBulkLeadAction("assign");
-    else if (!allowBulkAssign && allowBulkDelete) setBulkLeadAction("delete");
-  }, [allowBulkAssign, allowBulkDelete]);
+  useLayoutEffect(() => {
+    if (bulkActionChoiceCount !== 1) return;
+    if (allowBulkAssign) setBulkLeadAction("assign");
+    else if (allowBulkDelete) setBulkLeadAction("delete");
+    else setBulkLeadAction("campaign");
+  }, [allowBulkAssign, allowBulkDelete, allowBulkCampaign, bulkActionChoiceCount]);
 
   const selectedSet = useMemo(() => new Set(selectedLeadIds), [selectedLeadIds]);
   const allPageIdsSelected =
@@ -786,6 +852,14 @@ const LeadsPage: React.FC = () => {
     setSelectedLeadIds([]);
     setBulkAssignUserId("__pick__");
     setBulkAssignReason("");
+    setBulkTargetCampaignId("__pick__");
+    setBulkTargetTagIds([]);
+  }, []);
+
+  const toggleBulkTargetTag = useCallback((tagId: string) => {
+    setBulkTargetTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
+    );
   }, []);
 
   const handleBulkDeleteLeads = useCallback(async () => {
@@ -879,6 +953,75 @@ const LeadsPage: React.FC = () => {
     clearLeadSelection,
   ]);
 
+  const handleBulkCampaignApply = useCallback(async () => {
+    if (!user || !userProfile || !allowBulkCampaign || selectedLeadIds.length === 0 || bulkCampaignApplying) {
+      return;
+    }
+    if (bulkTargetCampaignId === "__pick__") return;
+
+    const clearCampaign = bulkTargetCampaignId === "__none__";
+    let campaignId: string | null = null;
+    let tagIds: string[] = [];
+
+    if (!clearCampaign) {
+      campaignId = bulkTargetCampaignId;
+      const allowed = new Set(tagsForBulkAssign.map((t) => t.id));
+      tagIds = bulkTargetTagIds.filter((id) => allowed.has(id));
+    }
+
+    setBulkCampaignApplying(true);
+    try {
+      for (const leadId of selectedLeadIds) {
+        const lead = leads.find((l) => l.id === leadId);
+        if (!lead) continue;
+        if (clearCampaign) {
+          const had = (lead.campaignId || "").trim() || (lead.campaignTagIds || []).length > 0;
+          if (!had) continue;
+          await LeadService.updateLeadFields(leadId, {
+            campaignId: null,
+            campaignTagIds: [],
+          });
+        } else {
+          const prevC = (lead.campaignId || "").trim();
+          const prevT = [...(lead.campaignTagIds || [])].sort().join(",");
+          const nextT = [...tagIds].sort().join(",");
+          if (prevC === campaignId && prevT === nextT) continue;
+          await LeadService.updateLeadFields(leadId, {
+            campaignId,
+            campaignTagIds: tagIds,
+          });
+        }
+        await ActivityLogger.logActivity(user, userProfile, "lead_updated", "Bulk updated lead campaign/tags", {
+          entityId: leadId,
+          entityType: "lead",
+          oldValue: lead
+            ? { campaignId: lead.campaignId ?? null, campaignTagIds: lead.campaignTagIds ?? [] }
+            : undefined,
+          newValue: clearCampaign
+            ? { campaignId: null, campaignTagIds: [] }
+            : { campaignId, campaignTagIds: tagIds },
+        });
+      }
+      clearLeadSelection();
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : "Bulk campaign update failed.");
+    } finally {
+      setBulkCampaignApplying(false);
+    }
+  }, [
+    user,
+    userProfile,
+    allowBulkCampaign,
+    selectedLeadIds,
+    bulkCampaignApplying,
+    bulkTargetCampaignId,
+    bulkTargetTagIds,
+    tagsForBulkAssign,
+    leads,
+    clearLeadSelection,
+  ]);
+
   const formLocked = isSubmitting || submitFeedback?.type === "success";
 
   if (loading) {
@@ -959,6 +1102,38 @@ const LeadsPage: React.FC = () => {
               </option>
             ))}
           </select>
+          <select
+            value={filterCampaignId}
+            onChange={(e) => {
+              setFilterCampaignId(e.target.value);
+              setFilterCampaignTagId("");
+            }}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[11rem]"
+            aria-label="Filter by campaign"
+          >
+            <option value="">All campaigns</option>
+            {campaignsFilterOptions.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.status === "archived" ? " (archived)" : ""}
+              </option>
+            ))}
+          </select>
+          {filterCampaignId ? (
+            <select
+              value={filterCampaignTagId}
+              onChange={(e) => setFilterCampaignTagId(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[11rem]"
+              aria-label="Filter by campaign tag"
+            >
+              <option value="">Any tag in this campaign</option>
+              {tagsForCampaignFilter.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {isLeadsAdmin && (
             <select
               value={filterAssignee}
@@ -1029,6 +1204,8 @@ const LeadsPage: React.FC = () => {
           </select>
           {(filterStatus ||
             filterSource ||
+            filterCampaignId ||
+            filterCampaignTagId ||
             (isLeadsAdmin && filterAssignee) ||
             (isLeadsAdmin && filterCreatedBy) ||
             filterContact ||
@@ -1040,6 +1217,8 @@ const LeadsPage: React.FC = () => {
               onClick={() => {
                 setFilterStatus("");
                 setFilterSource("");
+                setFilterCampaignId("");
+                setFilterCampaignTagId("");
                 setFilterAssignee("");
                 setFilterCreatedBy("");
                 setFilterContact("");
@@ -1055,6 +1234,8 @@ const LeadsPage: React.FC = () => {
           {searchTerm ||
           filterStatus ||
           filterSource ||
+          filterCampaignId ||
+          filterCampaignTagId ||
           (isLeadsAdmin && filterAssignee) ||
           (isLeadsAdmin && filterCreatedBy) ||
           filterContact ||
@@ -1074,7 +1255,7 @@ const LeadsPage: React.FC = () => {
           <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
             {selectedLeadIds.length} lead{selectedLeadIds.length === 1 ? "" : "s"} selected
           </div>
-          {allowBulkAssign && allowBulkDelete ? (
+          {bulkActionChoiceCount > 1 ? (
             <div className="flex flex-wrap items-center gap-2">
               <label htmlFor="bulk-lead-action" className="sr-only">
                 Bulk action
@@ -1083,13 +1264,14 @@ const LeadsPage: React.FC = () => {
                 id="bulk-lead-action"
                 value={bulkLeadAction}
                 onChange={(e) =>
-                  setBulkLeadAction(e.target.value as "assign" | "delete")
+                  setBulkLeadAction(e.target.value as "assign" | "delete" | "campaign")
                 }
-                disabled={bulkAssigning || bulkDeleting}
+                disabled={bulkAssigning || bulkDeleting || bulkCampaignApplying}
                 className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[10rem]"
               >
-                <option value="assign">Assign</option>
-                <option value="delete">Delete</option>
+                {allowBulkAssign ? <option value="assign">Assign</option> : null}
+                {allowBulkDelete ? <option value="delete">Delete</option> : null}
+                {allowBulkCampaign ? <option value="campaign">Campaign &amp; tags</option> : null}
               </select>
             </div>
           ) : null}
@@ -1124,7 +1306,7 @@ const LeadsPage: React.FC = () => {
               />
               <button
                 type="button"
-                disabled={bulkAssigning || bulkAssignUserId === "__pick__"}
+                disabled={bulkAssigning || bulkAssignUserId === "__pick__" || bulkCampaignApplying}
                 onClick={() => void handleBulkAssign()}
                 className="text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1136,7 +1318,7 @@ const LeadsPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                disabled={bulkDeleting}
+                disabled={bulkDeleting || bulkCampaignApplying}
                 onClick={() => void handleBulkDeleteLeads()}
                 className="text-sm px-3 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1144,10 +1326,76 @@ const LeadsPage: React.FC = () => {
               </button>
             </div>
           ) : null}
+          {bulkLeadAction === "campaign" && allowBulkCampaign ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="bulk-campaign-pick">
+                  Campaign for selected leads
+                </label>
+                <select
+                  id="bulk-campaign-pick"
+                  value={bulkTargetCampaignId}
+                  onChange={(e) => {
+                    setBulkTargetCampaignId(e.target.value);
+                    setBulkTargetTagIds([]);
+                  }}
+                  disabled={bulkCampaignApplying}
+                  className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[12rem]"
+                >
+                  <option value="__pick__">Select campaign…</option>
+                  <option value="__none__">Clear campaign &amp; tags</option>
+                  {campaignsFilterOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.status === "archived" ? " (archived)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={
+                    bulkCampaignApplying || bulkTargetCampaignId === "__pick__" || bulkAssigning || bulkDeleting
+                  }
+                  onClick={() => void handleBulkCampaignApply()}
+                  className="text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkCampaignApplying ? "Applying…" : "Apply campaign/tags"}
+                </button>
+              </div>
+              {bulkTargetCampaignId !== "__pick__" && bulkTargetCampaignId !== "__none__" ? (
+                <div className="flex flex-col gap-1.5 rounded-md border border-gray-200 bg-white/80 px-2 py-2 dark:border-gray-600 dark:bg-gray-800/80 w-full max-w-xl">
+                  <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">
+                    Tags for this campaign (checked = applied to all selected leads)
+                  </span>
+                  {tagsForBulkAssign.length === 0 ? (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">No tags defined yet.</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {tagsForBulkAssign.map((t) => (
+                        <label
+                          key={t.id}
+                          className="inline-flex items-center gap-1.5 text-xs text-gray-800 dark:text-gray-200 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                            checked={bulkTargetTagIds.includes(t.id)}
+                            onChange={() => toggleBulkTargetTag(t.id)}
+                            disabled={bulkCampaignApplying}
+                          />
+                          {t.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              disabled={bulkAssigning || bulkDeleting}
+              disabled={bulkAssigning || bulkDeleting || bulkCampaignApplying}
               onClick={clearLeadSelection}
               className="text-sm px-2 py-1.5 text-gray-600 hover:underline dark:text-gray-300"
             >
@@ -1157,7 +1405,7 @@ const LeadsPage: React.FC = () => {
           {!allFilteredIdsSelected && filteredRows.length > pageRows.length ? (
             <button
               type="button"
-              disabled={bulkAssigning || bulkDeleting}
+              disabled={bulkAssigning || bulkDeleting || bulkCampaignApplying}
               onClick={selectAllFilteredLeads}
               className="text-sm text-primary-700 hover:underline dark:text-primary-400 sm:ml-auto"
             >

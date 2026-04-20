@@ -11,6 +11,7 @@
 - [How the app works](#how-the-app-works)
 - [Routes](#routes)
 - [Features](#features)
+- [CRM: campaigns & outreach](#crm-campaigns--outreach)
 - [Permissions](#permissions)
 - [Data backup & import](#data-backup--import)
 - [Super Admin](#super-admin)
@@ -60,7 +61,7 @@ See `.env.example` for comments and examples.
 
 1. **Authentication** — Firebase Auth. User profile, company linkage, and permissions are loaded from Firestore (`users` and related documents).
 2. **Routing** — `App.tsx` uses `HashRouter`. Authenticated areas are behind `ProtectedRoute` (logged-in user **or** active impersonation session). Layout: `AppLayout` (sidebar + main + footer) vs `AuthLayout` for login/signup.
-3. **Multi-tenancy** — Business data is scoped by **`companyId`** (and owner `userId` where applicable) on **root-level** Firestore collections. The intended layout is documented in `services/databaseMigrationService.ts` (companies, invoices, customers, products, etc.).
+3. **Multi-tenancy** — Business data is scoped by **`companyId`** (and owner `userId` where applicable) on **root-level** Firestore collections. The intended layout is documented in `services/databaseMigrationService.ts` (companies, invoices, customers, products, **campaigns**, **campaign tags**, **outreach events**, etc.).
 4. **Permissions** — `config/permissions.ts` lists **granular** keys. `usePermissions` (and Firestore role documents) decide sidebar visibility and page actions—not only a single “admin” flag.
 5. **PDFs** — `@react-pdf/renderer` builds invoice PDFs in the browser (lazy-loaded chunk; Open Sans bundled).
 6. **Network / offline** — Firebase persistence, connectivity checks, and optional emergency offline behavior (`services/offlineMode.ts`, `NetworkStatus`, `ConnectionStatus`, `OfflineModeIndicator`).
@@ -86,9 +87,10 @@ See `.env.example` for comments and examples.
 | `/activity` | Activity log (user-scoped where applicable) |
 | `/company-activity` | Company-wide activity (permission-gated) |
 | `/profile` | Profile |
-| `/leads` | Leads list / CRM |
-| `/leads/:id` | Lead detail (tabs by permission) |
-| `/my-assigned-leads` | Agent workspace for assigned leads |
+| `/leads` | Leads list / CRM (filters, bulk actions) |
+| `/leads/my-assigned` | Agent workspace for assigned leads (“My workspace”) |
+| `/leads/:id` | Lead detail (tabs by permission: Details, Outreach, …) |
+| `/campaigns` | Campaigns & per-campaign tags (`CampaignsPage`) |
 | `/data-management` | Data overview, backup export/import, history |
 | `/super-admin` | Platform operator dashboard (restricted; see below) |
 
@@ -149,14 +151,33 @@ Includes self-service security sessions:
 
 ### Leads / CRM
 
-- Leads list with permission-gated actions and bulk delete.
-- Lead detail supports permission-gated tabs such as:
-  - call logs tab (`LEADS_LOG_CALLS`)
-  - conversion & billing hub (link/convert/invoice permissions)
-  - assignment tab (`LEADS_DETAIL_ASSIGNMENT_TAB`)
-- My Assigned Leads workspace with quick actions (status, call, follow-up) via dedicated permissions.
+- **Leads list** (`/leads`) — Search, status/source/contact/notes/agent-preference filters, and **filter by campaign**; when a campaign is chosen, **filter by one of its tags**. Permission-gated row actions (open lead, mail/call shortcuts, convert, log outreach, etc.).
+- **Bulk actions on leads** (when permitted):
+  - **Assign** — bulk assign or unassign (`LEADS_ASSIGN` flow).
+  - **Delete** — bulk delete (`LEADS_BULK_DELETE` / related).
+  - **Campaign & tags** — set the same **campaign** and optional **tag checkboxes** on all selected leads, or **clear campaign & tags** (`LEADS_CAMPAIGN_ASSIGN` or `LEADS_EDIT`; owners always). “Select all matching leads” respects the current filters.
+- **Lead detail** (`/leads/:id`) — Permission-gated tabs, including:
+  - **Details** — campaign dropdown and **campaign tags** (multi-select) when allowed; notes and core fields.
+  - **Outreach** — unified **outreach timeline** (calls, email, WhatsApp, SMS, in-person, other) backed by the top-level `outreachEvents` collection (`LEADS_LOG_CALLS`). Optional **admin QA** fields (recording ref, call verification) when `LEADS_CALL_LOG_APPROVE` is granted.
+  - Conversion & billing hub (link/convert/invoice permissions).
+  - Assignment tab (`LEADS_DETAIL_ASSIGNMENT_TAB`).
+- **My workspace** (`/leads/my-assigned`) — Assigned leads with quick actions (status, call / outreach modal, follow-up) per agent permissions.
 
-### Bulk actions
+### Campaigns (`/campaigns`)
+
+- Company-scoped **campaigns** (`draft` / `active` / `archived`) with optional description and channel hints.
+- **Tags** per campaign (label, color, **team explanation** tooltip text shown wherever the tag appears — e.g. `CampaignTagPill` on leads and campaigns).
+- Manage campaigns and tags when `CAMPAIGNS_MANAGE` is granted; view the page with `CAMPAIGNS_VIEW` (or manage).
+
+### CRM: campaigns & outreach
+
+For **Firestore fields**, **indexes**, **permissions matrix**, **backup format v4**, and planned **webhook / external integration**, see:
+
+**[`docs/OUTREACH_CAMPAIGNS_AND_INTEGRATION.md`](docs/OUTREACH_CAMPAIGNS_AND_INTEGRATION.md)**
+
+Key services: `services/campaignService.ts`, `services/outreachService.ts`, `services/leadService.ts` (`campaignId` / `campaignTagIds` on leads).
+
+### Bulk actions (global)
 
 Bulk delete is available with dedicated permissions for:
 - invoices
@@ -175,6 +196,8 @@ Bulk delete is available with dedicated permissions for:
 - **Runtime** — Custom roles and assignments in Firestore; `hooks/usePermissions.tsx` resolves access for navigation and UI actions.
 - **Super Admin** — The sidebar item uses a separate `superAdminOnly` flag in `components/Sidebar.tsx`, not the general permission map.
 - Recent granular additions include:
+  - **Campaigns** — `CAMPAIGNS_VIEW`, `CAMPAIGNS_MANAGE`
+  - **Leads & outreach** — `LEADS_CAMPAIGN_ASSIGN` (campaign + tags on a lead; also covered when role has `LEADS_EDIT`), `LEADS_LOG_CALLS`, `LEADS_DELETE_CALL_LOGS`, `LEADS_CALL_LOG_APPROVE`
   - `USER_MANAGEMENT_SESSIONS_CONTROL`
   - `LEADS_DETAIL_ASSIGNMENT_TAB`
   - `CUSTOMERS_DETAIL_BUSINESSES_DELETE`
@@ -185,8 +208,8 @@ Bulk delete is available with dedicated permissions for:
 ## Data backup & import
 
 - **Location** — `pages/app/DataManagementPage.tsx` + `components/DataBackupManager.tsx`.
-- **Export** — `DatabaseMigrationService.exportCompanyData` produces a **JSON** backup (flat format with a version field). Includes company-scoped collections as implemented in the service.
-- **Import** — `DatabaseMigrationService.importCompanyData` uses Firestore **`set(..., { merge: true })`**. It **does not delete** documents that are missing from the file; it merges fields for documents that **are** in the backup. Use only **trusted** exports from your own organization.
+- **Export** — `DatabaseMigrationService.exportCompanyData` produces a **JSON** backup (flat format with a version field; **v4** adds **`campaigns`**, **`campaignTags`**, and **`outreachEvents`**). Includes company-scoped collections as implemented in the service.
+- **Import** — `DatabaseMigrationService.importCompanyData` uses Firestore **`set(..., { merge: true })`**. It **does not delete** documents that are missing from the file; it merges fields for documents that **are** in the backup. Legacy per-lead **`callLogs`** subcollections are **not** recreated from old backups; current outreach lives in **`outreachEvents`**. Use only **trusted** exports from your own organization.
 - **History** — Export/import events can be recorded under `companies/{companyId}/backups`.
 - **Access** — Typically company **owner/admin** plus backup-related permissions.
 
@@ -230,7 +253,8 @@ Serialization helpers: `utils/backupFirestore.ts`.
 | `config/` | Permissions, Super Admin flags |
 | `layouts/` | `AppLayout`, `AuthLayout` |
 | `types/` | Shared TypeScript types |
-| `firestore.rules` / `firestore.indexes.json` | Firestore security and indexes (deploy with Firebase CLI) |
+| `docs/` | Deep-dive docs (e.g. CRM campaigns & outreach integration) |
+| `firestore.rules` / `firestore.indexes.json` | Firestore security and indexes (**deploy after schema changes** — campaigns, `outreachEvents`, etc.) |
 | `App.tsx` | Routes, auth gate, Firebase init orchestration |
 
 ---
