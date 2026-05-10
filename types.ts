@@ -41,6 +41,8 @@ export interface UserProfile {
   isImpersonating?: boolean;
   originalAdmin?: string;
   tempPassword?: string;
+  /** SHA-256 hash of 4-digit screen/revenue PIN (see utils/screenPin). */
+  screenPinHash?: string;
 }
 
 export interface CompanyUser {

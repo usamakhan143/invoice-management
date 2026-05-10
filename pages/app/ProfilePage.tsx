@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import {
+  hashScreenPin,
+  isValidFourDigitPin,
+  verifyScreenPin,
+} from "../../utils/screenPin";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { auth, db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
@@ -9,7 +14,7 @@ import firebase from "firebase/compat/app";
 
 const ProfilePage: React.FC = () => {
   usePageTitle("Profile");
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, setUserProfile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -30,6 +35,109 @@ const ProfilePage: React.FC = () => {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
   const [revokingOthers, setRevokingOthers] = useState(false);
+
+  const [screenPinCurrent, setScreenPinCurrent] = useState("");
+  const [screenPinNew, setScreenPinNew] = useState("");
+  const [screenPinConfirm, setScreenPinConfirm] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+
+  const resolveProfileUserDocId = async (): Promise<string | null> => {
+    if (!user) return null;
+    let userDocId = user.uid;
+    const userDocRef = db.collection("users").doc(user.uid);
+    const userDoc = await userDocRef.get();
+    if (!userDoc.exists && user.email) {
+      const userByEmailQuery = await db
+        .collection("users")
+        .where("email", "==", user.email)
+        .get();
+      if (!userByEmailQuery.empty) {
+        userDocId = userByEmailQuery.docs[0].id;
+      }
+    }
+    return userDocId;
+  };
+
+  const handleScreenPinSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !userProfile) return;
+
+    if (!isValidFourDigitPin(screenPinNew)) {
+      setError("New PIN must be exactly 4 digits.");
+      setSuccess("");
+      return;
+    }
+    if (screenPinNew !== screenPinConfirm) {
+      setError("New PIN and confirmation do not match.");
+      setSuccess("");
+      return;
+    }
+
+    const existingHash = userProfile.screenPinHash;
+    if (existingHash) {
+      if (!isValidFourDigitPin(screenPinCurrent)) {
+        setError("Enter your current 4-digit PIN to change it.");
+        setSuccess("");
+        return;
+      }
+      const currentOk = await verifyScreenPin(
+        user.uid,
+        screenPinCurrent,
+        existingHash,
+      );
+      if (!currentOk) {
+        setError("Current PIN is incorrect.");
+        setSuccess("");
+        return;
+      }
+    }
+
+    setPinSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const userDocId = await resolveProfileUserDocId();
+      if (!userDocId) {
+        setError("Could not find your user record.");
+        return;
+      }
+
+      const nextHash = await hashScreenPin(user.uid, screenPinNew);
+      await db.collection("users").doc(userDocId).update({
+        screenPinHash: nextHash,
+        updatedAt: new Date(),
+      });
+
+      setUserProfile({ ...userProfile, screenPinHash: nextHash });
+
+      await ActivityLogger.logActivity(
+        user,
+        { ...userProfile, screenPinHash: nextHash },
+        "user_updated",
+        existingHash ? "Screen / revenue PIN changed" : "Screen / revenue PIN set",
+        {
+          entityId: user.uid,
+          entityType: "security",
+          newValue: { screenPinUpdated: true },
+        },
+      );
+
+      setSuccess(
+        existingHash
+          ? "PIN updated. Use it to unlock the screen and view revenue."
+          : "PIN saved. You can lock the screen from the sidebar and protect revenue on the dashboard.",
+      );
+      setScreenPinCurrent("");
+      setScreenPinNew("");
+      setScreenPinConfirm("");
+    } catch (err) {
+      console.error(err);
+      setError("Could not save PIN. Please try again.");
+    } finally {
+      setPinSaving(false);
+    }
+  };
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -519,6 +627,91 @@ const ProfilePage: React.FC = () => {
               className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Changing..." : "Change Password"}
+            </button>
+          </form>
+        </div>
+
+        {/* Screen / revenue PIN */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 lg:col-span-2">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
+            Screen &amp; revenue PIN
+          </h2>
+          <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+            4-digit code to lock the app without logging out and to reveal
+            blurred revenue on the dashboard. Stored securely as a hash.
+          </p>
+          <form onSubmit={handleScreenPinSave} className="space-y-4 max-w-md">
+            {userProfile.screenPinHash ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Current PIN
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={4}
+                  value={screenPinCurrent}
+                  onChange={(e) =>
+                    setScreenPinCurrent(
+                      e.target.value.replace(/\D/g, "").slice(0, 4),
+                    )
+                  }
+                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white tracking-widest"
+                  placeholder="••••"
+                />
+              </div>
+            ) : null}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {userProfile.screenPinHash ? "New PIN" : "PIN (4 digits)"}
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="new-password"
+                maxLength={4}
+                value={screenPinNew}
+                onChange={(e) =>
+                  setScreenPinNew(
+                    e.target.value.replace(/\D/g, "").slice(0, 4),
+                  )
+                }
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white tracking-widest"
+                placeholder="••••"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Confirm PIN
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="new-password"
+                maxLength={4}
+                value={screenPinConfirm}
+                onChange={(e) =>
+                  setScreenPinConfirm(
+                    e.target.value.replace(/\D/g, "").slice(0, 4),
+                  )
+                }
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white tracking-widest"
+                placeholder="••••"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={pinSaving || loading}
+              className="w-full px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {pinSaving
+                ? "Saving…"
+                : userProfile.screenPinHash
+                  ? "Update PIN"
+                  : "Save PIN"}
             </button>
           </form>
         </div>

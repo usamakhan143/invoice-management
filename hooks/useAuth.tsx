@@ -11,6 +11,7 @@ import { PermissionService } from "../services/permissionService";
 import { RealTimePermissionService } from "../services/realTimePermissionService";
 import { UserMonitoringService } from "../services/userMonitoringService";
 import { TokenService } from "../services/tokenService";
+import { screenPinSessionStorageKey } from "../utils/screenPin";
 import { isEmergencyOfflineMode, offlineServices, mockUserProfile } from "../services/offlineMode";
 import type { UserProfile } from "../types";
 import type firebase from "firebase/compat/app";
@@ -641,6 +642,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         console.error("Failed to revoke token:", error);
       }
       sessionStorage.removeItem(`loginLogged_${user.uid}`);
+      sessionStorage.removeItem(screenPinSessionStorageKey(user.uid));
     }
 
     await auth.signOut();

@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import DashboardCard from "../../components/DashboardCard";
-import { CustomerIcon, InvoiceIcon, RevenueIcon } from "../../constants";
+import DashboardCard, { DashboardMiniStat } from "../../components/DashboardCard";
+import { useScreenLock } from "../../contexts/ScreenLockContext";
+import DashboardSection from "../../components/DashboardSection";
+import {
+  CustomerIcon,
+  ExpenseIcon,
+  InvoiceIcon,
+  RevenueIcon,
+} from "../../constants";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -19,6 +26,11 @@ const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
   const location = useLocation();
   const { user, userProfile } = useAuth();
+  const {
+    hasScreenPin,
+    isRevenueGateOpen,
+    openRevenuePinModal,
+  } = useScreenLock();
 
   // Check if we arrived via impersonation
   useEffect(() => {
@@ -60,6 +72,18 @@ const DashboardPage: React.FC = () => {
   const [companyLeadsTeamView, setCompanyLeadsTeamView] = useState<Lead[]>([]);
   const [teamAssigneeLabels, setTeamAssigneeLabels] = useState<{ uid: string; label: string }[]>([]);
   const [leadAnalyticsLeads, setLeadAnalyticsLeads] = useState<Lead[]>([]);
+  const [pinReminderDismissed, setPinReminderDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setPinReminderDismissed(false);
+      return;
+    }
+    setPinReminderDismissed(
+      sessionStorage.getItem(`pin_setup_reminder_dismissed_${user.uid}`) ===
+        "1",
+    );
+  }, [user?.uid]);
 
   const leadsViewAll = leadsListViewAll();
   const canAssign = canAssignLeads();
@@ -404,397 +428,424 @@ const DashboardPage: React.FC = () => {
     };
   });
 
+  const todayLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date());
+
+  const linkPillClass =
+    "inline-flex items-center rounded-lg bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:bg-primary-950/50 dark:text-primary-300 dark:hover:bg-primary-900/40";
+
+  const showPinSetupReminder =
+    !!userProfile &&
+    !userProfile.screenPinHash &&
+    !pinReminderDismissed;
+
+  const revenuePinRelevant =
+    hasScreenPin &&
+    !isRevenueGateOpen &&
+    (totalRevenue > 0 || outstandingRevenue > 0);
+
+  const blurTotalRevenue =
+    hasScreenPin &&
+    !isRevenueGateOpen &&
+    totalRevenue > 0 &&
+    canViewTotalRevenue();
+
+  const blurOutstandingRevenue =
+    hasScreenPin &&
+    !isRevenueGateOpen &&
+    outstandingRevenue > 0 &&
+    canViewOutstandingRevenue();
+
   return (
-    <div className="mobile-p-4 p-4 sm:p-6">
-      <div className="flex justify-between items-center mb-4 sm:mb-6">
-        <h1 className="mobile-text-2xl text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
+    <div className="mobile-p-4 mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
+      <header className="mb-8 border-b border-gray-200/90 pb-6 dark:border-gray-700/80">
+        <h1 className="mobile-text-2xl text-2xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-3xl">
           Dashboard
         </h1>
-      </div>
+        <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
+          {todayLabel}
+        </p>
+      </header>
+
+      {showPinSetupReminder && user?.uid ? (
+        <div
+          className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50 to-orange-50/80 p-4 shadow-sm dark:border-amber-800/50 dark:from-amber-950/40 dark:to-orange-950/30 sm:flex-row sm:items-center sm:justify-between"
+          role="status"
+        >
+          <p className="text-sm text-amber-950 dark:text-amber-100/95">
+            <span className="font-semibold">Set your screen PIN.</span> Choose a
+            4-digit code on your profile to lock the screen without logging out
+            and to protect revenue totals on the dashboard.
+          </p>
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+            <Link
+              to="/profile"
+              className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+            >
+              Open profile
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                sessionStorage.setItem(
+                  `pin_setup_reminder_dismissed_${user.uid}`,
+                  "1",
+                );
+                setPinReminderDismissed(true);
+              }}
+              className="rounded-lg border border-amber-300/80 bg-white/80 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-white dark:border-amber-700 dark:bg-amber-900/50 dark:text-amber-100 dark:hover:bg-amber-900/70"
+            >
+              Dismiss for this session
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {!hasAnyDashboardPermission && !isOwner && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
-          <div className="text-6xl mb-4">📊</div>
-          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Dashboard Access Limited
+        <div className="rounded-2xl border border-gray-200/90 bg-gradient-to-b from-white to-gray-50/80 p-10 text-center shadow-sm dark:border-gray-700/80 dark:from-gray-800 dark:to-gray-900/50">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-2xl dark:bg-gray-700">
+            📊
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Dashboard access limited
           </h3>
-          <p className="text-gray-500 dark:text-gray-400">
-            You don't have permissions to view dashboard sections. Contact your administrator to request access.
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+            You don&apos;t have permissions to view dashboard sections. Contact
+            your administrator to request access.
           </p>
         </div>
       )}
 
-      {/* Stats Cards - All now update in real-time */}
-      <div className="grid mobile-grid-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-4 sm:mb-6">
-        {canViewTotalRevenue() && (
-          <div className="relative">
-            <DashboardCard
-              title="Total Revenue (Paid)"
-              value={formatCurrency(totalRevenue)}
-              icon={<RevenueIcon />}
-              color="bg-green-500"
-            />
+      {/* Stats — real-time */}
+      <div className="mb-8 space-y-3">
+        {(canViewTotalRevenue() || canViewOutstandingRevenue()) &&
+        revenuePinRelevant ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={openRevenuePinModal}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200/90 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              title="Enter PIN to show revenue amounts"
+            >
+              <svg
+                className="h-5 w-5 text-gray-500 dark:text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+              Show revenue
+            </button>
           </div>
+        ) : null}
+        <div className="grid mobile-grid-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+        {canViewTotalRevenue() && (
+          <DashboardCard
+            title="Total revenue (paid)"
+            value={formatCurrency(totalRevenue)}
+            icon={<RevenueIcon />}
+            variant="emerald"
+            blurValue={blurTotalRevenue}
+          />
         )}
         {canViewOutstandingRevenue() && (
-          <div className="relative">
-            <DashboardCard
-              title="Outstanding Revenue"
-              value={formatCurrency(outstandingRevenue)}
-              icon={<InvoiceIcon />}
-              color="bg-yellow-500"
-            />
-          </div>
+          <DashboardCard
+            title="Outstanding revenue"
+            value={formatCurrency(outstandingRevenue)}
+            icon={<InvoiceIcon />}
+            variant="amber"
+            blurValue={blurOutstandingRevenue}
+          />
         )}
         {canViewMonthlyExpenses() && (
-          <div className="relative">
-            <DashboardCard
-              title="This Month Expenses"
-              value={formatCurrency(thisMonthExpenses)}
-              icon={
-                <svg
-                  className="h-8 w-8 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                  />
-                </svg>
-              }
-              color="bg-red-500"
-            />
-          </div>
+          <DashboardCard
+            title="This month expenses"
+            value={formatCurrency(thisMonthExpenses)}
+            icon={<ExpenseIcon />}
+            variant="rose"
+          />
         )}
         {canViewTotalCustomers() && (
-          <div className="relative">
-            <DashboardCard
-              title="Total Customers"
-              value={customers.length.toString()}
-              icon={<CustomerIcon />}
-              color="bg-blue-500"
-            />
-          </div>
+          <DashboardCard
+            title="Total customers"
+            value={customers.length.toString()}
+            icon={<CustomerIcon />}
+            variant="sky"
+          />
         )}
+        </div>
       </div>
 
       {canViewLeadGenAnalytics() && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-                Lead generation analytics
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {leadAnalyticsStats.companyScope
-                  ? "Company-wide lead generation progress."
-                  : "Your lead generation progress (leads created by you)."}
-              </p>
-            </div>
-            {canLeadsPage ? (
-              <Link
-                to="/leads"
-                className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400 shrink-0"
-              >
+        <DashboardSection
+          title="Lead generation analytics"
+          description={
+            leadAnalyticsStats.companyScope
+              ? "Company-wide lead generation progress."
+              : "Your lead generation progress (leads created by you)."
+          }
+          headerAction={
+            canLeadsPage ? (
+              <Link to="/leads" className={linkPillClass}>
                 Open leads →
               </Link>
-            ) : null}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            ) : null
+          }
+          bodyClassName="!pt-5"
+        >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
             {canViewLeadGenCreated() && (
-              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Leads added
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                  {leadAnalyticsStats.totalAdded}
-                </p>
-              </div>
+              <DashboardMiniStat
+                label="Leads added"
+                value={leadAnalyticsStats.totalAdded}
+              />
             )}
             {canViewLeadGenAssigned() && (
-              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Assigned to agents
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                  {leadAnalyticsStats.assigned}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Unassigned: {leadAnalyticsStats.unassigned}
-                </p>
-              </div>
+              <DashboardMiniStat
+                label="Assigned to agents"
+                value={leadAnalyticsStats.assigned}
+                hint={`Unassigned: ${leadAnalyticsStats.unassigned}`}
+              />
             )}
             {canViewLeadGenConverted() && (
-              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Converted
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                  {leadAnalyticsStats.converted}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Converted to customer
-                </p>
-              </div>
+              <DashboardMiniStat
+                label="Converted"
+                value={leadAnalyticsStats.converted}
+                hint="Converted to customer"
+              />
             )}
             {canViewLeadGenCreated() && canViewLeadGenConverted() && (
-              <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Conversion rate
-                </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                  {leadAnalyticsStats.conversionRate}%
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Converted / added
-                </p>
-              </div>
+              <DashboardMiniStat
+                label="Conversion rate"
+                value={`${leadAnalyticsStats.conversionRate}%`}
+                hint="Converted / added"
+              />
             )}
           </div>
           {!canViewLeadGenCreated() &&
             !canViewLeadGenAssigned() &&
             !canViewLeadGenConverted() && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
-                No lead analytics metrics are enabled for your role. Ask your admin to enable metric permissions.
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No lead analytics metrics are enabled for your role. Ask your
+                admin to enable metric permissions.
               </p>
             )}
-        </div>
+        </DashboardSection>
       )}
 
       {teamLeadsDashboardMode && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-                Team lead assignments
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-3xl">
-                Live counts per user across your company&apos;s leads (who has how many assigned, active pipeline,
-                and follow-ups in the next 7 days). Use Leads to assign or reassign.
-              </p>
-            </div>
-            <Link
-              to="/leads"
-              className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400 shrink-0"
-            >
+        <DashboardSection
+          title="Team lead assignments"
+          description="Live counts per user across your company’s leads (assigned, active pipeline, and follow-ups in the next 7 days). Use Leads to assign or reassign."
+          headerAction={
+            <Link to="/leads" className={linkPillClass}>
               Open leads →
             </Link>
-          </div>
+          }
+          bodyClassName="!py-0 sm:!py-0"
+        >
           {teamLeadAssignmentRows.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">No leads in this company yet.</p>
+            <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
+              No leads in this company yet.
+            </p>
           ) : (
-            <div className="table-responsive -mx-2 sm:mx-0">
-              <table className="w-full text-sm text-left text-gray-600 dark:text-gray-300">
-                <thead className="text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
+            <div className="table-responsive -mx-5 sm:-mx-6">
+              <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
+                <thead className="border-b border-gray-200/90 bg-gray-50/80 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-400">
                   <tr>
-                    <th className="px-3 py-2 font-medium">User</th>
-                    <th className="px-3 py-2 font-medium text-right">Assigned</th>
-                    <th className="px-3 py-2 font-medium text-right">Active</th>
-                    <th className="px-3 py-2 font-medium text-right">Follow-ups (7d)</th>
+                    <th className="px-5 py-3 font-medium sm:px-6">User</th>
+                    <th className="px-3 py-3 text-right font-medium">Assigned</th>
+                    <th className="px-3 py-3 text-right font-medium">Active</th>
+                    <th className="px-5 py-3 text-right font-medium sm:px-6">
+                      Follow-ups (7d)
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/80">
                   {teamLeadAssignmentRows.map((row) => (
                     <tr
                       key={row.uid}
-                      className="border-b border-gray-100 dark:border-gray-700/80 last:border-0"
+                      className="transition-colors hover:bg-gray-50/80 dark:hover:bg-gray-900/30"
                     >
-                      <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{row.label}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.total}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.active}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.followDue}</td>
+                      <td className="px-5 py-3 font-medium text-gray-900 dark:text-white sm:px-6">
+                        {row.label}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">{row.total}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{row.active}</td>
+                      <td className="px-5 py-3 text-right tabular-nums sm:px-6">
+                        {row.followDue}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-        </div>
+        </DashboardSection>
       )}
 
       {canViewDashboardMyAssignedLeads() && !teamLeadsDashboardMode && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-                My assigned leads
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Live counts for leads currently assigned to you. Open the full page for date-wise history and
-                detailed progress.
-              </p>
-            </div>
-            {canAccessMyAssignedLeadsPage() ? (
-              <Link
-                to="/leads/my-assigned"
-                className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400 shrink-0"
-              >
+        <DashboardSection
+          title="My assigned leads"
+          description="Live counts for leads assigned to you. Open the full page for history and detailed progress."
+          headerAction={
+            canAccessMyAssignedLeadsPage() ? (
+              <Link to="/leads/my-assigned" className={linkPillClass}>
                 View full page →
               </Link>
             ) : (
-              <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0 max-w-[12rem] text-right">
-                Ask your admin for “My assigned leads” page access to open the full view.
+              <span className="max-w-[14rem] text-right text-xs leading-snug text-gray-500 dark:text-gray-400">
+                Ask your admin for “My assigned leads” access for the full view.
               </span>
-            )}
+            )
+          }
+        >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            <DashboardMiniStat
+              label="Total assigned"
+              value={myAssignedLeadStats.total}
+            />
+            <DashboardMiniStat
+              label="Active pipeline"
+              value={myAssignedLeadStats.active}
+              hint="Excludes won & lost"
+            />
+            <DashboardMiniStat
+              label="New leads (7 days)"
+              value={myAssignedLeadStats.assignedWeek}
+              hint="By lead created date"
+            />
+            <DashboardMiniStat
+              label="Follow-ups due"
+              value={myAssignedLeadStats.followDue}
+              hint="Next 7 days or overdue"
+            />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Total assigned
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                {myAssignedLeadStats.total}
-              </p>
-            </div>
-            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Active pipeline
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                {myAssignedLeadStats.active}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Excludes won &amp; lost</p>
-            </div>
-            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                New leads (7 days)
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                {myAssignedLeadStats.assignedWeek}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">By lead created date</p>
-            </div>
-            <div className="rounded-lg border border-gray-100 dark:border-gray-600 p-4">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Follow-ups due
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                {myAssignedLeadStats.followDue}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Next 7 days or overdue</p>
-            </div>
-          </div>
-        </div>
+        </DashboardSection>
       )}
 
-      {/* Bank Accounts Overview - Now updates in real-time */}
       {canViewDashboardBankAccounts() && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-              Bank Accounts
-            </h2>
-          </div>
+        <DashboardSection title="Bank accounts" description="Live balances across your linked accounts.">
           {bankBalances.length === 0 ? (
-            <div className="text-center py-4">
-              <p className="text-gray-600 dark:text-gray-300 mb-4">
-                No bank accounts found.
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 py-10 text-center dark:border-gray-600 dark:bg-gray-900/20">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                No bank accounts yet.
               </p>
               <Link
                 to="/bank-accounts"
-                className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                className={`${linkPillClass} mt-4 inline-flex`}
               >
-                Add Bank Account
+                Add bank account
               </Link>
             </div>
           ) : (
-            <div className="grid mobile-grid-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid mobile-grid-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {bankBalances.map((account) => (
                 <div
                   key={account.id}
-                  className="border border-gray-200 dark:border-gray-600 rounded-lg p-4"
+                  className="relative overflow-hidden rounded-xl border border-gray-200/90 bg-gradient-to-b from-white to-gray-50/90 p-5 shadow-sm dark:border-gray-700/80 dark:from-gray-800 dark:to-gray-900/50"
                 >
-                  <h3 className="font-semibold text-gray-800 dark:text-white">
-                    {account.accountName}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    {account.bankName}
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    {account.currency}
-                  </p>
-                  <p className="text-lg font-bold text-green-600 mt-2">
-                    {formatCurrency(
-                      account.currentBalance || 0,
-                      account.currency,
-                      account.currencySymbol || "$",
-                    )}
-                  </p>
+                  <div
+                    className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary-400 to-primary-600"
+                    aria-hidden
+                  />
+                  <div className="pl-3">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                      {account.accountName}
+                    </h3>
+                    <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                      {account.bankName} · {account.currency}
+                    </p>
+                    <p className="mt-4 text-xl font-bold tabular-nums tracking-tight text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(
+                        account.currentBalance || 0,
+                        account.currency,
+                        account.currencySymbol || "$",
+                      )}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </DashboardSection>
       )}
 
-      {/* Recent Invoices - Already has real-time updates */}
       {canViewRecentInvoices() && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-              Recent Invoices
-            </h2>
-            <div className="flex items-center gap-4">
-              <Link
-                to="/invoices"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                View All
-              </Link>
-            </div>
-          </div>
-
+        <DashboardSection
+          title="Recent invoices"
+          description="Latest activity across your account."
+          headerAction={
+            <Link to="/invoices" className={linkPillClass}>
+              View all
+            </Link>
+          }
+          bodyClassName="!py-0 sm:!py-0"
+        >
           {invoices.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-600 dark:text-gray-300 mb-4">
-                No invoices found.
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 py-10 text-center dark:border-gray-600 dark:bg-gray-900/20">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                No invoices yet.
               </p>
               <Link
                 to="/invoices/new"
-                className="inline-block px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                className={`${linkPillClass} mt-4 inline-flex bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/35`}
               >
-                Create First Invoice
+                Create first invoice
               </Link>
             </div>
           ) : (
-            <div className="table-responsive">
-              <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+            <div className="table-responsive -mx-5 sm:-mx-6">
+              <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
+                <thead className="border-b border-gray-200/90 bg-gray-50/80 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-400">
                   <tr>
-                    <th scope="col" className="px-6 py-3">
+                    <th scope="col" className="px-5 py-3 sm:px-6">
                       Invoice #
                     </th>
-                    <th scope="col" className="px-6 py-3">
+                    <th scope="col" className="px-3 py-3">
                       Customer
                     </th>
-                    <th scope="col" className="px-6 py-3">
+                    <th scope="col" className="px-3 py-3">
                       Amount
                     </th>
-                    <th scope="col" className="px-6 py-3">
+                    <th scope="col" className="px-3 py-3">
                       Status
                     </th>
                     {(isOwner || isAdmin) && (
-                      <th scope="col" className="px-6 py-3">
-                        Created By
+                      <th scope="col" className="px-5 py-3 sm:px-6">
+                        Created by
                       </th>
                     )}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/80">
                   {invoices.slice(0, 5).map((invoice) => (
                     <tr
                       key={invoice.id}
-                      className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                      className="transition-colors hover:bg-gray-50/90 dark:hover:bg-gray-900/25"
                     >
-                      <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                      <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white sm:px-6">
                         {invoice.invoiceNumber}
                       </td>
-                      <td className="px-6 py-4">{invoice.customerName}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-3.5">{invoice.customerName}</td>
+                      <td className="px-3 py-3.5 tabular-nums">
                         {(() => {
                           const bankAccount = bankAccounts.find(
                             (b) => b.id === invoice.bankAccountId,
@@ -806,16 +857,16 @@ const DashboardPage: React.FC = () => {
                           );
                         })()}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-3 py-3.5">
                         <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-semibold ${
                             invoice.status === "paid"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
                               : invoice.status === "sent"
-                                ? "bg-blue-100 text-blue-800"
+                                ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
                                 : invoice.status === "overdue"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-gray-100 text-gray-800"
+                                  ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300"
+                                  : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
                           }`}
                         >
                           {invoice.status.charAt(0).toUpperCase() +
@@ -823,7 +874,7 @@ const DashboardPage: React.FC = () => {
                         </span>
                       </td>
                       {(isOwner || isAdmin) && (
-                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                        <td className="px-5 py-3.5 text-gray-600 dark:text-gray-400 sm:px-6">
                           {invoice.createdBy || "Unknown User"}
                         </td>
                       )}
@@ -833,14 +884,15 @@ const DashboardPage: React.FC = () => {
               </table>
             </div>
           )}
-        </div>
+        </DashboardSection>
       )}
 
-      {/* Invoice Verification Section */}
       {canAccessInvoiceVerification() && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6">
-          <InvoiceVerificationSection />
-        </div>
+        <section className="mt-2 mb-6 overflow-hidden rounded-2xl border border-gray-200/90 bg-white/80 shadow-sm ring-1 ring-black/[0.03] dark:border-gray-700/90 dark:bg-gray-800/80 dark:ring-white/[0.05]">
+          <div className="p-5 sm:p-6">
+            <InvoiceVerificationSection />
+          </div>
+        </section>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { auth, db } from "../../services/firebase";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { BRAND_LOGO_ALT, BRAND_LOGO_DARK } from "../../config/brand";
 
 const SignUpPage: React.FC = () => {
   usePageTitle("Sign Up");
@@ -58,10 +59,17 @@ const SignUpPage: React.FC = () => {
   };
 
   return (
-    <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md dark:bg-gray-800">
-      <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white">
-        Create your account
-      </h1>
+    <div className="w-full max-w-md space-y-6 rounded-lg bg-white p-8 shadow-md dark:bg-gray-800">
+      <div className="flex flex-col items-center gap-4">
+        <img
+          src={BRAND_LOGO_DARK}
+          alt={BRAND_LOGO_ALT}
+          className="h-10 w-auto max-w-[240px] object-contain"
+        />
+        <h1 className="text-center text-2xl font-bold text-gray-900 dark:text-white">
+          Create your account
+        </h1>
+      </div>
       <form className="space-y-6" onSubmit={handleSignUp}>
         {error && (
           <p className="p-3 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-red-200 dark:text-red-800">

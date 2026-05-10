@@ -317,3 +317,62 @@ html, body {
 .workspace-copy-hint {
   animation: workspace-copy-hint 0.38s ease-out forwards;
 }
+
+/* In-app route transitions: scale + lift (GPU compositor only) */
+@keyframes app-route-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0) scale3d(0.92, 0.92, 1);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+.app-route-transition {
+  transform-origin: 50% 90%;
+  animation: app-route-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-route-transition {
+    animation: none;
+  }
+}
+
+/* Screen / revenue PIN modal — incorrect PIN shake */
+@keyframes screen-pin-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-10px);
+  }
+  30% {
+    transform: translateX(10px);
+  }
+  45% {
+    transform: translateX(-8px);
+  }
+  60% {
+    transform: translateX(8px);
+  }
+  75% {
+    transform: translateX(-4px);
+  }
+  90% {
+    transform: translateX(4px);
+  }
+}
+
+.screen-pin-shake {
+  animation: screen-pin-shake 0.48s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-pin-shake {
+    animation: none;
+  }
+}

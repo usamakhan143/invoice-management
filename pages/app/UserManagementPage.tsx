@@ -4,6 +4,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useNavigate } from "react-router-dom";
 import { db, auth as firebaseAuth, Timestamp } from "../../services/firebase";
+import firebase from "firebase/compat/app";
 import { ActivityLogger } from "../../services/activityLogger";
 import { TokenService, type UserToken } from "../../services/tokenService";
 import {
@@ -652,6 +653,41 @@ const UserManagementPage: React.FC = () => {
     }
   };
 
+  const handleResetUserScreenPin = async (member: CompanyUser) => {
+    if (!isOwner || !user || !userProfile) return;
+    if (member.role === "owner") return;
+    if (member.uid === user.uid) return;
+    const confirmed = window.confirm(
+      `Reset screen / revenue PIN for ${member.displayName}? They can set a new PIN from their profile.`,
+    );
+    if (!confirmed) return;
+    try {
+      await db
+        .collection("users")
+        .doc(member.uid)
+        .update({
+          screenPinHash: firebase.firestore.FieldValue.delete(),
+          updatedAt: new Date(),
+        });
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "user_updated",
+        `Reset screen PIN for ${member.displayName} (${member.email})`,
+        {
+          entityId: member.uid,
+          entityType: "user",
+          newValue: { screenPinReset: true },
+        },
+      );
+      alert("PIN reset. The user can set a new PIN in Profile.");
+      await loadUsers();
+    } catch (err: any) {
+      console.error(err);
+      alert("Could not reset PIN: " + (err?.message || "Unknown error"));
+    }
+  };
+
   const handleDirectLogin = async (targetUser: CompanyUser) => {
     try {
 
@@ -901,6 +937,7 @@ const UserManagementPage: React.FC = () => {
           companyId: userData.companyId,
           isActive: targetUser.isActive,
           isOwner: userData.isOwner,
+          screenPinHash: userData.screenPinHash,
           tempPassword: decryptedPassword // Store decrypted password for impersonation
         },
         createdAt: Timestamp.now(),
@@ -1357,6 +1394,30 @@ const UserManagementPage: React.FC = () => {
                             </svg>
                           </button>
                         )}
+                        {isOwner &&
+                          member.role !== "owner" &&
+                          member.uid !== user?.uid && (
+                            <button
+                              onClick={() => void handleResetUserScreenPin(member)}
+                              className="inline-flex items-center justify-center w-8 h-8 text-amber-800 bg-amber-100 border border-amber-300 rounded-md hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:bg-amber-900 dark:text-amber-100 dark:border-amber-700 dark:hover:bg-amber-800"
+                              title="Reset screen / revenue PIN"
+                              aria-label={`Reset screen PIN for ${member.displayName}`}
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                                />
+                              </svg>
+                            </button>
+                          )}
                         {canEditUser() &&
                           member.role !== "owner" && (
                             <button

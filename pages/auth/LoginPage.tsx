@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { auth, db } from "../../services/firebase";
 import { TokenService } from "../../services/tokenService";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { BRAND_LOGO_ALT, BRAND_LOGO_DARK } from "../../config/brand";
 
 const LoginPage: React.FC = () => {
   usePageTitle("Login");
@@ -122,12 +123,24 @@ const LoginPage: React.FC = () => {
   }, [resetCooldownSeconds]);
 
   return (
-    <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md dark:bg-gray-800">
-      <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white">
-        {isResetMode ? "Reset your password" : "Log in to your account"}
-      </h1>
+    <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none">
+      <header className="mb-8 flex flex-col items-center text-center">
+        <img
+          src={BRAND_LOGO_DARK}
+          alt={BRAND_LOGO_ALT}
+          className="h-9 w-auto max-w-[200px] object-contain"
+        />
+        <h1 className="sr-only">
+          {isResetMode ? "Reset password" : "Sign in"}
+        </h1>
+        <p className="mt-4 max-w-[280px] text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+          {isResetMode
+            ? "Enter your email and we’ll send a link to reset your password."
+            : "Sign in with your work email to open your dashboard."}
+        </p>
+      </header>
       <form
-        className="space-y-6"
+        className="space-y-5"
         onSubmit={(e) => {
           if (isResetMode) {
             e.preventDefault();

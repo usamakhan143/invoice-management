@@ -159,9 +159,9 @@ const InvoiceVerificationSection: React.FC = () => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-white">
-          Invoice Authentication Verification
+      <div className="mb-6 flex flex-col gap-2 border-b border-gray-100 pb-4 dark:border-gray-700/80 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-base font-semibold tracking-tight text-gray-900 dark:text-white sm:text-lg">
+          Invoice authentication verification
         </h2>
         <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
           <svg
