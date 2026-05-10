@@ -336,32 +336,38 @@ export class ProductService {
     const companyId = resolveCompanyIdForUser(user, userProfile);
 
     try {
-      let productsData: Product[] = [];
-
-      if (isOwner || isAdmin || useCompanyCatalog) {
-        if (!companyId) {
-          return [];
-        }
-        const snapshot = await db
-          .collection("products")
-          .where("companyId", "==", companyId)
-          .get();
-
-        productsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Product[];
-      } else {
-        const snapshot = await db
-          .collection("products")
-          .where("createdById", "==", user.uid)
-          .get();
-
-        productsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Product[];
+      if (!companyId) {
+        return [];
       }
+
+      const snapshot = await db
+        .collection("products")
+        .where("companyId", "==", companyId)
+        .get();
+
+      let productsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Product[];
+
+      const companyCatalog =
+        isOwner || isAdmin || useCompanyCatalog;
+
+      // Team members without full catalog access: own products + owner-created catalog only
+      if (!companyCatalog) {
+        const ownerUid = companyId;
+        const uid = (user.uid || "").trim();
+        productsData = productsData.filter((p) => {
+          const createdBy = (p.createdById || "").trim();
+          return createdBy === uid || createdBy === ownerUid;
+        });
+      }
+
+      productsData.sort((a, b) => {
+        const aT = a.createdAt?.toMillis?.() ?? 0;
+        const bT = b.createdAt?.toMillis?.() ?? 0;
+        return bT - aT;
+      });
 
       return productsData;
     } catch (error) {

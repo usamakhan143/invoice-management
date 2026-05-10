@@ -78,7 +78,7 @@ export class CustomerService {
         console.log("🔄 Firebase offline, using cached data for customers");
       }
 
-      if ((isOwner || isAdmin) && !companyId) {
+      if (!companyId) {
         return [];
       }
 
@@ -90,6 +90,7 @@ export class CustomerService {
               .orderBy("createdAt", "desc")
           : db
               .collection("customers")
+              .where("companyId", "==", companyId)
               .where("createdById", "==", user.uid)
               .orderBy("createdAt", "desc");
 
@@ -129,20 +130,19 @@ export class CustomerService {
 
     // Build Firestore query based on user role
     let query;
+    if (!companyId) {
+      callback([]);
+      return () => {};
+    }
     if (isOwner || isAdmin) {
-      if (!companyId) {
-        callback([]);
-        return () => {};
-      }
-      // Admin sees all company customers
       query = db
         .collection("customers")
         .where("companyId", "==", companyId)
         .orderBy("createdAt", "desc");
     } else {
-      // Regular user sees their own customers
       query = db
         .collection("customers")
+        .where("companyId", "==", companyId)
         .where("createdById", "==", user.uid)
         .orderBy("createdAt", "desc");
     }

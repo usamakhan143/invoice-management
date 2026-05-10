@@ -9,6 +9,7 @@ import { usePermissionRefresh } from "../../hooks/usePermissionRefresh";
 import { db } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
+import { BankAccountService } from "../../services/bankAccountService";
 import type { Invoice, Customer, BankAccount, Expense, Lead, CompanyUser } from "../../types";
 import { LeadService } from "../../services/leadService";
 import Spinner from "../../components/Spinner";
@@ -207,9 +208,6 @@ const DashboardPage: React.FC = () => {
     // Set up real-time permission listeners
     setupRealTimeListeners();
 
-    // Determine company ID for data loading
-    const companyId = userProfile?.isOwner ? user.uid : userProfile?.companyId;
-
     // Failsafe: Stop loading after 10 seconds
     const timeoutId = setTimeout(() => {
       setLoading(false);
@@ -252,23 +250,13 @@ const DashboardPage: React.FC = () => {
       setCustomers([]);
     }
 
-    // Set up real-time listener for bank accounts
     try {
-      const bankAccountsQuery = db
-        .collection("bankAccounts")
-        .where("userId", "==", companyId || user.uid);
-      
-      const bankAccountsUnsubscribe = bankAccountsQuery.onSnapshot(
-        (snapshot) => {
-          const bankAccountsData = snapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-          );
+      const bankAccountsUnsubscribe = BankAccountService.subscribeBankAccountsForCompany(
+        user,
+        userProfile,
+        (bankAccountsData) => {
           setBankAccounts(bankAccountsData);
         },
-        (error) => {
-          console.error("Error in bank accounts real-time listener:", error);
-          setBankAccounts([]);
-        }
       );
       unsubscribers.push(bankAccountsUnsubscribe);
     } catch (error) {

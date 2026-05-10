@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import firebase from "firebase/compat/app";
 import { db, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
+import { BankAccountService } from "../../services/bankAccountService";
 import type { Expense, BankAccount } from "../../types";
 import Spinner from "../../components/Spinner";
 
@@ -125,27 +126,13 @@ const ExpensesPage: React.FC = () => {
         },
       );
 
-    // Set up real-time listener for bank accounts
-    const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-    const bankAccountsUnsubscribe = db
-      .collection("bankAccounts")
-      .where("userId", "==", companyId || user.uid)
-      .onSnapshot(
-        (snapshot) => {
-          try {
-            const bankAccountsData = snapshot.docs.map(
-              (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-            );
-            setBankAccounts(bankAccountsData);
-          } catch (error) {
-            console.error("Error processing bank accounts snapshot:", error);
-            setBankAccounts([]);
-          }
-        },
-        (error) => {
-          console.error("Error in bank accounts real-time listener:", error);
-        },
-      );
+    const bankAccountsUnsubscribe = BankAccountService.subscribeBankAccountsForCompany(
+      user,
+      userProfile,
+      (bankAccountsData) => {
+        setBankAccounts(bankAccountsData);
+      },
+    );
 
     // Load exchange rates once
     loadExchangeRates();

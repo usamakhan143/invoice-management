@@ -147,20 +147,19 @@ export class InvoiceService {
 
     // Build Firestore query based on user role
     let query;
+    if (!companyId) {
+      callback([]);
+      return () => {};
+    }
     if (isOwner || isAdmin) {
-      if (!companyId) {
-        callback([]);
-        return () => {};
-      }
-      // Admin sees all company invoices
       query = db
         .collection("invoices")
         .where("companyId", "==", companyId)
         .orderBy("issueDate", "desc");
     } else {
-      // Regular user sees their own invoices
       query = db
         .collection("invoices")
+        .where("companyId", "==", companyId)
         .where("createdById", "==", user.uid)
         .orderBy("issueDate", "desc");
     }
@@ -215,7 +214,7 @@ export class InvoiceService {
         console.log("🔄 Firebase offline, using cached data for invoices");
       }
 
-      if ((isOwner || isAdmin) && !companyId) {
+      if (!companyId) {
         return [];
       }
 
@@ -227,6 +226,7 @@ export class InvoiceService {
               .orderBy("issueDate", "desc")
           : db
               .collection("invoices")
+              .where("companyId", "==", companyId)
               .where("createdById", "==", user.uid)
               .orderBy("issueDate", "desc");
 

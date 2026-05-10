@@ -9,10 +9,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
 import { usePermissions } from "../../hooks/usePermissions";
-import { db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
+import { BankAccountService } from "../../services/bankAccountService";
 import type { Invoice } from "../../types";
 import Spinner from "../../components/Spinner";
 import PDFDownloadWrapper from "../../components/PDFDownloadWrapper";
@@ -137,19 +137,11 @@ const InvoicesListPage: React.FC = () => {
           setCustomers([]);
         }
 
-        // Load bank accounts safely
         try {
-          const companyId = userProfile?.isOwner
-            ? user.uid
-            : userProfile?.companyId;
-          const bankAccountsSnapshot = await db
-            .collection("bankAccounts")
-            .where("userId", "==", companyId || user.uid)
-            .get();
-          const fetchedBankAccounts = bankAccountsSnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
+          const fetchedBankAccounts = await BankAccountService.getBankAccountsForCompany(
+            user,
+            userProfile,
+          );
           setBankAccounts(fetchedBankAccounts);
         } catch (bankError) {
           console.error("Error loading bank accounts:", bankError);

@@ -215,9 +215,15 @@ export class DatabaseMigrationService {
       data.products = toRows(
         await this.queryAllByField("products", "companyId", companyId),
       );
-      data.bankAccounts = toRows(
-        await this.queryAllByField("bankAccounts", "userId", companyId),
-      );
+      {
+        const baCo = await this.queryAllByField("bankAccounts", "companyId", companyId);
+        const baLegacy = await this.queryAllByField("bankAccounts", "userId", companyId);
+        const baMerged = new Map<string, { id: string; data: Record<string, unknown> }>();
+        for (const row of [...baCo, ...baLegacy]) {
+          baMerged.set(row.id, row);
+        }
+        data.bankAccounts = toRows(Array.from(baMerged.values()));
+      }
       data.expenses = toRows(
         await this.queryAllByField("expenses", "userId", companyId),
       );

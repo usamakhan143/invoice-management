@@ -6,6 +6,7 @@ import { db, FieldValue, Timestamp } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
 import { ProductService } from "../../services/productService";
+import { BankAccountService } from "../../services/bankAccountService";
 import type {
   Invoice,
   InvoiceItem,
@@ -25,6 +26,7 @@ const InvoiceFormPage: React.FC = () => {
     canEditInvoice,
     canCreateInvoiceFromLead,
     canMarkInvoicePaid,
+    isOwner,
     isAdmin,
     canUseCompanyProductCatalog,
   } = usePermissions();
@@ -112,40 +114,30 @@ const InvoiceFormPage: React.FC = () => {
     if (!user || !userProfile) return;
     setLoading(true);
     try {
-      // Determine company ID for accessing company-wide data
-      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-
       // Load customers using centralized service
       const customersData = await CustomerService.getCustomers(
         user,
         userProfile,
-        userProfile?.isOwner || false,
-        userProfile?.role === "admin" || false,
+        isOwner,
+        isAdmin,
       );
       setCustomers(customersData);
 
-      // Load products using ProductService
+      // Load products: full company catalog for owner/catalog permission; else own + owner-created
       const productsData = await ProductService.getProductsForInvoice(
         user,
         userProfile,
-        userProfile?.isOwner || false,
+        isOwner,
         isAdmin,
         useCompanyCatalog,
       );
 
       setProducts(productsData);
 
-      // Load bank accounts: company bank accounts for authorized users
-      let bankAccountsData: BankAccount[] = [];
-      if (companyId) {
-        const bankAccountsSnap = await db
-          .collection("bankAccounts")
-          .where("userId", "==", companyId)
-          .get();
-        bankAccountsData = bankAccountsSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as BankAccount,
-        );
-      }
+      const bankAccountsData = await BankAccountService.getBankAccountsForCompany(
+        user,
+        userProfile,
+      );
       setBankAccounts(bankAccountsData);
 
       if (id) {
@@ -175,7 +167,7 @@ const InvoiceFormPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, id, userProfile, isAdmin, useCompanyCatalog]);
+  }, [user, id, userProfile, isOwner, isAdmin, useCompanyCatalog]);
 
   useEffect(() => {
     fetchInitialData();

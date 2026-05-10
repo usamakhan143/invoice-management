@@ -147,7 +147,10 @@ export interface Invoice {
 
 export interface BankAccount {
   id: string;
+  /** Creator uid (who added the row). Company-wide reads use `companyId`. */
   userId: string;
+  /** Owner uid for the company — same as invoices/customers `companyId`. Required on new writes. */
+  companyId?: string;
   accountName: string;
   bankName: string;
   /** Optional label for invoices: customers and invoice creators see this instead of the real bank name. */

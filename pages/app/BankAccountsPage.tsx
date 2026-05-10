@@ -4,6 +4,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PAGES } from "../../config/permissions";
 import { db, Timestamp } from "../../services/firebase";
+import { BankAccountService } from "../../services/bankAccountService";
 import type { BankAccount } from "../../types";
 import Spinner from "../../components/Spinner";
 import { getInvoiceBankDisplayName } from "../../utils/bankAccountDisplay";
@@ -13,7 +14,7 @@ const currencies = ["USD", "PKR", "EUR"];
 
 const BankAccountsPage: React.FC = () => {
   usePageTitle("Bank Accounts");
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const { canCreate, canEdit, canDelete, hasPageAccess } = usePermissions();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,28 +31,14 @@ const BankAccountsPage: React.FC = () => {
   const [error, setError] = useState("");
 
   const loadBankAccounts = async () => {
-    if (!user) return;
-    
+    if (!user || !userProfile) return;
+
     setLoading(true);
     try {
-      // Change from onSnapshot to get() to avoid index issues
-      const snapshot = await db
-        .collection("bankAccounts")
-        .where("userId", "==", user.uid)
-        .get(); // Removed .orderBy("createdAt", "desc") to avoid index requirement
-
-      const accounts = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as BankAccount[];
-
-      // Sort manually to avoid Firestore index requirement
-      accounts.sort((a, b) => {
-        const aTime = a.createdAt?.toDate?.() || new Date();
-        const bTime = b.createdAt?.toDate?.() || new Date();
-        return bTime.getTime() - aTime.getTime();
-      });
-
+      const accounts = await BankAccountService.getBankAccountsForCompany(
+        user,
+        userProfile,
+      );
       setBankAccounts(accounts);
       setLoading(false);
     } catch (error) {
@@ -63,7 +50,7 @@ const BankAccountsPage: React.FC = () => {
 
   useEffect(() => {
     loadBankAccounts();
-  }, [user]);
+  }, [user, userProfile]);
 
   const resetForm = () => {
     setForm({
@@ -87,7 +74,12 @@ const BankAccountsPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !userProfile) return;
+    const companyIdRoot = BankAccountService.resolveBankCompanyId(user, userProfile);
+    if (!companyIdRoot) {
+      setError("Company is still loading. Try again in a moment.");
+      return;
+    }
     if (
       !form.accountName ||
       !form.bankName ||
@@ -106,6 +98,7 @@ const BankAccountsPage: React.FC = () => {
         : 0;
       const bankAccountData = {
         userId: user.uid,
+        companyId: companyIdRoot,
         accountName: form.accountName,
         bankName: form.bankName,
         invoiceDisplayBankName: form.invoiceDisplayBankName.trim(),

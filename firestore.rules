@@ -151,10 +151,29 @@ service cloud.firestore {
                            (canAccessCompanyData(resource.data.companyId) || isAdmin());
     }
 
-    // Bank accounts collection
+    // Bank accounts — company-scoped (`companyId`). Rows may also have `userId` (creator or legacy owner key).
+    // Reads must allow EITHER companyId OR userId company membership so list queries stay valid even when
+    // both fields exist but `companyId` was wrong during migration (otherwise `where userId == ownerUid` fails).
     match /bankAccounts/{accountId} {
-      // Allow read/write if user owns the account or is admin
-      allow read, write: if canAccessUserData(resource.data.userId);
+      function bankUserIdPresent() {
+        return resource.data.userId != null && resource.data.userId != '';
+      }
+      function bankReadOk() {
+        return isAuthenticated() && (
+          isAdmin() ||
+          canAccessCompanyData(resource.data.companyId) ||
+          (bankUserIdPresent() && canAccessCompanyData(resource.data.userId)) ||
+          resource.data.userId == request.auth.uid
+        );
+      }
+      allow get, list: if bankReadOk();
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        (request.resource.data.companyId != null &&
+          request.resource.data.companyId != '' &&
+          canAccessCompanyData(request.resource.data.companyId))
+      );
+      allow update, delete: if bankReadOk();
     }
 
     // Expenses collection

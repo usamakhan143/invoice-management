@@ -158,33 +158,36 @@ export const connectToFirebase = async (
     return false;
 };
 
-// Enable offline persistence with comprehensive error handling
-export const enableOfflineSupport = async () => {
-    console.log('💾 Attempting to enable Firebase offline persistence...');
+// Single-flight persistence init (React Strict Mode mounts effects twice in dev).
+let persistencePromise: Promise<boolean> | null = null;
 
-    try {
-        // Check if persistence is already enabled
-        const settings = db._settings;
-        if (settings && settings.persistence) {
-            console.log('✅ Firebase persistence already enabled');
+export const enableOfflineSupport = async (): Promise<boolean> => {
+    if (persistencePromise) return persistencePromise;
+
+    persistencePromise = (async () => {
+        if (import.meta.env.DEV) {
+            console.log('💾 Enabling Firebase offline persistence…');
+        }
+        try {
+            await db.enablePersistence({
+                synchronizeTabs: true,
+                experimentalTabSynchronization: true,
+            });
             return true;
+        } catch (err: unknown) {
+            const code =
+                typeof err === 'object' && err !== null && 'code' in err
+                    ? String((err as { code?: string }).code)
+                    : '';
+            // failed-precondition: another tab / unsupported; unimplemented: browser; invalid-state: already enabled
+            if (import.meta.env.DEV && code && !['failed-precondition', 'unimplemented', 'invalid-state'].includes(code)) {
+                console.warn('[Firebase] enablePersistence:', err);
+            }
+            return false;
         }
+    })();
 
-        await db.enablePersistence({
-            synchronizeTabs: true,
-            experimentalTabSynchronization: true
-        });
-        return true;
-    } catch (err: any) {
-
-        if (err.code === 'failed-precondition') {
-        } else if (err.code === 'unimplemented') {
-        } else if (err.code === 'invalid-state') {
-        } else {
-        }
-
-        return false;
-    }
+    return persistencePromise;
 };
 
 export const FieldValue = firebase.firestore.FieldValue
