@@ -48,6 +48,37 @@ service cloud.firestore {
              (request.auth.uid == userId || isAdmin());
     }
 
+    function userGranularPermissions() {
+      return userDocExists() ?
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('granularPermissions', []) :
+        [];
+    }
+
+    function hasExpenseCompanyManagePerm() {
+      return userGranularPermissions().hasAny(['expenses_company_manage']);
+    }
+
+    function isOwnerUser() {
+      return userDocExists() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isOwner == true;
+    }
+
+    function expenseCreatorCompanyId(data) {
+      return exists(/databases/$(database)/documents/users/$(data.userId)) ?
+        get(/databases/$(database)/documents/users/$(data.userId)).data.get('companyId', '') :
+        '';
+    }
+
+    /** Read expense doc: own row, company scope with companyId, or legacy team rows for owner/delegate */
+    function expenseDataReadOk(data) {
+      return data.userId == request.auth.uid
+        || (data.companyId != null && data.companyId is string && data.companyId.size() > 0
+            && canAccessCompanyData(data.companyId)
+            && (isOwnerUser() || hasExpenseCompanyManagePerm()))
+        || (isOwnerUser() && expenseCreatorCompanyId(data) == request.auth.uid)
+        || (hasExpenseCompanyManagePerm() && expenseCreatorCompanyId(data) == currentUserCompanyId());
+    }
+
     // Users collection
     match /users/{userId} {
       // Allow read if user is reading their own data or is authenticated (simplified)
@@ -176,10 +207,66 @@ service cloud.firestore {
       allow update, delete: if bankReadOk();
     }
 
-    // Expenses collection
+    // Internal bank-to-bank transfers — company-scoped; immutable after create
+    match /bankTransfers/{transferId} {
+      allow get, list: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+      allow create: if isAuthenticated() &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId) &&
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Expenses collection — own rows, or company scope (owner / expenses_company_manage)
     match /expenses/{expenseId} {
-      // Allow read/write if user owns the expense or is admin
-      allow read, write: if canAccessUserData(resource.data.userId);
+      allow get, list: if expenseDataReadOk(resource.data);
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId);
+      allow update: if isAuthenticated() &&
+        request.resource.data.userId == resource.data.userId &&
+        expenseDataReadOk(resource.data);
+      allow delete: if expenseDataReadOk(resource.data);
+    }
+
+    // Payee directory (`vendors` collection) — company-scoped; app enforces expense permissions
+    match /vendors/{vendorId} {
+      allow get, list: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+      allow create: if isAuthenticated() &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0;
+      allow update, delete: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+    }
+
+    // Expense categories — company-scoped (same access pattern as vendors)
+    match /expenseCategories/{categoryId} {
+      allow get, list: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+      allow create: if isAuthenticated() &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0;
+      allow update, delete: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+    }
+
+    // One-time marker per company: default expense categories seeded (client-initiated)
+    match /expenseCategoryInit/{companyId} {
+      allow get, list: if isAuthenticated() &&
+        canAccessCompanyData(companyId);
+      allow create, update, delete: if isAuthenticated() &&
+        canAccessCompanyData(companyId);
     }
 
     // Leads (CRM) — company boundary matches customers/invoices; granular permissions enforced in the app.

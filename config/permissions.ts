@@ -91,10 +91,20 @@ export const GRANULAR_PERMISSIONS = {
 
   // Expenses Page Permissions
   EXPENSES_VIEW: "expenses_view",
+  /** View/edit/delete all company expenses (same scope as owner for expenses module) */
+  EXPENSES_COMPANY_MANAGE: "expenses_company_manage",
   EXPENSES_CREATE: "expenses_create",
   EXPENSES_EDIT: "expenses_edit",
   EXPENSES_DELETE: "expenses_delete",
   EXPENSES_BULK_DELETE: "expenses_bulk_delete",
+  /** Access the Payees tab (saved payee directory) on the Expenses page */
+  EXPENSES_PAYEES_VIEW: "expenses_payees_view",
+  /** Add, edit, and delete saved payees (vendor directory). Legacy: also allowed with expense create/edit/delete. */
+  EXPENSES_PAYEES_MANAGE: "expenses_payees_manage",
+  /** Access the Categories tab on the Expenses page */
+  EXPENSES_CATEGORIES_VIEW: "expenses_categories_view",
+  /** Add, edit, and delete expense categories (including rename on existing expenses). Legacy: also allowed with expense create/edit/delete. */
+  EXPENSES_CATEGORIES_MANAGE: "expenses_categories_manage",
 
   // Company Activity Section (Admin only)
   COMPANY_ACTIVITY_VIEW: "company_activity_view",
@@ -247,11 +257,21 @@ export const PERMISSION_DESCRIPTIONS = {
 
   // Expenses
   [GRANULAR_PERMISSIONS.EXPENSES_VIEW]: "Access expenses page and view expense list",
+  [GRANULAR_PERMISSIONS.EXPENSES_COMPANY_MANAGE]:
+    "View and manage all company expenses (any team member’s entries), same as owner for this module",
   [GRANULAR_PERMISSIONS.EXPENSES_CREATE]: "Show 'Add Expense' button",
   [GRANULAR_PERMISSIONS.EXPENSES_EDIT]: "Edit expenses",
   [GRANULAR_PERMISSIONS.EXPENSES_DELETE]: "Delete expenses",
   [GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE]:
     "Delete multiple expenses at once from the expenses list",
+  [GRANULAR_PERMISSIONS.EXPENSES_PAYEES_VIEW]:
+    "Access the Payees tab and view the saved payee directory",
+  [GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE]:
+    "Add, edit, and delete saved payees (also covered by expense create/edit/delete if those are enabled)",
+  [GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_VIEW]:
+    "Access the Categories tab and view expense categories",
+  [GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE]:
+    "Add, edit, and delete expense categories, including renaming a category on existing expenses (also covered by expense create/edit/delete if those are enabled)",
 
   // Company Activity
   [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
@@ -381,10 +401,15 @@ export const PERMISSION_GROUPS = {
   ],
   [PERMISSION_CATEGORIES.EXPENSES]: [
     GRANULAR_PERMISSIONS.EXPENSES_VIEW,
+    GRANULAR_PERMISSIONS.EXPENSES_COMPANY_MANAGE,
     GRANULAR_PERMISSIONS.EXPENSES_CREATE,
     GRANULAR_PERMISSIONS.EXPENSES_EDIT,
     GRANULAR_PERMISSIONS.EXPENSES_DELETE,
     GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE,
+    GRANULAR_PERMISSIONS.EXPENSES_PAYEES_VIEW,
+    GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE,
+    GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_VIEW,
+    GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE,
   ],
   [PERMISSION_CATEGORIES.COMPANY_ACTIVITY]: [
     GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,

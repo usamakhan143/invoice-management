@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import DashboardCard, { DashboardMiniStat } from "../../components/DashboardCard";
 import { useScreenLock } from "../../contexts/ScreenLockContext";
@@ -21,6 +21,57 @@ import type { Invoice, Customer, BankAccount, Expense, Lead, CompanyUser } from 
 import { LeadService } from "../../services/leadService";
 import Spinner from "../../components/Spinner";
 import InvoiceVerificationSection from "../../components/InvoiceVerificationSection";
+import { GRANULAR_PERMISSIONS } from "../../config/permissions";
+import {
+  backfillExpenseCompanyIdsIfNeeded,
+  getExpenseCompanyId,
+} from "../../utils/expenseCompanyScope";
+import { verifyScreenPin } from "../../utils/screenPin";
+
+const BANK_BAL_AUTO_HIDE_MS = 60_000;
+
+function DashboardBankEyeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+      />
+    </svg>
+  );
+}
+
+function DashboardBankEyeSlashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+      />
+    </svg>
+  );
+}
 
 const DashboardPage: React.FC = () => {
   usePageTitle("Dashboard");
@@ -58,13 +109,27 @@ const DashboardPage: React.FC = () => {
     leadsListViewAll,
     canAssignLeads,
     isOwner,
-    isAdmin
+    isAdmin,
   } = usePermissions();
   const { refreshPermissions, setupRealTimeListeners } = usePermissionRefresh();
   
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [showBankBalances, setShowBankBalances] = useState(false);
+  const [bankBalPinModalOpen, setBankBalPinModalOpen] = useState(false);
+  const [bankBalPin, setBankBalPin] = useState("");
+  const [bankBalPinBusy, setBankBalPinBusy] = useState(false);
+  const [bankBalPinError, setBankBalPinError] = useState<string | null>(null);
+  const [bankBalPinShake, setBankBalPinShake] = useState(0);
+  const [bankBalanceToast, setBankBalanceToast] = useState<string | null>(null);
+  const bankBalanceAutoHideTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const bankBalanceToastTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const bankBalPinInputRef = useRef<HTMLInputElement>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
@@ -84,6 +149,109 @@ const DashboardPage: React.FC = () => {
         "1",
     );
   }, [user?.uid]);
+
+  const clearBankBalanceAutoHideTimer = useCallback(() => {
+    if (bankBalanceAutoHideTimerRef.current) {
+      clearTimeout(bankBalanceAutoHideTimerRef.current);
+      bankBalanceAutoHideTimerRef.current = null;
+    }
+  }, []);
+
+  const flashBankBalanceToast = useCallback(
+    (message: string, durationMs = 4000) => {
+      if (bankBalanceToastTimerRef.current) {
+        clearTimeout(bankBalanceToastTimerRef.current);
+        bankBalanceToastTimerRef.current = null;
+      }
+      setBankBalanceToast(message);
+      bankBalanceToastTimerRef.current = setTimeout(() => {
+        setBankBalanceToast(null);
+        bankBalanceToastTimerRef.current = null;
+      }, durationMs);
+    },
+    [],
+  );
+
+  const scheduleBankBalanceAutoHide = useCallback(() => {
+    clearBankBalanceAutoHideTimer();
+    bankBalanceAutoHideTimerRef.current = setTimeout(() => {
+      bankBalanceAutoHideTimerRef.current = null;
+      setShowBankBalances(false);
+      flashBankBalanceToast(
+        "Bank balances were hidden automatically for your privacy.",
+      );
+    }, BANK_BAL_AUTO_HIDE_MS);
+  }, [clearBankBalanceAutoHideTimer, flashBankBalanceToast]);
+
+  useEffect(() => {
+    return () => {
+      clearBankBalanceAutoHideTimer();
+      if (bankBalanceToastTimerRef.current) {
+        clearTimeout(bankBalanceToastTimerRef.current);
+        bankBalanceToastTimerRef.current = null;
+      }
+    };
+  }, [clearBankBalanceAutoHideTimer]);
+
+  useEffect(() => {
+    if (!bankBalPinModalOpen) {
+      setBankBalPin("");
+      setBankBalPinError(null);
+      setBankBalPinShake(0);
+      setBankBalPinBusy(false);
+    }
+  }, [bankBalPinModalOpen]);
+
+  useEffect(() => {
+    if (!bankBalPinModalOpen || bankBalPin.length !== 4) return;
+    if (!user?.uid || !userProfile?.screenPinHash) return;
+    let active = true;
+    setBankBalPinBusy(true);
+    setBankBalPinError(null);
+    void (async () => {
+      try {
+        const ok = await verifyScreenPin(
+          user.uid,
+          bankBalPin,
+          userProfile.screenPinHash,
+        );
+        if (!active) return;
+        if (!ok) {
+          setBankBalPinBusy(false);
+          setBankBalPinError("Incorrect PIN");
+          setBankBalPinShake((c) => c + 1);
+          setBankBalPin("");
+          return;
+        }
+        setBankBalPinBusy(false);
+        setBankBalPinModalOpen(false);
+        setBankBalPin("");
+        setBankBalPinError(null);
+        setShowBankBalances(true);
+        scheduleBankBalanceAutoHide();
+      } catch {
+        if (!active) return;
+        setBankBalPinBusy(false);
+        setBankBalPinError("Could not verify PIN. Try again.");
+        setBankBalPinShake((c) => c + 1);
+        setBankBalPin("");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [
+    bankBalPin,
+    bankBalPinModalOpen,
+    user?.uid,
+    userProfile?.screenPinHash,
+    scheduleBankBalanceAutoHide,
+  ]);
+
+  useEffect(() => {
+    if (!bankBalPinModalOpen || bankBalPinShake === 0) return;
+    bankBalPinInputRef.current?.focus();
+  }, [bankBalPinShake, bankBalPinModalOpen]);
 
   const leadsViewAll = leadsListViewAll();
   const canAssign = canAssignLeads();
@@ -288,12 +456,23 @@ const DashboardPage: React.FC = () => {
       setBankAccounts([]);
     }
 
-    // Set up real-time listener for expenses
+    // Set up real-time listener for expenses (own only vs full company for owner / delegate)
     try {
-      const expensesQuery = db
-        .collection("expenses")
-        .where("userId", "==", user.uid);
-      
+      const companyWide =
+        isOwner ||
+        (userProfile.granularPermissions?.includes(
+          GRANULAR_PERMISSIONS.EXPENSES_COMPANY_MANAGE,
+        ) ??
+          false);
+      const expenseCompanyId = getExpenseCompanyId(user, userProfile);
+      if (companyWide && expenseCompanyId) {
+        void backfillExpenseCompanyIdsIfNeeded(expenseCompanyId);
+      }
+      const expensesQuery =
+        companyWide && expenseCompanyId
+          ? db.collection("expenses").where("companyId", "==", expenseCompanyId)
+          : db.collection("expenses").where("userId", "==", user.uid);
+
       const expensesUnsubscribe = expensesQuery.onSnapshot(
         (snapshot) => {
           const expensesData = snapshot.docs.map(
@@ -304,7 +483,7 @@ const DashboardPage: React.FC = () => {
         (error) => {
           console.error("Error in expenses real-time listener:", error);
           setExpenses([]);
-        }
+        },
       );
       unsubscribers.push(expensesUnsubscribe);
     } catch (error) {
@@ -437,6 +616,21 @@ const DashboardPage: React.FC = () => {
 
   const linkPillClass =
     "inline-flex items-center rounded-lg bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:bg-primary-950/50 dark:text-primary-300 dark:hover:bg-primary-900/40";
+
+  const onBankBalanceVisibilityClick = () => {
+    if (showBankBalances) {
+      clearBankBalanceAutoHideTimer();
+      setShowBankBalances(false);
+      return;
+    }
+    if (!hasScreenPin || !userProfile?.screenPinHash) {
+      flashBankBalanceToast(
+        "Set a 4-digit screen PIN on your profile to reveal balances.",
+      );
+      return;
+    }
+    setBankBalPinModalOpen(true);
+  };
 
   const showPinSetupReminder =
     !!userProfile &&
@@ -742,7 +936,31 @@ const DashboardPage: React.FC = () => {
       )}
 
       {canViewDashboardBankAccounts() && (
-        <DashboardSection title="Bank accounts" description="Live balances across your linked accounts.">
+        <DashboardSection
+          title="Bank accounts"
+          description="Balances stay hidden until you enter your screen PIN. They hide again after one minute unless you hide them sooner."
+          headerAction={
+            bankBalances.length > 0 ? (
+              <button
+                type="button"
+                onClick={onBankBalanceVisibilityClick}
+                aria-pressed={showBankBalances}
+                aria-label={
+                  showBankBalances
+                    ? "Hide bank balances on dashboard"
+                    : "Show bank balances on dashboard (PIN required)"
+                }
+                className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-2.5 py-2.5 text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {showBankBalances ? (
+                  <DashboardBankEyeSlashIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                ) : (
+                  <DashboardBankEyeIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                )}
+              </button>
+            ) : undefined
+          }
+        >
           {bankBalances.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 py-10 text-center dark:border-gray-600 dark:bg-gray-900/20">
               <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -760,26 +978,50 @@ const DashboardPage: React.FC = () => {
               {bankBalances.map((account) => (
                 <div
                   key={account.id}
-                  className="relative overflow-hidden rounded-xl border border-gray-200/90 bg-gradient-to-b from-white to-gray-50/90 p-5 shadow-sm dark:border-gray-700/80 dark:from-gray-800 dark:to-gray-900/50"
+                  className="group flex flex-col rounded-2xl border border-gray-200/90 bg-white p-5 shadow-sm ring-1 ring-black/[0.03] transition hover:border-primary-200/80 hover:shadow-md dark:border-gray-700/90 dark:bg-gray-900/60 dark:ring-white/[0.04] dark:hover:border-primary-900/50"
                 >
-                  <div
-                    className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary-400 to-primary-600"
-                    aria-hidden
-                  />
-                  <div className="pl-3">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
-                      {account.accountName}
-                    </h3>
-                    <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                      {account.bankName} · {account.currency}
+                  <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-4 dark:border-gray-800">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <h3 className="text-[15px] font-semibold leading-snug text-gray-900 dark:text-white">
+                        {account.accountName?.trim() || "Account"}
+                      </h3>
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        Bank
+                      </p>
+                      <p className="text-sm leading-snug text-gray-600 dark:text-gray-300">
+                        {account.bankName?.trim() || "—"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 dark:bg-gray-800 dark:text-slate-200">
+                      {account.currency}
+                    </span>
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                      Current balance
                     </p>
-                    <p className="mt-4 text-xl font-bold tabular-nums tracking-tight text-emerald-600 dark:text-emerald-400">
-                      {formatCurrency(
-                        account.currentBalance || 0,
-                        account.currency,
-                        account.currencySymbol || "$",
-                      )}
-                    </p>
+                    <div
+                      className={`mt-1.5 min-h-[2.5rem] overflow-hidden rounded-lg ${
+                        showBankBalances
+                          ? ""
+                          : "select-none bg-slate-100/95 dark:bg-gray-800/95"
+                      }`}
+                    >
+                      <p
+                        className={`text-xl font-bold tabular-nums tracking-tight text-emerald-600 transition dark:text-emerald-400 ${
+                          showBankBalances
+                            ? ""
+                            : "blur-[20px] opacity-50 dark:opacity-45"
+                        }`}
+                        aria-hidden={!showBankBalances}
+                      >
+                        {formatCurrency(
+                          account.currentBalance || 0,
+                          account.currency,
+                          account.currencySymbol || "$",
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -894,6 +1136,131 @@ const DashboardPage: React.FC = () => {
           </div>
         </section>
       )}
+
+      {bankBalPinModalOpen ? (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dash-bank-pin-title"
+          aria-describedby="dash-bank-pin-desc"
+          onClick={() => setBankBalPinModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-[380px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute -inset-px rounded-[1.35rem] bg-gradient-to-br from-primary-400/35 via-slate-200/80 to-primary-600/25 opacity-90 blur-[0.5px] dark:from-primary-500/25 dark:via-slate-600/50 dark:to-primary-400/20" />
+            <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/95 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25),0_0_0_1px_rgba(0,0,0,0.04)] ring-1 ring-slate-900/5 dark:border-gray-700/80 dark:bg-gray-900/95 dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] dark:ring-white/10">
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent opacity-80 dark:via-white/20" />
+              <div className="px-7 pb-7 pt-8">
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/15 to-primary-600/10 text-primary-600 shadow-inner ring-1 ring-primary-500/20 dark:from-primary-400/20 dark:to-primary-600/10 dark:text-primary-400 dark:ring-primary-400/25">
+                  <svg
+                    className="h-7 w-7"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                </div>
+                <h2
+                  id="dash-bank-pin-title"
+                  className="text-center text-xl font-semibold tracking-tight text-slate-900 dark:text-white"
+                >
+                  Show balances
+                </h2>
+                <p
+                  id="dash-bank-pin-desc"
+                  className="mt-2 text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400"
+                >
+                  Enter your 4-digit screen PIN. Balances stay visible for one
+                  minute unless you hide them.
+                </p>
+                <div className="mt-7 space-y-3">
+                  <div
+                    key={bankBalPinShake}
+                    className={
+                      bankBalPinShake > 0
+                        ? "screen-pin-shake rounded-2xl"
+                        : "rounded-2xl"
+                    }
+                  >
+                    <label htmlFor="dash-bank-pin-input" className="sr-only">
+                      Four digit PIN
+                    </label>
+                    <input
+                      ref={bankBalPinInputRef}
+                      id="dash-bank-pin-input"
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={4}
+                      disabled={bankBalPinBusy}
+                      className={`block w-full rounded-2xl border-2 px-4 py-3.5 text-center text-2xl font-semibold tabular-nums tracking-[0.55em] text-slate-900 shadow-sm transition-colors duration-200 placeholder:text-slate-300 focus:outline-none focus:ring-4 disabled:opacity-60 dark:text-white dark:placeholder:text-slate-600 ${
+                        bankBalPinError
+                          ? "border-red-400 bg-red-50/90 ring-red-200/80 focus:border-red-500 focus:ring-red-500/25 dark:border-red-500/60 dark:bg-red-950/40 dark:ring-red-900/50 dark:focus:border-red-400 dark:focus:ring-red-500/20"
+                          : "border-slate-200/90 bg-slate-50/80 focus:border-primary-500 focus:ring-primary-500/20 dark:border-gray-600 dark:bg-gray-800/80 dark:focus:border-primary-400 dark:focus:ring-primary-400/25"
+                      }`}
+                      placeholder="••••"
+                      value={bankBalPin}
+                      onChange={(e) => {
+                        setBankBalPinError(null);
+                        setBankBalPin(
+                          e.target.value.replace(/\D/g, "").slice(0, 4),
+                        );
+                      }}
+                      autoFocus
+                      aria-invalid={!!bankBalPinError}
+                      aria-describedby={
+                        bankBalPinError ? "dash-bank-pin-err" : undefined
+                      }
+                    />
+                  </div>
+                  {bankBalPinError ? (
+                    <p
+                      id="dash-bank-pin-err"
+                      className="text-center text-sm font-medium text-red-600 dark:text-red-400"
+                      role="alert"
+                    >
+                      {bankBalPinError}
+                    </p>
+                  ) : bankBalPinBusy ? (
+                    <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+                      Verifying…
+                    </p>
+                  ) : null}
+                </div>
+                <div className="mt-6 flex justify-center border-t border-slate-100 pt-5 dark:border-gray-700/80">
+                  <button
+                    type="button"
+                    onClick={() => setBankBalPinModalOpen(false)}
+                    className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bankBalanceToast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 z-[160] max-w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl bg-gray-900 px-4 py-3 text-center text-sm leading-snug text-white shadow-lg dark:bg-gray-100 dark:text-gray-900"
+        >
+          {bankBalanceToast}
+        </div>
+      ) : null}
     </div>
   );
 };

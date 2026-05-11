@@ -17,7 +17,7 @@ import type { Invoice } from "../../types";
 import Spinner from "../../components/Spinner";
 import PDFDownloadWrapper from "../../components/PDFDownloadWrapper";
 import PaymentTrackingModal from "../../components/PaymentTrackingModal";
-import { getInvoiceBankDisplayName } from "../../utils/bankAccountDisplay";
+import { formatBankAccountListLabel } from "../../utils/bankAccountDisplay";
 
 const currencySymbols: { [key: string]: string } = {
   USD: "$",
@@ -479,7 +479,7 @@ const InvoicesListPage: React.FC = () => {
           <option value="">All Bank Accounts</option>
           {bankAccounts.map((b) => (
             <option key={b.id} value={b.id}>
-              {b.accountName} — {getInvoiceBankDisplayName(b)}
+              {formatBankAccountListLabel(b)}
             </option>
           ))}
         </select>

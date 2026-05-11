@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { useAuth } from "../hooks/useAuth";
 import {
+  screenLockLocalStorageKey,
   screenPinSessionStorageKey,
   verifyScreenPin,
 } from "../utils/screenPin";
@@ -33,7 +34,7 @@ export function ScreenLockProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, loading: authLoading } = useAuth();
   const uid = user?.uid ?? "";
   const hasScreenPin = !!(
     userProfile?.screenPinHash && userProfile.screenPinHash.length > 0
@@ -64,11 +65,16 @@ export function ScreenLockProvider({
   }, [uid, bumpGate]);
 
   const lockScreen = useCallback(() => {
-    if (!hasScreenPin) return;
+    if (!hasScreenPin || !uid) return;
     clearGate();
+    try {
+      localStorage.setItem(screenLockLocalStorageKey(uid), "1");
+    } catch {
+      /* private mode / quota */
+    }
     setIsScreenLocked(true);
     setPinError(null);
-  }, [hasScreenPin, clearGate]);
+  }, [hasScreenPin, clearGate, uid]);
 
   const openRevenuePinModal = useCallback(() => {
     if (!hasScreenPin) return;
@@ -91,6 +97,11 @@ export function ScreenLockProvider({
       }
       setPinError(null);
       setGateOpen();
+      try {
+        localStorage.removeItem(screenLockLocalStorageKey(user.uid));
+      } catch {
+        /* ignore */
+      }
       setIsScreenLocked(false);
       setRevenuePinModalOpen(false);
       return true;
@@ -99,9 +110,53 @@ export function ScreenLockProvider({
   );
 
   useEffect(() => {
-    setIsScreenLocked(false);
+    if (authLoading) return;
+
+    if (!user?.uid) {
+      setIsScreenLocked(false);
+      setRevenuePinModalOpen(false);
+      setPinError(null);
+      return;
+    }
+
+    const u = user.uid;
+
+    if (!userProfile) {
+      return;
+    }
+
+    if (!hasScreenPin) {
+      try {
+        localStorage.removeItem(screenLockLocalStorageKey(u));
+      } catch {
+        /* ignore */
+      }
+      setIsScreenLocked(false);
+      setRevenuePinModalOpen(false);
+      setPinError(null);
+      return;
+    }
+
+    try {
+      setIsScreenLocked(
+        localStorage.getItem(screenLockLocalStorageKey(u)) === "1",
+      );
+    } catch {
+      setIsScreenLocked(false);
+    }
     setRevenuePinModalOpen(false);
     setPinError(null);
+  }, [authLoading, user, userProfile, hasScreenPin]);
+
+  useEffect(() => {
+    if (!uid) return;
+    const key = screenLockLocalStorageKey(uid);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== key) return;
+      setIsScreenLocked(e.newValue === "1");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [uid]);
 
   const value = useMemo(

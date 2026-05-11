@@ -163,11 +163,73 @@ export interface BankAccount {
   createdAt: firebase.firestore.Timestamp;
   initialBalance?: number;
   currentBalance?: number;
+  /**
+   * When false, this account is hidden from the bank dropdown on new/edited invoices.
+   * Undefined defaults to true (show) for legacy documents.
+   */
+  includeInInvoicePicker?: boolean;
+}
+
+/** Internal transfer between company bank accounts (`bankTransfers` collection). */
+export interface BankTransfer {
+  id: string;
+  companyId: string;
+  userId: string;
+  fromBankAccountId: string;
+  toBankAccountId: string;
+  fromAccountName: string;
+  toAccountName: string;
+  /** Institution name at time of transfer (for history when account names collide). */
+  fromBankName?: string;
+  toBankName?: string;
+  /** Total debited from source (fee is taken from this amount, not added on top). */
+  principalAmount: number;
+  /** Amount in source currency that reaches the destination leg after fee (principalAmount - fee). */
+  netTransferAmount?: number;
+  fromCurrency: string;
+  fromCurrencySymbol: string;
+  toCurrency: string;
+  toCurrencySymbol: string;
+  /** Amount credited to destination (destination currency). */
+  amountCreditedToDestination: number;
+  /** 1 unit of source currency = this many units of destination currency; null if same currency. */
+  exchangeRate: number | null;
+  feeType: "percent" | "fixed" | "none";
+  /** Raw percent (0–100) or fixed fee amount in source currency. */
+  feeInput: number;
+  /** Fee in source currency, taken out of principalAmount before conversion. */
+  feeAmount: number;
+  expenseId?: string | null;
+  memo?: string;
+  createdAt: firebase.firestore.Timestamp;
+}
+
+/** Saved payee directory entry (Firestore collection `vendors`). */
+export interface Vendor {
+  id: string;
+  companyId: string;
+  name: string;
+  notes?: string;
+  createdAt: firebase.firestore.Timestamp;
+  updatedAt?: firebase.firestore.Timestamp;
+}
+
+/** Company-scoped expense category (Firestore collection `expenseCategories`). */
+export interface ExpenseCategory {
+  id: string;
+  companyId: string;
+  name: string;
+  notes?: string;
+  sortOrder?: number;
+  createdAt: firebase.firestore.Timestamp;
+  updatedAt?: firebase.firestore.Timestamp;
 }
 
 export interface Expense {
   id: string;
   userId: string;
+  /** Owner uid for company-wide queries (set on create / backfill). */
+  companyId?: string;
   title: string;
   description: string;
   amount: number;
@@ -178,6 +240,12 @@ export interface Expense {
   currencySymbol: string;
   date: firebase.firestore.Timestamp;
   createdAt: firebase.firestore.Timestamp;
+  /** Saved directory doc id; null/omitted for one-time payee (see vendorName) */
+  vendorId?: string | null;
+  /** Who was paid — from directory or one-time entry */
+  vendorName?: string;
+  /** One-time payee only; not linked to vendors collection */
+  oneTimeVendor?: boolean;
 }
 
 export type ActivityType =
@@ -196,9 +264,16 @@ export type ActivityType =
   | "bank_account_created"
   | "bank_account_updated"
   | "bank_account_deleted"
+  | "bank_transfer_created"
   | "expense_created"
   | "expense_updated"
   | "expense_deleted"
+  | "vendor_created"
+  | "vendor_updated"
+  | "vendor_deleted"
+  | "expense_category_created"
+  | "expense_category_updated"
+  | "expense_category_deleted"
   | "user_created"
   | "user_updated"
   | "user_deleted"

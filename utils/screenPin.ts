@@ -3,6 +3,10 @@
 export const screenPinSessionStorageKey = (uid: string): string =>
   `screen_pin_gate_${uid}`;
 
+/** Full-screen lock (sidebar) — persists across refresh & tabs until PIN unlock or logout. */
+export const screenLockLocalStorageKey = (uid: string): string =>
+  `screen_lock_active_${uid}`;
+
 export function isValidFourDigitPin(pin: string): boolean {
   return /^\d{4}$/.test(pin);
 }

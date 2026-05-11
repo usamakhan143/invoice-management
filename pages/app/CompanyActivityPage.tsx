@@ -7,6 +7,34 @@ import { db } from "../../services/firebase";
 import type { Activity, ActivityType, CompanyUser } from "../../types";
 import Spinner from "../../components/Spinner";
 
+/** Filter value stays `vendor` so it matches stored types like `vendor_created`. */
+function activityTypeFilterLabel(type: string): string {
+  if (type === "all") return "All Activities";
+  if (type === "vendor") return "Payee";
+  if (type === "expense_category") return "Expense category";
+  if (type === "bank_transfer") return "Bank transfer";
+  return type
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function formatActivityTypePill(type: ActivityType): string {
+  if (type.startsWith("vendor_")) {
+    const action = type.slice("vendor_".length);
+    const head = action.charAt(0).toUpperCase() + action.slice(1);
+    return `Payee ${head}`;
+  }
+  if (type.startsWith("expense_category_")) {
+    const action = type.slice("expense_category_".length);
+    const head = action.charAt(0).toUpperCase() + action.slice(1);
+    return `Expense category ${head}`;
+  }
+  if (type === "bank_transfer_created") {
+    return "Bank transfer";
+  }
+  return type.replace(/_/g, " ");
+}
+
 const CompanyActivityPage: React.FC = () => {
   usePageTitle("Company Activity");
   const { user, userProfile } = useAuth();
@@ -66,8 +94,9 @@ const CompanyActivityPage: React.FC = () => {
         });
       }
 
-      // Add other company users
+      // Add other company users (skip owner — already added above; owner's users doc matches companyId query)
       usersSnapshot.docs.forEach((doc) => {
+        if (doc.id === companyId) return;
         const userData = doc.data();
         companyUsers.push({
           id: doc.id,
@@ -102,9 +131,15 @@ const CompanyActivityPage: React.FC = () => {
 
     // Type filter
     if (typeFilter !== "all") {
-      filtered = filtered.filter((activity) =>
-        activity.type.includes(typeFilter),
-      );
+      filtered = filtered.filter((activity) => {
+        if (typeFilter === "expense") {
+          return (
+            activity.type.startsWith("expense_") &&
+            !activity.type.startsWith("expense_category_")
+          );
+        }
+        return activity.type.includes(typeFilter);
+      });
     }
 
     // User filter
@@ -285,7 +320,10 @@ const CompanyActivityPage: React.FC = () => {
     "customer",
     "product",
     "bank_account",
+    "bank_transfer",
     "expense",
+    "vendor",
+    "expense_category",
     "user",
     "login",
     "logout",
@@ -336,11 +374,7 @@ const CompanyActivityPage: React.FC = () => {
             >
               {activityTypes.map((type) => (
                 <option key={type} value={type}>
-                  {type === "all"
-                    ? "All Activities"
-                    : type
-                        .replace("_", " ")
-                        .replace(/\b\w/g, (l) => l.toUpperCase())}
+                  {activityTypeFilterLabel(type)}
                 </option>
               ))}
             </select>
@@ -553,7 +587,7 @@ const CompanyActivityPage: React.FC = () => {
                         </div>
                         <div className="mt-1 flex items-center space-x-2">
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
-                            {activity.type.replace("_", " ")}
+                            {formatActivityTypePill(activity.type)}
                           </span>
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             by {activity.userName}

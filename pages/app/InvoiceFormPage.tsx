@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -17,7 +17,11 @@ import type {
   PaymentRecord,
 } from "../../types";
 import Spinner from "../../components/Spinner";
-import { getInvoiceBankDisplayName } from "../../utils/bankAccountDisplay";
+import {
+  formatBankAccountListLabel,
+  getInvoiceBankDisplayName,
+  isBankIncludedInInvoicePicker,
+} from "../../utils/bankAccountDisplay";
 
 const InvoiceFormPage: React.FC = () => {
   const { user, userProfile } = useAuth();
@@ -109,6 +113,15 @@ const InvoiceFormPage: React.FC = () => {
   const calculateTotal = (items: InvoiceItem[]) => {
     return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   };
+
+  const banksForInvoicePicker = useMemo(() => {
+    const allowed = bankAccounts.filter(isBankIncludedInInvoicePicker);
+    const selId = invoiceData.bankAccountId;
+    if (!selId) return allowed;
+    if (allowed.some((b) => b.id === selId)) return allowed;
+    const selected = bankAccounts.find((b) => b.id === selId);
+    return selected ? [selected, ...allowed] : allowed;
+  }, [bankAccounts, invoiceData.bankAccountId]);
 
   const fetchInitialData = useCallback(async () => {
     if (!user || !userProfile) return;
@@ -817,10 +830,13 @@ const InvoiceFormPage: React.FC = () => {
           required
         >
           <option value="">Select a bank account</option>
-          {bankAccounts.map((b) => (
+          {banksForInvoicePicker.map((b) => (
             <option key={b.id} value={b.id}>
-              {b.accountName} — {getInvoiceBankDisplayName(b)} ({b.currency}{" "}
-              {b.currencySymbol})
+              {formatBankAccountListLabel(b)} ({b.currency} {b.currencySymbol}
+              {!isBankIncludedInInvoicePicker(b)
+                ? ", not in picker for new invoices"
+                : ""}
+              )
             </option>
           ))}
         </select>

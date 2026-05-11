@@ -151,11 +151,47 @@ export const usePermissions = () => {
 
   // Expense permissions
   const canViewExpenses = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_VIEW);
+  /** List/query/edit/delete any team member’s expenses (owner always true). */
+  const canManageCompanyExpenses = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_COMPANY_MANAGE);
   const canCreateExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CREATE);
   const canEditExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_EDIT);
   const canDeleteExpense = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_DELETE);
   const canBulkDeleteExpenses = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE);
+
+  /** Payees tab: new perms or anyone who could mutate expenses (legacy). */
+  const canViewExpensePayeesTab = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
+    (canViewExpenses() &&
+      (canCreateExpense() || canEditExpense() || canDeleteExpense()));
+
+  const canCreateExpensePayee = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
+    canCreateExpense();
+  const canEditExpensePayee = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
+    canEditExpense();
+  const canDeleteExpensePayee = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
+    canDeleteExpense();
+
+  const canViewExpenseCategoriesTab = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
+    (canViewExpenses() &&
+      (canCreateExpense() || canEditExpense() || canDeleteExpense()));
+
+  const canCreateExpenseCategory = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
+    canCreateExpense();
+  const canEditExpenseCategory = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
+    canEditExpense();
+  const canDeleteExpenseCategory = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
+    canDeleteExpense();
 
   // Company activity permissions
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
@@ -424,10 +460,19 @@ export const usePermissions = () => {
 
     // Expense permissions
     canViewExpenses,
+    canManageCompanyExpenses,
     canCreateExpense,
     canEditExpense,
     canDeleteExpense,
     canBulkDeleteExpenses,
+    canViewExpensePayeesTab,
+    canCreateExpensePayee,
+    canEditExpensePayee,
+    canDeleteExpensePayee,
+    canViewExpenseCategoriesTab,
+    canCreateExpenseCategory,
+    canEditExpenseCategory,
+    canDeleteExpenseCategory,
 
     // Company activity permissions
     canViewCompanyActivity,

@@ -7,8 +7,22 @@ import firebase from "firebase/compat/app";
 import { db, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { BankAccountService } from "../../services/bankAccountService";
-import type { Expense, BankAccount } from "../../types";
+import { subscribeCompanyVendors } from "../../services/vendorService";
+import {
+  renameCategoryOnExpenses,
+  subscribeCompanyExpenseCategories,
+} from "../../services/expenseCategoryService";
+import type { Expense, BankAccount, Vendor, ExpenseCategory } from "../../types";
 import Spinner from "../../components/Spinner";
+import { GRANULAR_PERMISSIONS } from "../../config/permissions";
+import {
+  backfillExpenseCompanyIdsIfNeeded,
+  getExpenseCompanyId,
+} from "../../utils/expenseCompanyScope";
+import { formatBankAccountListLabel } from "../../utils/bankAccountDisplay";
+
+/** Expense form: directory payee or one-time payee (this sentinel value). */
+const OTHER_PAYEE_VALUE = "__other__";
 
 const ExpensesPage: React.FC = () => {
   usePageTitle("Expenses");
@@ -19,11 +33,45 @@ const ExpensesPage: React.FC = () => {
     canEditExpense,
     canDeleteExpense,
     canBulkDeleteExpenses,
+    canManageCompanyExpenses,
+    canViewExpensePayeesTab,
+    canCreateExpensePayee,
+    canEditExpensePayee,
+    canDeleteExpensePayee,
+    canViewExpenseCategoriesTab,
+    canCreateExpenseCategory,
+    canEditExpenseCategory,
+    canDeleteExpenseCategory,
+    isOwner,
   } = usePermissions();
   const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(
+    [],
+  );
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<
+    "expenses" | "vendors" | "categories"
+  >("expenses");
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [vendorSaving, setVendorSaving] = useState(false);
+  const [vendorForm, setVendorForm] = useState<{
+    id?: string;
+    name: string;
+    notes: string;
+  }>({ name: "", notes: "" });
+  const [vendorFormChoice, setVendorFormChoice] = useState("");
+  const [oneTimeVendorName, setOneTimeVendorName] = useState("");
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryForm, setCategoryForm] = useState<{
+    id?: string;
+    name: string;
+    notes: string;
+    previousName?: string;
+  }>({ name: "", notes: "" });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentExpense, setCurrentExpense] = useState<Partial<Expense> | null>(
     null,
@@ -43,21 +91,6 @@ const ExpensesPage: React.FC = () => {
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
   const [bulkDeletingExpenses, setBulkDeletingExpenses] = useState(false);
   const selectAllExpensesRef = useRef<HTMLInputElement>(null);
-
-  const expenseCategories = [
-    "Office Supplies",
-    "Marketing",
-    "Travel",
-    "Utilities",
-    "Software & Tools",
-    "Equipment",
-    "Professional Services",
-    "Training & Education",
-    "Rent",
-    "Insurance",
-    "Food & Entertainment",
-    "Other",
-  ];
 
   const loadExchangeRates = async () => {
     try {
@@ -91,40 +124,63 @@ const ExpensesPage: React.FC = () => {
     }
   }, [canViewExpenses, navigate]);
 
+  const showPayeesTab = canViewExpensePayeesTab();
+  const showCategoriesTab = canViewExpenseCategoriesTab();
+
+  useEffect(() => {
+    if (activeTab === "vendors" && !showPayeesTab) setActiveTab("expenses");
+    if (activeTab === "categories" && !showCategoriesTab)
+      setActiveTab("expenses");
+  }, [activeTab, showPayeesTab, showCategoriesTab]);
+
+  const companyWideExpenseQuery =
+    isOwner ||
+    (userProfile?.granularPermissions?.includes(
+      GRANULAR_PERMISSIONS.EXPENSES_COMPANY_MANAGE,
+    ) ??
+      false);
+
+  const expenseCompanyId =
+    user && userProfile ? getExpenseCompanyId(user, userProfile) : "";
+
   useEffect(() => {
     if (!user || !userProfile) return;
 
-    // Set up real-time listener for user's expenses
-    const expensesUnsubscribe = db
-      .collection("expenses")
-      .where("userId", "==", user.uid)
-      .onSnapshot(
-        (snapshot) => {
-          try {
-            const expensesData = snapshot.docs.map(
-              (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
-            );
+    if (companyWideExpenseQuery && expenseCompanyId) {
+      void backfillExpenseCompanyIdsIfNeeded(expenseCompanyId);
+    }
 
-            // Sort manually to avoid Firestore index requirement
-            expensesData.sort((a, b) => {
-              const aTime = a.date?.toDate?.() || new Date();
-              const bTime = b.date?.toDate?.() || new Date();
-              return bTime.getTime() - aTime.getTime();
-            });
+    const expensesQuery =
+      companyWideExpenseQuery && expenseCompanyId
+        ? db.collection("expenses").where("companyId", "==", expenseCompanyId)
+        : db.collection("expenses").where("userId", "==", user.uid);
 
-            setExpenses(expensesData);
-            setLoading(false);
-          } catch (error) {
-            console.error("Error processing expenses snapshot:", error);
-            setExpenses([]);
-            setLoading(false);
-          }
-        },
-        (error) => {
-          console.error("Error in expenses real-time listener:", error);
+    const expensesUnsubscribe = expensesQuery.onSnapshot(
+      (snapshot) => {
+        try {
+          const expensesData = snapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Expense,
+          );
+
+          expensesData.sort((a, b) => {
+            const aTime = a.date?.toDate?.() || new Date();
+            const bTime = b.date?.toDate?.() || new Date();
+            return bTime.getTime() - aTime.getTime();
+          });
+
+          setExpenses(expensesData);
           setLoading(false);
-        },
-      );
+        } catch (error) {
+          console.error("Error processing expenses snapshot:", error);
+          setExpenses([]);
+          setLoading(false);
+        }
+      },
+      (error) => {
+        console.error("Error in expenses real-time listener:", error);
+        setLoading(false);
+      },
+    );
 
     const bankAccountsUnsubscribe = BankAccountService.subscribeBankAccountsForCompany(
       user,
@@ -134,14 +190,280 @@ const ExpensesPage: React.FC = () => {
       },
     );
 
-    // Load exchange rates once
     loadExchangeRates();
 
     return () => {
       expensesUnsubscribe();
       bankAccountsUnsubscribe();
     };
+  }, [user, userProfile, companyWideExpenseQuery, expenseCompanyId]);
+
+  const canEditExpenseRow = (e: Expense): boolean =>
+    canEditExpense() &&
+    (e.userId === user?.uid || canManageCompanyExpenses());
+
+  const canDeleteExpenseRow = (e: Expense): boolean =>
+    canDeleteExpense() &&
+    (e.userId === user?.uid || canManageCompanyExpenses());
+
+  useEffect(() => {
+    if (!user || !userProfile) return;
+    const cid = getExpenseCompanyId(user, userProfile);
+    if (!cid) return;
+    return subscribeCompanyVendors(cid, setVendors);
   }, [user, userProfile]);
+
+  useEffect(() => {
+    if (!user || !userProfile) return;
+    const cid = getExpenseCompanyId(user, userProfile);
+    if (!cid) return;
+    return subscribeCompanyExpenseCategories(cid, setExpenseCategories);
+  }, [user, userProfile]);
+
+  const filterCategoryOptions = useMemo(() => {
+    const fromDb = expenseCategories.map((c) => c.name);
+    const fromExpenses = [
+      ...new Set(
+        expenses
+          .map((e) => e.category)
+          .filter((c): c is string => Boolean(c && String(c).trim())),
+      ),
+    ];
+    const merged = new Set([...fromDb, ...fromExpenses]);
+    return [...merged].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [expenseCategories, expenses]);
+
+  const expenseFormCategoryNames = useMemo(() => {
+    const names = expenseCategories.map((c) => c.name);
+    const cur = (currentExpense?.category ?? "").trim();
+    if (cur && !names.includes(cur)) {
+      return [cur, ...names];
+    }
+    return names;
+  }, [expenseCategories, currentExpense?.category]);
+
+  const openVendorModal = (vendor?: Vendor) => {
+    if (vendor) {
+      setVendorForm({
+        id: vendor.id,
+        name: vendor.name,
+        notes: vendor.notes || "",
+      });
+    } else {
+      setVendorForm({ name: "", notes: "" });
+    }
+    setVendorModalOpen(true);
+  };
+
+  const closeVendorModal = () => {
+    setVendorModalOpen(false);
+    setVendorForm({ name: "", notes: "" });
+  };
+
+  const handleSaveVendor = async () => {
+    if (!user || !userProfile) return;
+    const name = vendorForm.name.trim();
+    if (!name) {
+      alert("Payee name is required");
+      return;
+    }
+    if (vendorForm.id) {
+      if (!canEditExpensePayee()) return;
+    } else if (!canCreateExpensePayee()) {
+      return;
+    }
+    const companyId = getExpenseCompanyId(user, userProfile);
+    if (!companyId) return;
+    setVendorSaving(true);
+    try {
+      if (vendorForm.id) {
+        await db.collection("vendors").doc(vendorForm.id).update({
+          name,
+          notes: vendorForm.notes.trim() || "",
+          updatedAt: Timestamp.now(),
+        });
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "vendor_updated",
+          `Updated payee: ${name}`,
+          { entityId: vendorForm.id, entityType: "payee" },
+        );
+      } else {
+        const ref = await db.collection("vendors").add({
+          companyId,
+          name,
+          notes: vendorForm.notes.trim() || "",
+          createdAt: Timestamp.now(),
+        });
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "vendor_created",
+          `Added payee: ${name}`,
+          { entityId: ref.id, entityType: "payee" },
+        );
+      }
+      closeVendorModal();
+    } catch (err) {
+      console.error(err);
+      alert("Could not save payee");
+    } finally {
+      setVendorSaving(false);
+    }
+  };
+
+  const handleDeleteVendor = async (vendor: Vendor) => {
+    if (!user || !userProfile) return;
+    if (!canDeleteExpensePayee()) return;
+    if (
+      !window.confirm(
+        `Delete payee “${vendor.name}”? Existing expenses keep their stored payee name.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await db.collection("vendors").doc(vendor.id).delete();
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "vendor_deleted",
+        `Deleted payee: ${vendor.name}`,
+        { entityId: vendor.id, entityType: "payee", oldValue: vendor },
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Could not delete payee");
+    }
+  };
+
+  const openCategoryModal = (cat?: ExpenseCategory) => {
+    if (cat) {
+      setCategoryForm({
+        id: cat.id,
+        name: cat.name,
+        notes: cat.notes || "",
+        previousName: cat.name,
+      });
+    } else {
+      setCategoryForm({ name: "", notes: "" });
+    }
+    setCategoryModalOpen(true);
+  };
+
+  const closeCategoryModal = () => {
+    setCategoryModalOpen(false);
+    setCategoryForm({ name: "", notes: "" });
+  };
+
+  const handleSaveCategory = async () => {
+    if (!user || !userProfile) return;
+    const name = categoryForm.name.trim();
+    if (!name) {
+      alert("Category name is required");
+      return;
+    }
+    const cid = getExpenseCompanyId(user, userProfile);
+    if (!cid) {
+      alert("Company not found");
+      return;
+    }
+    if (categoryForm.id) {
+      if (!canEditExpenseCategory()) return;
+    } else if (!canCreateExpenseCategory()) {
+      return;
+    }
+    const nameLower = name.toLowerCase();
+    if (
+      expenseCategories.some(
+        (c) =>
+          c.id !== categoryForm.id &&
+          c.name.trim().toLowerCase() === nameLower,
+      )
+    ) {
+      alert("A category with this name already exists");
+      return;
+    }
+
+    setCategorySaving(true);
+    try {
+      if (categoryForm.id) {
+        const prev = categoryForm.previousName ?? "";
+        await db.collection("expenseCategories").doc(categoryForm.id).update({
+          name,
+          notes: categoryForm.notes.trim() || "",
+          updatedAt: Timestamp.now(),
+        });
+        if (prev && prev !== name) {
+          await renameCategoryOnExpenses(cid, prev, name);
+        }
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "expense_category_updated",
+          prev && prev !== name
+            ? `Updated expense category: ${prev} → ${name}`
+            : `Updated expense category: ${name}`,
+          { entityId: categoryForm.id, entityType: "expense_category" },
+        );
+      } else {
+        const nextOrder =
+          expenseCategories.length === 0
+            ? 0
+            : Math.max(
+                ...expenseCategories.map((c) => Number(c.sortOrder) || 0),
+              ) + 1;
+        const ref = await db.collection("expenseCategories").add({
+          companyId: cid,
+          name,
+          notes: categoryForm.notes.trim() || "",
+          sortOrder: nextOrder,
+          createdAt: Timestamp.now(),
+        });
+        await ActivityLogger.logActivity(
+          user,
+          userProfile,
+          "expense_category_created",
+          `Added expense category: ${name}`,
+          { entityId: ref.id, entityType: "expense_category" },
+        );
+      }
+      closeCategoryModal();
+    } catch (err) {
+      console.error(err);
+      alert("Could not save category");
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleDeleteCategory = async (cat: ExpenseCategory) => {
+    if (!user || !userProfile) return;
+    if (!canDeleteExpenseCategory()) return;
+    if (
+      !window.confirm(
+        `Delete category “${cat.name}”? Expenses already filed under this name keep that label until edited.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await db.collection("expenseCategories").doc(cat.id).delete();
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "expense_category_deleted",
+        `Deleted expense category: ${cat.name}`,
+        { entityId: cat.id, entityType: "expense_category", oldValue: cat },
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Could not delete category");
+    }
+  };
 
   const getFilteredExpenses = () => {
     let filtered = expenses;
@@ -191,7 +513,10 @@ const ExpensesPage: React.FC = () => {
         (expense) =>
           expense.title.toLowerCase().includes(searchLower) ||
           expense.description.toLowerCase().includes(searchLower) ||
-          expense.category.toLowerCase().includes(searchLower),
+          (expense.category || "")
+            .toLowerCase()
+            .includes(searchLower) ||
+          (expense.vendorName || "").toLowerCase().includes(searchLower),
       );
     }
 
@@ -211,7 +536,8 @@ const ExpensesPage: React.FC = () => {
       (acc, expense) => {
         const rate = exchangeRates[expense.currency || "USD"] || 1;
         const convertedAmount = expense.amount / rate;
-        acc[expense.category] = (acc[expense.category] || 0) + convertedAmount;
+        const catKey = expense.category || "—";
+        acc[catKey] = (acc[catKey] || 0) + convertedAmount;
         return acc;
       },
       {} as Record<string, number>,
@@ -237,8 +563,19 @@ const ExpensesPage: React.FC = () => {
   };
 
   const openModal = (expense?: Expense) => {
+    setVendorFormChoice("");
+    setOneTimeVendorName("");
     if (expense) {
       setCurrentExpense(expense);
+      if (
+        expense.oneTimeVendor ||
+        (!expense.vendorId && (expense.vendorName || "").trim())
+      ) {
+        setVendorFormChoice(OTHER_PAYEE_VALUE);
+        setOneTimeVendorName(expense.vendorName || "");
+      } else if (expense.vendorId) {
+        setVendorFormChoice(expense.vendorId);
+      }
     } else {
       setCurrentExpense({
         title: "",
@@ -257,6 +594,8 @@ const ExpensesPage: React.FC = () => {
     setIsModalOpen(false);
     setCurrentExpense(null);
     setAmountError("");
+    setVendorFormChoice("");
+    setOneTimeVendorName("");
   };
 
   const validateAmount = (amount: number, bankAccountId: string) => {
@@ -319,7 +658,7 @@ const ExpensesPage: React.FC = () => {
       alert("Please enter a title");
       return;
     }
-    if (!currentExpense.category) {
+    if (!currentExpense.category?.trim()) {
       alert("Please select a category");
       return;
     }
@@ -327,8 +666,36 @@ const ExpensesPage: React.FC = () => {
       alert("Please select a bank account");
       return;
     }
+    if (!vendorFormChoice) {
+      alert("Please select a payee");
+      return;
+    }
+    if (
+      vendorFormChoice === OTHER_PAYEE_VALUE &&
+      !oneTimeVendorName.trim()
+    ) {
+      alert("Enter the one-time payee name");
+      return;
+    }
     if (!validateAmount(currentExpense.amount || 0, currentExpense.bankAccountId)) {
       return;
+    }
+
+    let resolvedVendorId: string | null = null;
+    let resolvedVendorName = "";
+    let resolvedOneTime = false;
+    if (vendorFormChoice === OTHER_PAYEE_VALUE) {
+      resolvedVendorName = oneTimeVendorName.trim();
+      resolvedOneTime = true;
+    } else {
+      const v = vendors.find((x) => x.id === vendorFormChoice);
+      if (!v) {
+        alert("Selected payee is no longer in the directory. Choose another or use one-time.");
+        return;
+      }
+      resolvedVendorId = v.id;
+      resolvedVendorName = v.name;
+      resolvedOneTime = false;
     }
 
     setIsSubmitting(true);
@@ -342,29 +709,41 @@ const ExpensesPage: React.FC = () => {
         return;
       }
 
+      const companyIdResolved = getExpenseCompanyId(user, userProfile);
+      const isUpdate = "id" in currentExpense && currentExpense.id;
+      const existing = currentExpense as Expense;
       const expenseData = {
         ...currentExpense,
-        userId: user.uid,
-        bankAccountName: selectedBank.accountName,
+        userId: isUpdate && existing.userId ? existing.userId : user.uid,
+        companyId: existing.companyId || companyIdResolved,
+        vendorId: resolvedOneTime ? null : resolvedVendorId,
+        vendorName: resolvedVendorName,
+        oneTimeVendor: resolvedOneTime,
+        bankAccountName: formatBankAccountListLabel(selectedBank),
         currency: selectedBank.currency,
         currencySymbol: selectedBank.currencySymbol,
-        createdAt: Timestamp.now(),
+        createdAt: isUpdate && existing.createdAt ? existing.createdAt : Timestamp.now(),
       };
 
-      const isUpdate = "id" in currentExpense && currentExpense.id;
-
       if (isUpdate) {
+        const { id: _omitId, ...updatePayload } = expenseData as Expense & {
+          id?: string;
+        };
+        void _omitId;
         await db
           .collection("expenses")
           .doc(currentExpense.id)
-          .update(expenseData);
+          .update(updatePayload);
 
         // Log update activity
+        const payeeNote = expenseData.vendorName
+          ? ` · Payee: ${expenseData.vendorName}`
+          : "";
         await ActivityLogger.logActivity(
           user,
           userProfile,
           "expense_updated",
-          `Updated expense: ${expenseData.title}`,
+          `Updated expense: ${expenseData.title}${payeeNote}`,
           {
             entityId: currentExpense.id,
             entityType: "expense",
@@ -372,7 +751,11 @@ const ExpensesPage: React.FC = () => {
           },
         );
       } else {
-        const docRef = await db.collection("expenses").add(expenseData);
+        const { id: _omitId2, ...createPayload } = expenseData as Expense & {
+          id?: string;
+        };
+        void _omitId2;
+        const docRef = await db.collection("expenses").add(createPayload);
 
         // Update bank account balance
         await db
@@ -386,11 +769,14 @@ const ExpensesPage: React.FC = () => {
           });
 
         // Log create activity
+        const payeeNoteCreate = expenseData.vendorName
+          ? ` · Payee: ${expenseData.vendorName}`
+          : "";
         await ActivityLogger.logActivity(
           user,
           userProfile,
           "expense_created",
-          `Created new expense: ${expenseData.title}`,
+          `Created new expense: ${expenseData.title}${payeeNoteCreate}`,
           {
             entityId: docRef.id,
             entityType: "expense",
@@ -422,11 +808,14 @@ const ExpensesPage: React.FC = () => {
         });
     }
 
+    const payeeNoteDel = expense.vendorName
+      ? ` · Payee: ${expense.vendorName}`
+      : "";
     await ActivityLogger.logActivity(
       user,
       userProfile,
       "expense_deleted",
-      `Deleted expense: ${expense.title}`,
+      `Deleted expense: ${expense.title}${payeeNoteDel}`,
       {
         entityId: expenseId,
         entityType: "expense",
@@ -511,7 +900,7 @@ const ExpensesPage: React.FC = () => {
     try {
       for (const expenseId of selectedExpenseIds) {
         const expense = expenses.find((e) => e.id === expenseId);
-        if (!expense) continue;
+        if (!expense || !canDeleteExpenseRow(expense)) continue;
         await deleteExpenseRecord(expenseId, expense);
       }
       clearExpenseSelection();
@@ -535,9 +924,20 @@ const ExpensesPage: React.FC = () => {
     <div className="p-6">
       {/* Header */}
       <div className="page-header mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
-          Expenses Management
-        </h1>
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
+            Expenses Management
+          </h1>
+          {companyWideExpenseQuery ? (
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Showing expenses for the whole company.
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Showing only expenses you recorded.
+            </p>
+          )}
+        </div>
         <div className="button-group">
           <button
             onClick={() => refreshData()}
@@ -583,6 +983,48 @@ const ExpensesPage: React.FC = () => {
         </div>
       </div>
 
+      <div className="mb-6 flex gap-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          type="button"
+          onClick={() => setActiveTab("expenses")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "expenses"
+              ? "border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-300"
+              : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+          }`}
+        >
+          Expenses
+        </button>
+        {showPayeesTab ? (
+          <button
+            type="button"
+            onClick={() => setActiveTab("vendors")}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === "vendors"
+                ? "border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-300"
+                : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            Payees
+          </button>
+        ) : null}
+        {showCategoriesTab ? (
+          <button
+            type="button"
+            onClick={() => setActiveTab("categories")}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === "categories"
+                ? "border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-300"
+                : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            Categories
+          </button>
+        ) : null}
+      </div>
+
+      {activeTab === "expenses" ? (
+      <>
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
@@ -619,7 +1061,7 @@ const ExpensesPage: React.FC = () => {
               <option value="">All Accounts</option>
               {bankAccounts.map((bank) => (
                 <option key={bank.id} value={bank.id}>
-                  {bank.accountName} ({bank.currencySymbol})
+                  {formatBankAccountListLabel(bank)} ({bank.currencySymbol})
                 </option>
               ))}
             </select>
@@ -637,7 +1079,7 @@ const ExpensesPage: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
             >
               <option value="">All Categories</option>
-              {expenseCategories.map((category) => (
+              {filterCategoryOptions.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
@@ -761,6 +1203,7 @@ const ExpensesPage: React.FC = () => {
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Title</th>
                   <th className="px-6 py-3">Category</th>
+                  <th className="px-6 py-3">Payee</th>
                   <th className="px-6 py-3">Bank Account</th>
                   <th className="px-6 py-3">Amount</th>
                   <th className="px-6 py-3">Actions</th>
@@ -798,8 +1241,18 @@ const ExpensesPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                        {expense.category}
+                        {expense.category || "—"}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-900 dark:text-white">
+                      <span className="font-medium">
+                        {expense.vendorName || "—"}
+                      </span>
+                      {expense.oneTimeVendor ? (
+                        <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
+                          (one-time)
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-6 py-4">{expense.bankAccountName}</td>
                     <td className="px-6 py-4 font-semibold text-red-600 dark:text-red-400">
@@ -807,7 +1260,7 @@ const ExpensesPage: React.FC = () => {
                       {expense.amount.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 flex space-x-2">
-                      {canEditExpense() && (
+                      {canEditExpenseRow(expense) && (
                         <button
                           onClick={() => openModal(expense)}
                           className="text-yellow-500 hover:text-yellow-700"
@@ -815,7 +1268,7 @@ const ExpensesPage: React.FC = () => {
                           Edit
                         </button>
                       )}
-                      {canDeleteExpense() && (
+                      {canDeleteExpenseRow(expense) && (
                         <button
                           onClick={() => handleDelete(expense.id, expense)}
                           className="text-red-500 hover:text-red-700"
@@ -823,7 +1276,7 @@ const ExpensesPage: React.FC = () => {
                           Delete
                         </button>
                       )}
-                      {!canEditExpense() && !canDeleteExpense() && (
+                      {!canEditExpenseRow(expense) && !canDeleteExpenseRow(expense) && (
                         <span className="text-gray-400">No actions available</span>
                       )}
                     </td>
@@ -834,6 +1287,285 @@ const ExpensesPage: React.FC = () => {
           </div>
         )}
       </div>
+      </>
+      ) : activeTab === "vendors" ? (
+        <div className="space-y-6">
+          <div className="page-header">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+                Payees
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Saved payees show in the expense form. Use &quot;Other
+                (one-time)&quot; for a one-off payment without adding them here.
+              </p>
+            </div>
+            {canCreateExpensePayee() ? (
+              <button
+                type="button"
+                onClick={() => openVendorModal()}
+                className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                Add payee
+              </button>
+            ) : null}
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
+            {vendors.length === 0 ? (
+              <p className="p-8 text-center text-gray-500 dark:text-gray-400">
+                No saved payees yet. Add one for repeat recipients, or use a
+                one-time payee from the expense form.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                    <tr>
+                      <th className="px-6 py-3">Name</th>
+                      <th className="px-6 py-3">Notes</th>
+                      <th className="px-6 py-3 w-40">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vendors.map((v) => (
+                      <tr
+                        key={v.id}
+                        className="border-b border-gray-100 dark:border-gray-700"
+                      >
+                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                          {v.name}
+                        </td>
+                        <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                          {v.notes || "—"}
+                        </td>
+                        <td className="px-6 py-4 space-x-2">
+                          {canEditExpensePayee() ? (
+                            <button
+                              type="button"
+                              onClick={() => openVendorModal(v)}
+                              className="text-amber-600 hover:underline dark:text-amber-400"
+                            >
+                              Edit
+                            </button>
+                          ) : null}
+                          {canDeleteExpensePayee() ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteVendor(v)}
+                              className="text-red-600 hover:underline dark:text-red-400"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="page-header">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+                Categories
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Categories listed here appear in expense filters and when adding
+                or editing an expense. New companies get a starter set
+                automatically once.
+              </p>
+            </div>
+            {canCreateExpenseCategory() ? (
+              <button
+                type="button"
+                onClick={() => openCategoryModal()}
+                className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                Add category
+              </button>
+            ) : null}
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
+            {expenseCategories.length === 0 ? (
+              <p className="p-8 text-center text-gray-500 dark:text-gray-400">
+                Loading categories… If this stays empty, check your connection
+                or Firestore rules for{" "}
+                <code className="text-xs">expenseCategories</code>.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                    <tr>
+                      <th className="px-6 py-3">Name</th>
+                      <th className="px-6 py-3">Notes</th>
+                      <th className="px-6 py-3 w-40">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenseCategories.map((c) => (
+                      <tr
+                        key={c.id}
+                        className="border-b border-gray-100 dark:border-gray-700"
+                      >
+                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                          {c.name}
+                        </td>
+                        <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                          {c.notes || "—"}
+                        </td>
+                        <td className="px-6 py-4 space-x-2">
+                          {canEditExpenseCategory() ? (
+                            <button
+                              type="button"
+                              onClick={() => openCategoryModal(c)}
+                              className="text-amber-600 hover:underline dark:text-amber-400"
+                            >
+                              Edit
+                            </button>
+                          ) : null}
+                          {canDeleteExpenseCategory() ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteCategory(c)}
+                              className="text-red-600 hover:underline dark:text-red-400"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Payee directory modal */}
+      {vendorModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              {vendorForm.id ? "Edit payee" : "Add payee"}
+            </h3>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={vendorForm.name}
+                  onChange={(e) =>
+                    setVendorForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Notes
+                </label>
+                <textarea
+                  value={vendorForm.notes}
+                  onChange={(e) =>
+                    setVendorForm((f) => ({ ...f, notes: e.target.value }))
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeVendorModal}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm dark:border-gray-600 dark:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={vendorSaving}
+                onClick={() => void handleSaveVendor()}
+                className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {vendorSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {categoryModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              {categoryForm.id ? "Edit category" : "Add category"}
+            </h3>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Name *
+                </label>
+                <input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e) =>
+                    setCategoryForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Notes
+                </label>
+                <textarea
+                  value={categoryForm.notes}
+                  onChange={(e) =>
+                    setCategoryForm((f) => ({ ...f, notes: e.target.value }))
+                  }
+                  rows={3}
+                  className="mt-1 w-full rounded-md border border-gray-300 p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              {categoryForm.id ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Renaming updates this company&apos;s expenses that still use the
+                  old category name.
+                </p>
+              ) : null}
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCategoryModal}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm dark:border-gray-600 dark:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={categorySaving}
+                onClick={() => void handleSaveCategory()}
+                className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {categorySaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Modal */}
       {isModalOpen && currentExpense && (
@@ -869,6 +1601,47 @@ const ExpensesPage: React.FC = () => {
                 rows={3}
               />
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Payee *
+                </label>
+                <select
+                  value={vendorFormChoice}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setVendorFormChoice(v);
+                    if (v !== OTHER_PAYEE_VALUE) {
+                      setOneTimeVendorName("");
+                    }
+                  }}
+                  className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                >
+                  <option value="">Select payee</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                  <option value={OTHER_PAYEE_VALUE}>
+                    Other (one-time payee)…
+                  </option>
+                </select>
+                {vendorFormChoice === OTHER_PAYEE_VALUE ? (
+                  <input
+                    type="text"
+                    placeholder="One-time payee name *"
+                    value={oneTimeVendorName}
+                    onChange={(e) => setOneTimeVendorName(e.target.value)}
+                    className="mt-2 w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                ) : null}
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Repeat recipients live under the Payees tab. One-time names
+                  stay on the expense only.
+                </p>
+              </div>
+
               {/* Bank Account Selection - Moved after description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -885,31 +1658,41 @@ const ExpensesPage: React.FC = () => {
                     const balance = bank.currentBalance || bank.initialBalance || 0;
                     return (
                       <option key={bank.id} value={bank.id}>
-                        {bank.accountName} - {bank.bankName} ({bank.currencySymbol}) - Balance: {bank.currencySymbol}{balance.toFixed(2)}
+                        {formatBankAccountListLabel(bank)} ({bank.currencySymbol}) — Balance: {bank.currencySymbol}{balance.toFixed(2)}
                       </option>
                     );
                   })}
                 </select>
               </div>
 
-              <select
-                value={currentExpense.category}
-                onChange={(e) =>
-                  setCurrentExpense({
-                    ...currentExpense,
-                    category: e.target.value,
-                  })
-                }
-                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                required
-              >
-                <option value="">Select Category</option>
-                {expenseCategories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Category *
+                </label>
+                <select
+                  value={currentExpense.category ?? ""}
+                  onChange={(e) =>
+                    setCurrentExpense({
+                      ...currentExpense,
+                      category: e.target.value,
+                    })
+                  }
+                  className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                >
+                  <option value="">Select category</option>
+                  {expenseFormCategoryNames.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                {expenseFormCategoryNames.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    Add categories in the Categories tab first.
+                  </p>
+                ) : null}
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
