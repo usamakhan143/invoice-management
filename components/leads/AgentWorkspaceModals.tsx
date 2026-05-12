@@ -5,7 +5,7 @@ import { Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { LeadService } from "../../services/leadService";
 import { OutreachService } from "../../services/outreachService";
-import type { Lead, LeadCallOutcome, LeadStatus, OutreachEvent, UserProfile } from "../../types";
+import type { Lead, LeadCallOutcome, LeadExtras, LeadStatus, OutreachEvent, UserProfile } from "../../types";
 import { formatPhoneForDisplay, getIsoFromLeadCountryName } from "../../utils/internationalPhone";
 import OutreachEventAdminControls from "./OutreachEventAdminControls";
 
@@ -18,7 +18,27 @@ const LEAD_STATUSES: LeadStatus[] = [
   "Lost",
 ];
 
-const CALL_OUTCOMES: LeadCallOutcome[] = ["No Answer", "Busy", "Connected", "Wrong Number"];
+const CALL_OUTCOMES: LeadCallOutcome[] = [
+  "No Answer",
+  "Busy",
+  "Connected",
+  "Wrong Number",
+  "Hangup",
+  "Voicemail",
+];
+
+const WS_LS_LAST_OUTCOME = "workspace_pref_call_outcome";
+
+function calendarDayAtLocal(daysFromToday: number, hour: number, minute: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromToday);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+function toDatetimeLocalValueFromDate(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -46,6 +66,42 @@ function startOfTodayLocal(): Date {
 function minDatetimeLocalToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T00:00`;
+}
+
+/** Returns https URL for opening in a new tab, or null if not linkable. */
+function safeExternalUrl(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  let candidate = t;
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = `https://${candidate.replace(/^\/+/, "")}`;
+  }
+  try {
+    const u = new URL(candidate);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+function digitsOnly(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
+function socialWebRows(ex: LeadExtras | undefined): { label: string; raw: string }[] {
+  if (!ex) return [];
+  const rows: { label: string; raw: string }[] = [
+    ["Website", ex.website],
+    ["Facebook", ex.facebookUrl],
+    ["Instagram", ex.instagramUrl],
+    ["LinkedIn", ex.linkedinUrl],
+    ["X (Twitter)", ex.twitterUrl],
+    ["TikTok", ex.tiktokUrl],
+  ]
+    .map(([label, raw]) => ({ label, raw: (raw || "").trim() }))
+    .filter((r) => r.raw.length > 0);
+  return rows;
 }
 
 /** Native form controls need explicit fg/bg; otherwise text blends into modal surfaces in dark mode */
@@ -92,6 +148,20 @@ interface AgentWorkspaceModalsProps {
   canSetFollowup: boolean;
   /** Show “conversion & billing” CTA after marking Won */
   canAccessLeadConversionHub: boolean;
+  /** My workspace: refresh open-lead “call logged” split after timeline changes */
+  onOutreachTimelineChanged?: () => void;
+  /** Current workspace table order; enables Save & next without hunting the list */
+  workspaceCallQueueIds?: string[];
+  /**
+   * After a successful call log. Parent may open the next lead, show a pipeline hint, or close the modal
+   * when Save & next reaches the end of the queue.
+   */
+  onWorkspaceCallSaveFinish?: (info: {
+    andNext: boolean;
+    nextLeadId: string | null;
+    savedLeadId: string;
+    offerMarkContacted: boolean;
+  }) => void;
 }
 
 function statusBadgeClasses(status: LeadStatus): string {
@@ -124,6 +194,9 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   canApproveCallLog,
   canSetFollowup,
   canAccessLeadConversionHub,
+  onOutreachTimelineChanged,
+  workspaceCallQueueIds,
+  onWorkspaceCallSaveFinish,
 }) => {
   const navigate = useNavigate();
   const [statusChoice, setStatusChoice] = useState<LeadStatus>("New");
@@ -133,8 +206,10 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   const [callOutcome, setCallOutcome] = useState<LeadCallOutcome>("Connected");
   const [callNotes, setCallNotes] = useState("");
   const [callFollowUp, setCallFollowUp] = useState("");
+  const [callFuAdvancedOpen, setCallFuAdvancedOpen] = useState(false);
   const [callSaving, setCallSaving] = useState(false);
   const [outreachEvents, setOutreachEvents] = useState<OutreachEvent[]>([]);
+  const [outreachLoading, setOutreachLoading] = useState(false);
 
   const [followField, setFollowField] = useState("");
   const [followSaving, setFollowSaving] = useState(false);
@@ -148,10 +223,32 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
     };
   }, []);
 
+  const saveCallActionRef = useRef<(andNext: boolean) => Promise<void>>(async () => {});
+
   useEffect(() => {
     if (!mode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (
+        mode === "call" &&
+        e.key === "Enter" &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey
+      ) {
+        const t = e.target as HTMLElement | null;
+        if (!t) return;
+        if (t.tagName === "TEXTAREA") return;
+        if (t.tagName === "SELECT") return;
+        if (t.tagName === "INPUT" && (t as HTMLInputElement).type === "datetime-local") return;
+        if (t.tagName === "BUTTON") return;
+        e.preventDefault();
+        void saveCallActionRef.current(true);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -168,6 +265,23 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   }, [lead?.id, mode]);
 
   useEffect(() => {
+    if (mode !== "call" || !lead?.id) return;
+    setCallNotes("");
+    setCallFollowUp("");
+    setCallFuAdvancedOpen(false);
+    try {
+      const raw = localStorage.getItem(WS_LS_LAST_OUTCOME);
+      if (raw && (CALL_OUTCOMES as readonly string[]).includes(raw)) {
+        setCallOutcome(raw as LeadCallOutcome);
+      } else {
+        setCallOutcome("Connected");
+      }
+    } catch {
+      setCallOutcome("Connected");
+    }
+  }, [mode, lead?.id]);
+
+  useEffect(() => {
     setCopyFlash(null);
     if (copyTimerRef.current) {
       clearTimeout(copyTimerRef.current);
@@ -175,14 +289,32 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
     }
   }, [lead?.id, mode]);
 
+  const refreshOutreachTimeline = useCallback(async () => {
+    if (!lead?.id || !lead?.companyId) {
+      setOutreachEvents([]);
+      setOutreachLoading(false);
+      return;
+    }
+    setOutreachLoading(true);
+    try {
+      const rows = await OutreachService.fetchEventsByLead(lead.companyId, lead.id, { maxDocs: 60 });
+      setOutreachEvents(rows);
+    } catch (e) {
+      console.error("[AgentWorkspaceModals] fetch outreach timeline:", e);
+      setOutreachEvents([]);
+    } finally {
+      setOutreachLoading(false);
+    }
+  }, [lead?.id, lead?.companyId]);
+
   useEffect(() => {
     if (mode !== "call" || !lead?.id || !lead?.companyId) {
       setOutreachEvents([]);
+      setOutreachLoading(false);
       return;
     }
-    const unsub = OutreachService.subscribeByLead(lead.companyId, lead.id, setOutreachEvents);
-    return () => unsub();
-  }, [mode, lead?.id, lead?.companyId]);
+    void refreshOutreachTimeline();
+  }, [mode, lead?.id, lead?.companyId, refreshOutreachTimeline]);
 
   const phoneIso = lead ? getIsoFromLeadCountryName((lead.country || "").trim()) : "US";
 
@@ -210,50 +342,99 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
     }
   };
 
-  const handleSaveCall = async () => {
-    if (!lead || !canLogCall) return;
-    let followTs: firebase.firestore.Timestamp | null = null;
-    if (callFollowUp.trim()) {
-      const parsed = fromDatetimeLocalValue(callFollowUp);
-      if (!parsed) {
-        alert("Enter a valid follow-up date and time, or leave it blank.");
-        return;
+  const saveCall = useCallback(
+    async (andNext: boolean) => {
+      if (!lead || !canLogCall) return;
+      let followTs: firebase.firestore.Timestamp | null = null;
+      if (callFollowUp.trim()) {
+        const parsed = fromDatetimeLocalValue(callFollowUp);
+        if (!parsed) {
+          alert("Enter a valid follow-up date and time, or clear presets / custom time.");
+          return;
+        }
+        if (parsed.toDate() < startOfTodayLocal()) {
+          alert("Follow-up cannot be before today.");
+          return;
+        }
+        followTs = parsed;
       }
-      if (parsed.toDate() < startOfTodayLocal()) {
-        alert("Follow-up cannot be before today.");
-        return;
+      setCallSaving(true);
+      try {
+        const displayName =
+          userProfile?.displayName || userProfile?.companyName || user.email || "User";
+        await OutreachService.addEvent({
+          companyId: lead.companyId,
+          leadId: lead.id,
+          channel: "call",
+          notes: callNotes,
+          outcome: callOutcome,
+          nextFollowUpDate: followTs,
+          createdByUserId: user.uid,
+          createdByDisplayName: displayName,
+          campaignId: lead.campaignId ?? null,
+          campaignTagIds: lead.campaignTagIds ?? [],
+        });
+        await ActivityLogger.logActivity(user, userProfile, "lead_outreach_logged", "Call logged (workspace)", {
+          entityId: lead.id,
+          entityType: "lead",
+        });
+        onOutreachTimelineChanged?.();
+        try {
+          localStorage.setItem(WS_LS_LAST_OUTCOME, callOutcome);
+        } catch {
+          /* ignore */
+        }
+
+        const ids = workspaceCallQueueIds;
+        let nextLeadId: string | null = null;
+        if (andNext && ids && ids.length > 0) {
+          const ix = ids.indexOf(lead.id);
+          if (ix >= 0 && ix < ids.length - 1) nextLeadId = ids[ix + 1];
+        }
+
+        onWorkspaceCallSaveFinish?.({
+          andNext,
+          nextLeadId,
+          savedLeadId: lead.id,
+          offerMarkContacted: Boolean(
+            canUpdateStatus && callOutcome === "Connected" && lead.status === "New",
+          ),
+        });
+
+        setCallNotes("");
+        setCallFollowUp("");
+        void refreshOutreachTimeline();
+
+        if (andNext && nextLeadId === null) {
+          onClose();
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Could not save call log");
+      } finally {
+        setCallSaving(false);
       }
-      followTs = parsed;
-    }
-    setCallSaving(true);
-    try {
-      const displayName =
-        userProfile?.displayName || userProfile?.companyName || user.email || "User";
-      await OutreachService.addEvent({
-        companyId: lead.companyId,
-        leadId: lead.id,
-        channel: "call",
-        notes: callNotes,
-        outcome: callOutcome,
-        nextFollowUpDate: followTs,
-        createdByUserId: user.uid,
-        createdByDisplayName: displayName,
-        campaignId: lead.campaignId ?? null,
-        campaignTagIds: lead.campaignTagIds ?? [],
-      });
-      await ActivityLogger.logActivity(user, userProfile, "lead_outreach_logged", "Call logged (workspace)", {
-        entityId: lead.id,
-        entityType: "lead",
-      });
-      setCallNotes("");
-      setCallFollowUp("");
-    } catch (e) {
-      console.error(e);
-      alert("Could not save call log");
-    } finally {
-      setCallSaving(false);
-    }
-  };
+    },
+    [
+      lead,
+      canLogCall,
+      callFollowUp,
+      callNotes,
+      callOutcome,
+      user,
+      userProfile,
+      canUpdateStatus,
+      workspaceCallQueueIds,
+      onWorkspaceCallSaveFinish,
+      onOutreachTimelineChanged,
+      refreshOutreachTimeline,
+      onClose,
+    ],
+  );
+
+  useEffect(() => {
+    saveCallActionRef.current = (andNext: boolean) => saveCall(andNext);
+  }, [saveCall]);
 
   const handleDeleteEvent = async (eventId: string) => {
     if (!lead || !canDeleteCallLog) return;
@@ -264,6 +445,8 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
         entityId: lead.id,
         entityType: "lead",
       });
+      onOutreachTimelineChanged?.();
+      void refreshOutreachTimeline();
     } catch (e) {
       console.error(e);
       alert("Could not delete outreach event");
@@ -340,7 +523,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
       : mode === "status"
         ? "Update status"
         : mode === "call"
-          ? "Log a call"
+          ? "Log call"
           : "Next follow-up";
 
   return (
@@ -350,7 +533,9 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-700"
+        className={`w-full max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-700 ${
+          mode === "details" ? "sm:max-w-2xl" : mode === "call" ? "sm:max-w-xl" : "sm:max-w-lg"
+        }`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="agent-modal-title"
@@ -361,6 +546,21 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
             <h2 id="agent-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white truncate">
               {title}
             </h2>
+            {mode === "call" ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-snug max-w-xl">
+                <strong>Call result</strong> records this dial only. <strong>Deal stage</strong> (pipeline) is updated
+                separately under Status.
+                {workspaceCallQueueIds && workspaceCallQueueIds.length > 0 ? (
+                  <>
+                    {" "}
+                    <span className="whitespace-nowrap">
+                      Tip: <kbd className="rounded border border-gray-300 dark:border-gray-600 px-1 py-0.5 text-[10px] font-sans bg-gray-100 dark:bg-gray-800">Enter</kbd>{" "}
+                      = Save &amp; next lead.
+                    </span>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
             <p className="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">
               {(lead.name || "").trim() || (lead.company || "").trim() || "Lead"}
               {(lead.company || "").trim() && (lead.name || "").trim() ? ` · ${(lead.company || "").trim()}` : ""}
@@ -451,8 +651,13 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                 <p className={sectionTitle}>Company &amp; lead info</p>
                 <dl className="mt-2 rounded-xl border border-gray-100 dark:border-gray-700/80 divide-y divide-gray-100 dark:divide-gray-700/80">
                   {[
-                    ["Country / location", (lead.country || "").trim() || "—"],
-                    ["Category", (lead.category || "").trim() || "—"],
+                    ["Country / location", (lead.country || "").trim() || "-"],
+                    ["Category", (lead.category || "").trim() || "-"],
+                    ["Source", (lead.source || "").trim() || "-"],
+                    [
+                      "Target sales preference",
+                      (lead.targetSalesGender || "").trim() || "-",
+                    ],
                   ].map(([k, v]) => (
                     <div key={k} className={detailRow + " px-3"}>
                       <dt className={detailLabel}>{k}</dt>
@@ -461,6 +666,108 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                   ))}
                 </dl>
               </div>
+
+              {socialWebRows(lead.extras).length > 0 ? (
+                <div>
+                  <p className={sectionTitle}>Social &amp; web</p>
+                  <dl className="mt-2 rounded-xl border border-gray-100 dark:border-gray-700/80 divide-y divide-gray-100 dark:divide-gray-700/80">
+                    {socialWebRows(lead.extras).map(({ label, raw }) => {
+                      const href = safeExternalUrl(raw) ?? (raw.startsWith("http") ? raw : null);
+                      return (
+                        <div key={label} className={detailRow + " px-3"}>
+                          <dt className={detailLabel}>{label}</dt>
+                          <dd className={`${detailValue} break-all`}>
+                            {href ? (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary-600 hover:underline dark:text-primary-400"
+                              >
+                                {raw}
+                              </a>
+                            ) : (
+                              <span>{raw}</span>
+                            )}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </div>
+              ) : null}
+
+              {(lead.extras?.socialMedia || "").trim() ? (
+                <div>
+                  <p className={sectionTitle}>Other social / profile</p>
+                  {(() => {
+                    const raw = (lead.extras!.socialMedia || "").trim();
+                    const href = safeExternalUrl(raw);
+                    return href ? (
+                      <p className="mt-2 text-sm">
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary-600 hover:underline break-all dark:text-primary-400"
+                        >
+                          {raw}
+                        </a>
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap rounded-xl border border-gray-100 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-800/30 p-3">
+                        {raw}
+                      </p>
+                    );
+                  })()}
+                </div>
+              ) : null}
+
+              {lead.extras?.hasWhatsapp ? (
+                <div>
+                  <p className={sectionTitle}>WhatsApp</p>
+                  <div className="mt-2 rounded-xl border border-gray-100 dark:border-gray-700/80 bg-gray-50/80 dark:bg-gray-800/40 px-3 py-3 text-sm text-gray-700 dark:text-gray-200">
+                    {lead.extras?.whatsappSameAsPhone ? (
+                      <>
+                        <p>Same number as main phone.</p>
+                        {(lead.phone || "").trim() ? (
+                          <a
+                            href={`https://wa.me/${digitsOnly(lead.phone || "")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-block font-medium text-primary-600 hover:underline dark:text-primary-400"
+                          >
+                            Open in WhatsApp (new tab)
+                          </a>
+                        ) : null}
+                      </>
+                    ) : (lead.extras?.whatsappPhone || "").trim() ? (
+                      <>
+                        <p className="break-all">{(lead.extras!.whatsappPhone || "").trim()}</p>
+                        <a
+                          href={`https://wa.me/${digitsOnly(lead.extras!.whatsappPhone || "")}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-block font-medium text-primary-600 hover:underline dark:text-primary-400"
+                        >
+                          Open in WhatsApp (new tab)
+                        </a>
+                      </>
+                    ) : (
+                      <p className="text-gray-500 dark:text-gray-400">WhatsApp enabled; no separate number saved.</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {(lead.extras?.address || "").trim() ? (
+                <div>
+                  <p className={sectionTitle}>Address</p>
+                  <p className="mt-2 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap rounded-xl border border-gray-100 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-800/30 p-3">
+                    {(lead.extras!.address || "").trim()}
+                  </p>
+                </div>
+              ) : null}
 
               {(lead.notes || "").trim() ? (
                 <div>
@@ -471,32 +778,12 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                 </div>
               ) : null}
 
-              {lead.extras?.address || lead.extras?.website ? (
+              {(lead.extras?.extraNotes || "").trim() ? (
                 <div>
-                  <p className={sectionTitle}>Extra</p>
-                  <dl className="mt-2 rounded-xl border border-gray-100 dark:border-gray-700/80 divide-y divide-gray-100 dark:divide-gray-700/80">
-                    {(lead.extras?.website || "").trim() ? (
-                      <div className={detailRow + " px-3"}>
-                        <dt className={detailLabel}>Website</dt>
-                        <dd className={detailValue}>
-                          <a
-                            href={(lead.extras!.website || "").trim()}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary-600 hover:underline break-all dark:text-primary-400"
-                          >
-                            {(lead.extras!.website || "").trim()}
-                          </a>
-                        </dd>
-                      </div>
-                    ) : null}
-                    {(lead.extras?.address || "").trim() ? (
-                      <div className={detailRow + " px-3"}>
-                        <dt className={detailLabel}>Address</dt>
-                        <dd className={detailValue}>{(lead.extras!.address || "").trim()}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
+                  <p className={sectionTitle}>Extra notes</p>
+                  <p className="mt-2 text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20 p-3">
+                    {(lead.extras!.extraNotes || "").trim()}
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -507,7 +794,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
               <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/90 dark:bg-emerald-950/35 px-4 py-4">
                 <p className="text-base font-semibold text-emerald-900 dark:text-emerald-100">Deal marked as Won</p>
                 <p className="text-sm text-emerald-900/85 dark:text-emerald-200/90 mt-2 leading-relaxed">
-                  Great work. When you&apos;re ready, add this contact to your customer list and start an invoice — everything
+                  Great work. When you&apos;re ready, add this contact to your customer list and start an invoice. Everything
                   is guided on the lead&apos;s <strong>Conversion &amp; billing</strong> tab.
                 </p>
                 {canAccessLeadConversionHub ? (
@@ -543,7 +830,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
           {mode === "status" && canUpdateStatus && !pipelineOutcome && (
             <div className="space-y-4">
               <label className="block">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Pipeline stage</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Deal stage (pipeline)</span>
                 <select
                   value={statusChoice}
                   onChange={(e) => setStatusChoice(e.target.value as LeadStatus)}
@@ -557,8 +844,9 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                 </select>
               </label>
               <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                Choose <strong>Won</strong> when the sale is confirmed — you&apos;ll get clear next steps. Choose{" "}
-                <strong>Lost</strong> when the opportunity is closed without a sale.
+                This is the lead&apos;s position in your funnel (New → Won/Lost). It is separate from each call&apos;s
+                dial result in <strong>Log call</strong>. Choose <strong>Won</strong> when the sale is confirmed;
+                choose <strong>Lost</strong> when the opportunity is closed without a sale.
               </p>
             </div>
           )}
@@ -571,7 +859,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
             <div className="space-y-5">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Outcome</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Call result (this dial)</span>
                   <select
                     value={callOutcome}
                     onChange={(e) => setCallOutcome(e.target.value as LeadCallOutcome)}
@@ -583,45 +871,87 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                       </option>
                     ))}
                   </select>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-snug">
+                    What happened on the line for this attempt only (no answer, connected, etc.).
+                  </p>
                 </label>
                 <label className="block sm:col-span-2">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes (optional)</span>
                   <textarea
                     value={callNotes}
                     onChange={(e) => setCallNotes(e.target.value)}
-                    rows={3}
-                    placeholder="What was discussed?"
+                    rows={2}
+                    placeholder="Short pitch, objection, or next step (skip if you are rushing)"
                     className={FIELD_TEXTAREA}
                   />
                 </label>
-                <label className="block sm:col-span-2">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Follow-up from this call (optional)
-                  </span>
-                  <input
-                    type="datetime-local"
-                    value={callFollowUp}
-                    onChange={(e) => setCallFollowUp(e.target.value)}
-                    min={minDatetimeLocalToday()}
-                    className={FIELD_DATETIME}
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={callSaving}
-                  onClick={() => void handleSaveCall()}
-                  className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  {callSaving ? "Saving…" : "Log call"}
-                </button>
+                {canSetFollowup ? (
+                  <div className="sm:col-span-2 space-y-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Follow-up reminder</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCallFollowUp("");
+                          setCallFuAdvancedOpen(false);
+                        }}
+                        className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        None
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCallFollowUp(toDatetimeLocalValueFromDate(calendarDayAtLocal(1, 10, 0)));
+                          setCallFuAdvancedOpen(false);
+                        }}
+                        className="rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-950/40 px-3 py-2 text-xs font-semibold text-primary-800 dark:text-primary-200 hover:bg-primary-100 dark:hover:bg-primary-900/50"
+                      >
+                        Tomorrow 10:00
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCallFollowUp(toDatetimeLocalValueFromDate(calendarDayAtLocal(3, 10, 0)));
+                          setCallFuAdvancedOpen(false);
+                        }}
+                        className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        In 3 days 10:00
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCallFuAdvancedOpen((v) => !v)}
+                        className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        {callFuAdvancedOpen ? "Hide custom time" : "Custom date & time"}
+                      </button>
+                    </div>
+                    {callFuAdvancedOpen ? (
+                      <label className="block mt-1">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Pick exact time</span>
+                        <input
+                          type="datetime-local"
+                          value={callFollowUp}
+                          onChange={(e) => setCallFollowUp(e.target.value)}
+                          min={minDatetimeLocalToday()}
+                          className={FIELD_DATETIME}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 sm:col-span-2">
+                    You don&apos;t have permission to set follow-up from here; managers can enable it for your role.
+                  </p>
+                )}
               </div>
 
               <div>
                 <p className={sectionTitle + " mb-2"}>Recent outreach</p>
-                {outreachEvents.length === 0 ? (
+                {outreachLoading ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading timeline…</p>
+                ) : outreachEvents.length === 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400">No outreach logged yet.</p>
                 ) : (
                   <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -749,13 +1079,33 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
             </>
           )}
           {mode === "call" && canLogCall && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              Close
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={callSaving}
+                onClick={() => void saveCall(false)}
+                className="rounded-lg px-4 py-2.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                {callSaving ? "Saving…" : "Save"}
+              </button>
+              {workspaceCallQueueIds && workspaceCallQueueIds.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={callSaving}
+                  onClick={() => void saveCall(true)}
+                  className="rounded-lg px-4 py-2.5 text-sm font-semibold bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 shadow-sm ring-1 ring-primary-500/30"
+                >
+                  {callSaving ? "Saving…" : "Save & next"}
+                </button>
+              ) : null}
+            </>
           )}
           {mode === "followup" && canSetFollowup && (
             <>

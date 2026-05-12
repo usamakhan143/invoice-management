@@ -17,6 +17,7 @@ export const PERMISSION_CATEGORIES = {
   SIDEBAR: "sidebar",
   LEADS: "leads",
   CAMPAIGNS: "campaigns",
+  PERFORMANCE: "performance",
 } as const;
 
 // New granular permissions for each section/UI element
@@ -31,6 +32,11 @@ export const GRANULAR_PERMISSIONS = {
   DASHBOARD_ACCESS_INVOICE_VERIFICATION: "dashboard_access_invoice_verification",
   DASHBOARD_VIEW_DEBUG_INFO: "dashboard_view_debug_info",
   DASHBOARD_VIEW_MY_ASSIGNED_LEADS: "dashboard_view_my_assigned_leads",
+  /**
+   * @deprecated Prefer MY_CALL_ACTIVITY_VIEW — kept so existing roles keep access until migrated.
+   * Was bundled with dashboard; call UI is now gated by MY_CALL_ACTIVITY_VIEW.
+   */
+  DASHBOARD_VIEW_MY_CALL_ACTIVITY: "dashboard_view_my_call_activity",
   /** Master toggle for lead generation analytics block on dashboard */
   DASHBOARD_VIEW_LEAD_GEN_ANALYTICS: "dashboard_view_lead_gen_analytics",
   /** Lead analytics metric: how many leads were added */
@@ -177,6 +183,16 @@ export const GRANULAR_PERMISSIONS = {
   CAMPAIGNS_VIEW: "campaigns_view",
   /** Create, edit, archive campaigns and manage their tags */
   CAMPAIGNS_MANAGE: "campaigns_manage",
+
+  // Performance hub (assignment reports + full call activity)
+  /** Sidebar + /performance route. Off = no Performance menu and no page access (other Performance perms are ignored for entry). */
+  PERFORMANCE_HUB_ACCESS: "performance_hub_access",
+  /** “Your call activity” (dashboard today vs yesterday + full block on Performance). Prefer this over legacy dashboard_view_my_call_activity. */
+  MY_CALL_ACTIVITY_VIEW: "my_call_activity_view",
+  /** Your assignment daily progress report (Performance page; granular control beyond dashboard lead summary) */
+  PERFORMANCE_ASSIGNMENT_REPORT_MY: "performance_assignment_report_my",
+  /** Team assignment daily progress report (Performance page) */
+  PERFORMANCE_ASSIGNMENT_REPORT_TEAM: "performance_assignment_report_team",
 } as const;
 
 // Permission descriptions for the role management UI
@@ -192,6 +208,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO]: "View Debug Info (Real-time) section on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS]:
     "View “My assigned leads” summary (counts & follow-ups) on the dashboard",
+  [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_CALL_ACTIVITY]:
+    "Legacy: same as “My call activity” if MY_CALL_ACTIVITY_VIEW is not used — prefer MY_CALL_ACTIVITY_VIEW for new roles",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ANALYTICS]:
     "Show Lead Generation Analytics block on dashboard",
   [GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CREATED]:
@@ -341,6 +359,15 @@ export const PERMISSION_DESCRIPTIONS = {
     "Access the Campaigns page and view campaigns (read-only without Campaigns Manage)",
   [GRANULAR_PERMISSIONS.CAMPAIGNS_MANAGE]:
     "Create, edit, archive campaigns and manage their tags",
+
+  [GRANULAR_PERMISSIONS.PERFORMANCE_HUB_ACCESS]:
+    "Performance: show the sidebar link and allow opening the Performance page. Turn this off to remove the whole Performance area for this role (also turn off assignment/call toggles if you want no Performance features at all). After this update, enable this on existing roles that should keep seeing Performance.",
+  [GRANULAR_PERMISSIONS.MY_CALL_ACTIVITY_VIEW]:
+    "Your call activity: dashboard today vs yesterday snapshot and the full call breakdown on the Performance page (also covered by legacy “Dashboard view my call activity” if that is still enabled).",
+  [GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_MY]:
+    "Performance page: your daily assignment progress. This is separate from “My assigned leads” on the dashboard — grant this explicitly for the Performance report.",
+  [GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_TEAM]:
+    "Performance page: team-wide daily assignment progress. Requires Leads access (view leads or view all). Grant this explicitly — not implied by other lead permissions.",
 };
 
 // Group permissions by category for better organization in UI
@@ -355,6 +382,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.DASHBOARD_ACCESS_INVOICE_VERIFICATION,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS,
+    GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_CALL_ACTIVITY,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ANALYTICS,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_CREATED,
     GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ASSIGNED,
@@ -464,12 +492,38 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.CAMPAIGNS_VIEW,
     GRANULAR_PERMISSIONS.CAMPAIGNS_MANAGE,
   ],
+  [PERMISSION_CATEGORIES.PERFORMANCE]: [
+    GRANULAR_PERMISSIONS.PERFORMANCE_HUB_ACCESS,
+    GRANULAR_PERMISSIONS.MY_CALL_ACTIVITY_VIEW,
+    GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_MY,
+    GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_TEAM,
+  ],
 };
 
 // Helper function to get all permissions as an array
 export const getAllPermissions = (): string[] => {
   return Object.values(GRANULAR_PERMISSIONS);
 };
+
+/**
+ * When saving a custom role: if any Performance-related content perm is enabled, persist
+ * `performance_hub_access` so the menu and route work; if none are enabled, strip hub.
+ */
+export function ensurePerformanceHubWithContent(perms: string[]): string[] {
+  const hub = GRANULAR_PERMISSIONS.PERFORMANCE_HUB_ACCESS;
+  const hasContent =
+    perms.includes(GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_MY) ||
+    perms.includes(GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_TEAM) ||
+    perms.includes(GRANULAR_PERMISSIONS.MY_CALL_ACTIVITY_VIEW) ||
+    perms.includes(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_CALL_ACTIVITY);
+  if (!hasContent) {
+    return perms.filter((p) => p !== hub);
+  }
+  if (!perms.includes(hub)) {
+    return [...perms, hub];
+  }
+  return [...perms];
+}
 
 // Helper function to get permission group names
 export const getPermissionGroupNames = (): string[] => {
@@ -489,6 +543,7 @@ export const PAGES = {
   REPORTS: "reports",
   LEADS: "leads",
   MY_ASSIGNED_LEADS: "my-assigned-leads",
+  PERFORMANCE: "performance",
 } as const;
 
 // Legacy actions for backward compatibility (to be removed)

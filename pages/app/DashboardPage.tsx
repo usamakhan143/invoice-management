@@ -21,6 +21,7 @@ import type { Invoice, Customer, BankAccount, Expense, Lead, CompanyUser } from 
 import { LeadService } from "../../services/leadService";
 import Spinner from "../../components/Spinner";
 import InvoiceVerificationSection from "../../components/InvoiceVerificationSection";
+import DashboardCallActivityMonitor from "../../components/dashboard/DashboardCallActivityMonitor";
 import { GRANULAR_PERMISSIONS } from "../../config/permissions";
 import {
   backfillExpenseCompanyIdsIfNeeded,
@@ -100,6 +101,7 @@ const DashboardPage: React.FC = () => {
     canAccessInvoiceVerification,
     canViewDebugInfo,
     canViewDashboardMyAssignedLeads,
+    canViewDashboardMyCallActivity,
     canViewLeadGenAnalytics,
     canViewLeadGenCreated,
     canViewLeadGenAssigned,
@@ -259,6 +261,11 @@ const DashboardPage: React.FC = () => {
   /** Admins / assigners: dashboard shows team-wide assignment stats instead of “my” counts */
   const teamLeadsDashboardMode = (leadsViewAll || canAssign) && canLeadsPage;
 
+  /** Sales / agent view: personal pipeline + calls first, not team overview. */
+  const showPersonalWorkspace =
+    !teamLeadsDashboardMode &&
+    (canViewDashboardMyAssignedLeads() || canViewDashboardMyCallActivity());
+
   const mayViewMyAssignedDash = canViewDashboardMyAssignedLeads();
   const showLeadGenAnalytics = canViewLeadGenAnalytics();
 
@@ -340,6 +347,9 @@ const DashboardPage: React.FC = () => {
       followDue,
     };
   }, [myAssignedLeads]);
+
+  const assignmentReportCompanyId =
+    userProfile?.isOwner ? (user?.uid ?? "") : (userProfile?.companyId ?? "");
 
   const teamLeadAssignmentRows = React.useMemo(() => {
     const label = (uid: string) =>
@@ -584,6 +594,7 @@ const DashboardPage: React.FC = () => {
     canViewRecentInvoices() ||
     canAccessInvoiceVerification() ||
     canViewDashboardMyAssignedLeads() ||
+    canViewDashboardMyCallActivity() ||
     canViewLeadGenAnalytics() ||
     teamLeadsDashboardMode;
 
@@ -654,67 +665,60 @@ const DashboardPage: React.FC = () => {
     outstandingRevenue > 0 &&
     canViewOutstandingRevenue();
 
+  const pinBarActive = showPinSetupReminder && !!user?.uid;
+
   return (
-    <div className="mobile-p-4 mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
+    <>
+      {pinBarActive ? (
+        <div
+          className="-mx-4 -mt-4 shrink-0 border-b border-amber-300/90 bg-amber-50 px-3 py-0.5 dark:border-amber-800/80 dark:bg-amber-950 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8"
+          role="status"
+        >
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <p className="min-w-0 flex-1 text-[11px] leading-tight text-amber-950 dark:text-amber-100/95 sm:text-xs">
+              <span className="font-semibold">Screen PIN</span>
+              <span className="text-amber-800/85 dark:text-amber-300/70">: </span>
+              Set a 4-digit code on Profile to lock the app and reveal revenue safely.
+            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              <Link
+                to="/profile"
+                className="rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold leading-none text-white hover:bg-amber-700 sm:text-xs"
+              >
+                Profile
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.setItem(
+                    `pin_setup_reminder_dismissed_${user.uid}`,
+                    "1",
+                  );
+                  setPinReminderDismissed(true);
+                }}
+                className="rounded border border-amber-700/25 bg-white/90 px-2 py-0.5 text-[11px] font-medium leading-none text-amber-900 hover:bg-white dark:border-amber-500/35 dark:bg-amber-900/70 dark:text-amber-50 sm:text-xs"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <div
+        className={
+          pinBarActive
+            ? "mx-auto max-w-[1600px] px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4 lg:px-8 lg:pb-8 lg:pt-5"
+            : "mobile-p-4 mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8"
+        }
+      >
       <header className="mb-8 border-b border-gray-200/90 pb-6 dark:border-gray-700/80">
         <h1 className="mobile-text-2xl text-2xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-3xl">
           Dashboard
         </h1>
-        <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
-          {todayLabel}
-        </p>
+        <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">{todayLabel}</p>
       </header>
 
-      {showPinSetupReminder && user?.uid ? (
-        <div
-          className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50 to-orange-50/80 p-4 shadow-sm dark:border-amber-800/50 dark:from-amber-950/40 dark:to-orange-950/30 sm:flex-row sm:items-center sm:justify-between"
-          role="status"
-        >
-          <p className="text-sm text-amber-950 dark:text-amber-100/95">
-            <span className="font-semibold">Set your screen PIN.</span> Choose a
-            4-digit code on your profile to lock the screen without logging out
-            and to protect revenue totals on the dashboard.
-          </p>
-          <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
-            <Link
-              to="/profile"
-              className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
-            >
-              Open profile
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                sessionStorage.setItem(
-                  `pin_setup_reminder_dismissed_${user.uid}`,
-                  "1",
-                );
-                setPinReminderDismissed(true);
-              }}
-              className="rounded-lg border border-amber-300/80 bg-white/80 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-white dark:border-amber-700 dark:bg-amber-900/50 dark:text-amber-100 dark:hover:bg-amber-900/70"
-            >
-              Dismiss for this session
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {!hasAnyDashboardPermission && !isOwner && (
-        <div className="rounded-2xl border border-gray-200/90 bg-gradient-to-b from-white to-gray-50/80 p-10 text-center shadow-sm dark:border-gray-700/80 dark:from-gray-800 dark:to-gray-900/50">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-2xl dark:bg-gray-700">
-            📊
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Dashboard access limited
-          </h3>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-            You don&apos;t have permissions to view dashboard sections. Contact
-            your administrator to request access.
-          </p>
-        </div>
-      )}
-
-      {/* Stats — real-time */}
+      {/* Stats - real-time (top: revenue & key figures first) */}
       <div className="mb-8 space-y-3">
         {(canViewTotalRevenue() || canViewOutstandingRevenue()) &&
         revenuePinRelevant ? (
@@ -750,42 +754,114 @@ const DashboardPage: React.FC = () => {
           </div>
         ) : null}
         <div className="grid mobile-grid-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
-        {canViewTotalRevenue() && (
-          <DashboardCard
-            title="Total revenue (paid)"
-            value={formatCurrency(totalRevenue)}
-            icon={<RevenueIcon />}
-            variant="emerald"
-            blurValue={blurTotalRevenue}
-          />
-        )}
-        {canViewOutstandingRevenue() && (
-          <DashboardCard
-            title="Outstanding revenue"
-            value={formatCurrency(outstandingRevenue)}
-            icon={<InvoiceIcon />}
-            variant="amber"
-            blurValue={blurOutstandingRevenue}
-          />
-        )}
-        {canViewMonthlyExpenses() && (
-          <DashboardCard
-            title="This month expenses"
-            value={formatCurrency(thisMonthExpenses)}
-            icon={<ExpenseIcon />}
-            variant="rose"
-          />
-        )}
-        {canViewTotalCustomers() && (
-          <DashboardCard
-            title="Total customers"
-            value={customers.length.toString()}
-            icon={<CustomerIcon />}
-            variant="sky"
-          />
-        )}
+          {canViewTotalRevenue() && (
+            <DashboardCard
+              title="Total revenue (paid)"
+              value={formatCurrency(totalRevenue)}
+              icon={<RevenueIcon />}
+              variant="emerald"
+              blurValue={blurTotalRevenue}
+            />
+          )}
+          {canViewOutstandingRevenue() && (
+            <DashboardCard
+              title="Outstanding revenue"
+              value={formatCurrency(outstandingRevenue)}
+              icon={<InvoiceIcon />}
+              variant="amber"
+              blurValue={blurOutstandingRevenue}
+            />
+          )}
+          {canViewMonthlyExpenses() && (
+            <DashboardCard
+              title="This month expenses"
+              value={formatCurrency(thisMonthExpenses)}
+              icon={<ExpenseIcon />}
+              variant="rose"
+            />
+          )}
+          {canViewTotalCustomers() && (
+            <DashboardCard
+              title="Total customers"
+              value={customers.length.toString()}
+              icon={<CustomerIcon />}
+              variant="sky"
+            />
+          )}
         </div>
       </div>
+
+      {showPersonalWorkspace && userProfile ? (
+        <>
+          {canViewDashboardMyAssignedLeads() ? (
+            <DashboardSection
+              title="Your pipeline"
+              description="A quick snapshot of leads assigned to you: what’s active, what’s new, and what needs a follow-up."
+              headerAction={
+                canAccessMyAssignedLeadsPage() ? (
+                  <Link
+                    to="/leads/my-assigned"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 dark:hover:bg-primary-500"
+                  >
+                    Open workspace
+                    <span aria-hidden>→</span>
+                  </Link>
+                ) : (
+                  <span className="max-w-[14rem] text-right text-xs leading-snug text-gray-500 dark:text-gray-400">
+                    Ask your admin for “My assigned leads” to open the full workspace.
+                  </span>
+                )
+              }
+            >
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+                <DashboardMiniStat
+                  label="Assigned to you"
+                  value={myAssignedLeadStats.total}
+                  tone="violet"
+                  hint="All current leads"
+                />
+                <DashboardMiniStat
+                  label="Active pipeline"
+                  value={myAssignedLeadStats.active}
+                  tone="emerald"
+                  hint="Excludes won & lost"
+                />
+                <DashboardMiniStat
+                  label="New (7 days)"
+                  value={myAssignedLeadStats.assignedWeek}
+                  tone="sky"
+                  hint="By lead created date"
+                />
+                <DashboardMiniStat
+                  label="Follow-ups due"
+                  value={myAssignedLeadStats.followDue}
+                  tone="amber"
+                  hint="Next 7 days or overdue"
+                />
+              </div>
+            </DashboardSection>
+          ) : null}
+
+          {canViewDashboardMyCallActivity() && assignmentReportCompanyId && user?.uid ? (
+            <DashboardCallActivityMonitor companyId={assignmentReportCompanyId} userId={user.uid} />
+          ) : null}
+        </>
+      ) : null}
+
+      {!hasAnyDashboardPermission && !isOwner && (
+        <div className="rounded-2xl border border-gray-200/90 bg-gradient-to-b from-white to-gray-50/80 p-10 text-center shadow-sm dark:border-gray-700/80 dark:from-gray-800 dark:to-gray-900/50">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-2xl dark:bg-gray-700">
+            📊
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Dashboard access limited
+          </h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+            You don&apos;t have permissions to view dashboard sections. Contact
+            your administrator to request access.
+          </p>
+        </div>
+      )}
 
       {canViewLeadGenAnalytics() && (
         <DashboardSection
@@ -895,46 +971,6 @@ const DashboardPage: React.FC = () => {
         </DashboardSection>
       )}
 
-      {canViewDashboardMyAssignedLeads() && !teamLeadsDashboardMode && (
-        <DashboardSection
-          title="My assigned leads"
-          description="Live counts for leads assigned to you. Open the full page for history and detailed progress."
-          headerAction={
-            canAccessMyAssignedLeadsPage() ? (
-              <Link to="/leads/my-assigned" className={linkPillClass}>
-                View full page →
-              </Link>
-            ) : (
-              <span className="max-w-[14rem] text-right text-xs leading-snug text-gray-500 dark:text-gray-400">
-                Ask your admin for “My assigned leads” access for the full view.
-              </span>
-            )
-          }
-        >
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-            <DashboardMiniStat
-              label="Total assigned"
-              value={myAssignedLeadStats.total}
-            />
-            <DashboardMiniStat
-              label="Active pipeline"
-              value={myAssignedLeadStats.active}
-              hint="Excludes won & lost"
-            />
-            <DashboardMiniStat
-              label="New leads (7 days)"
-              value={myAssignedLeadStats.assignedWeek}
-              hint="By lead created date"
-            />
-            <DashboardMiniStat
-              label="Follow-ups due"
-              value={myAssignedLeadStats.followDue}
-              hint="Next 7 days or overdue"
-            />
-          </div>
-        </DashboardSection>
-      )}
-
       {canViewDashboardBankAccounts() && (
         <DashboardSection
           title="Bank accounts"
@@ -989,7 +1025,7 @@ const DashboardPage: React.FC = () => {
                         Bank
                       </p>
                       <p className="text-sm leading-snug text-gray-600 dark:text-gray-300">
-                        {account.bankName?.trim() || "—"}
+                        {account.bankName?.trim() || "-"}
                       </p>
                     </div>
                     <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 dark:bg-gray-800 dark:text-slate-200">
@@ -1262,6 +1298,7 @@ const DashboardPage: React.FC = () => {
         </div>
       ) : null}
     </div>
+    </>
   );
 };
 

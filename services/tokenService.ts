@@ -15,6 +15,11 @@ interface UserToken {
 }
 
 class TokenService {
+  /** Firestore doc id for a session row — avoids collection queries (list rules / watch quirks). */
+  static tokenDocumentId(userId: string, token: string): string {
+    return `${userId}_${token}`;
+  }
+
   private static generateToken(): string {
     return Math.random().toString(36).substring(2, 15) +
            Math.random().toString(36).substring(2, 15) +
@@ -57,8 +62,9 @@ class TokenService {
         isActive: true,
       };
 
-      // Store token in Firestore
-      await db.collection("userTokens").add(tokenData);
+      // Deterministic id so reads use doc.get (not list queries) — matches security rules reliably.
+      const docId = TokenService.tokenDocumentId(user.uid, token);
+      await db.collection("userTokens").doc(docId).set(tokenData);
 
       // Store token in localStorage for client-side validation
       localStorage.setItem("userToken", token);
@@ -85,28 +91,35 @@ class TokenService {
         return false;
       }
 
-      // Check if token exists in Firestore (it should exist if not deleted)
-      const tokenQuery = await db
-        .collection("userTokens")
-        .where("userId", "==", user.uid)
-        .where("token", "==", storedToken)
-        .get();
+      const docId = TokenService.tokenDocumentId(user.uid, storedToken);
+      const primaryRef = db.collection("userTokens").doc(docId);
+      const primarySnap = await primaryRef.get();
 
-      if (tokenQuery.empty) {
-        this.clearLocalToken();
-        return false;
+      let tokenRef: firebase.firestore.DocumentReference;
+      let tokenData: firebase.firestore.DocumentData;
+
+      if (primarySnap.exists) {
+        tokenRef = primaryRef;
+        tokenData = primarySnap.data()!;
+      } else {
+        const legacy = await db
+          .collection("userTokens")
+          .where("userId", "==", user.uid)
+          .get();
+        const found = legacy.docs.find((d) => d.data().token === storedToken);
+        if (!found) {
+          this.clearLocalToken();
+          return false;
+        }
+        tokenRef = found.ref;
+        tokenData = found.data();
       }
-
-      const tokenDoc = tokenQuery.docs[0];
-      const tokenData = tokenDoc.data();
-
       if (!tokenData.isActive) {
         this.clearLocalToken();
         return false;
       }
 
-      // Update last active time
-      await tokenDoc.ref.update({
+      await tokenRef.update({
         lastActiveAt: Timestamp.now(),
       });
 
@@ -148,16 +161,18 @@ class TokenService {
       const storedToken = localStorage.getItem("userToken");
 
       if (storedToken) {
-        // DELETE specific token
-        const tokenQuery = await db
-          .collection("userTokens")
-          .where("userId", "==", user.uid)
-          .where("token", "==", storedToken)
-          .get();
-
-        if (!tokenQuery.empty) {
-          const tokenDoc = tokenQuery.docs[0];
-          await tokenDoc.ref.delete(); // Actually delete the token
+        const docId = TokenService.tokenDocumentId(user.uid, storedToken);
+        const ref = db.collection("userTokens").doc(docId);
+        const s = await ref.get();
+        if (s.exists) {
+          await ref.delete();
+        } else {
+          const legacy = await db
+            .collection("userTokens")
+            .where("userId", "==", user.uid)
+            .get();
+          const found = legacy.docs.find((d) => d.data().token === storedToken);
+          if (found) await found.ref.delete();
         }
       }
 

@@ -376,3 +376,45 @@ html, body {
     animation: none;
   }
 }
+
+/* My workspace loading shimmer */
+@keyframes my-workspace-shimmer-shift {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.my-workspace-shimmer {
+  background: linear-gradient(
+    105deg,
+    rgb(229 231 235) 0%,
+    rgb(243 244 246) 42%,
+    rgb(229 231 235) 84%
+  );
+  background-size: 220% 100%;
+  animation: my-workspace-shimmer-shift 1.25s ease-in-out infinite;
+}
+
+.dark .my-workspace-shimmer {
+  background: linear-gradient(
+    105deg,
+    rgb(55 65 81) 0%,
+    rgb(75 85 99) 42%,
+    rgb(55 65 81) 84%
+  );
+  background-size: 220% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-workspace-shimmer {
+    animation: none;
+    background: rgb(229 231 235);
+  }
+
+  .dark .my-workspace-shimmer {
+    background: rgb(55 65 81);
+  }
+}

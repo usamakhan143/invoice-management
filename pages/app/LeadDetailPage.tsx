@@ -59,6 +59,8 @@ const CALL_OUTCOMES: LeadCallOutcome[] = [
   "Busy",
   "Connected",
   "Wrong Number",
+  "Hangup",
+  "Voicemail",
 ];
 
 const OUTREACH_CHANNELS: { value: OutreachChannel; label: string }[] = [
@@ -480,13 +482,14 @@ const LeadDetailPage: React.FC = () => {
 
   // Load tags when leadCampaignId changes
   useEffect(() => {
-    if (!leadCampaignId) {
+    const cid = lead?.companyId;
+    if (!leadCampaignId || !cid) {
       setCampaignTags([]);
       return;
     }
-    const unsub = CampaignService.subscribeTags(leadCampaignId, setCampaignTags);
+    const unsub = CampaignService.subscribeTags(cid, leadCampaignId, setCampaignTags);
     return () => unsub();
-  }, [leadCampaignId]);
+  }, [lead?.companyId, leadCampaignId]);
 
   // Sync lead's campaign fields into local state when lead loads
   useEffect(() => {

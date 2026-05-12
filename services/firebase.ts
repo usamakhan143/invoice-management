@@ -164,10 +164,14 @@ let persistencePromise: Promise<boolean> | null = null;
 export const enableOfflineSupport = async (): Promise<boolean> => {
     if (persistencePromise) return persistencePromise;
 
+    // Dev: skip multi-tab IndexedDB persistence. React Strict Mode double-mounts + permission-denied
+    // on watches has been observed to trigger Firestore Web SDK INTERNAL ASSERTION FAILED loops.
+    if (import.meta.env.DEV) {
+        persistencePromise = Promise.resolve(false);
+        return persistencePromise;
+    }
+
     persistencePromise = (async () => {
-        if (import.meta.env.DEV) {
-            console.log('💾 Enabling Firebase offline persistence…');
-        }
         try {
             await db.enablePersistence({
                 synchronizeTabs: true,
@@ -180,7 +184,7 @@ export const enableOfflineSupport = async (): Promise<boolean> => {
                     ? String((err as { code?: string }).code)
                     : '';
             // failed-precondition: another tab / unsupported; unimplemented: browser; invalid-state: already enabled
-            if (import.meta.env.DEV && code && !['failed-precondition', 'unimplemented', 'invalid-state'].includes(code)) {
+            if (code && !['failed-precondition', 'unimplemented', 'invalid-state'].includes(code)) {
                 console.warn('[Firebase] enablePersistence:', err);
             }
             return false;

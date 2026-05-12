@@ -123,14 +123,17 @@ export class CampaignService {
 
   /**
    * Real-time stream of tags for a single campaign, ordered by sortOrder.
-   * Requires composite index: campaignId ASC, sortOrder ASC.
+   * `companyId` must be included so Firestore security rules can validate the query.
+   * Requires composite index: companyId ASC, campaignId ASC, sortOrder ASC.
    */
   static subscribeTags(
+    companyId: string,
     campaignId: string,
     callback: (tags: CampaignTag[]) => void,
   ): () => void {
     return db
       .collection("campaignTags")
+      .where("companyId", "==", companyId)
       .where("campaignId", "==", campaignId)
       .orderBy("sortOrder", "asc")
       .onSnapshot(
@@ -139,9 +142,10 @@ export class CampaignService {
       );
   }
 
-  static async getTagsForCampaign(campaignId: string): Promise<CampaignTag[]> {
+  static async getTagsForCampaign(companyId: string, campaignId: string): Promise<CampaignTag[]> {
     const snap = await db
       .collection("campaignTags")
+      .where("companyId", "==", companyId)
       .where("campaignId", "==", campaignId)
       .orderBy("sortOrder", "asc")
       .get();

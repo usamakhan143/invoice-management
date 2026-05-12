@@ -9,6 +9,7 @@ import { ActivityLogger } from "../../services/activityLogger";
 import { TokenService, type UserToken } from "../../services/tokenService";
 import {
   PAGES,
+  ensurePerformanceHubWithContent,
 } from "../../config/permissions";
 import type { CompanyUser } from "../../types";
 import Spinner from "../../components/Spinner";
@@ -63,6 +64,13 @@ const UserManagementPage: React.FC = () => {
     [],
   );
 
+  /** Stable company scope — do not depend on full `userProfile` (new object every Firestore snapshot). */
+  const effectiveCompanyId = useMemo(() => {
+    if (!user?.uid || !userProfile) return "";
+    if (userProfile.isOwner === true) return user.uid;
+    return (userProfile.companyId ?? "").trim();
+  }, [user?.uid, userProfile?.isOwner, userProfile?.companyId]);
+
   // Decrypt password function for Login As functionality
   const decryptPassword = (encryptedPassword: string): string | null => {
     try {
@@ -98,15 +106,12 @@ const UserManagementPage: React.FC = () => {
 
   // Load custom roles for this company
   const loadCustomRoles = async () => {
-    if (!user || !userProfile) return;
+    if (!user || !effectiveCompanyId) return;
 
     try {
-      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-      if (!companyId) return;
-
       const rolesSnapshot = await db
         .collection("customRoles")
-        .where("companyId", "==", companyId)
+        .where("companyId", "==", effectiveCompanyId)
         .get();
 
       const rolesData = rolesSnapshot.docs.map((doc) => ({
@@ -121,23 +126,15 @@ const UserManagementPage: React.FC = () => {
   };
 
   const loadUsers = async () => {
-    if (!user || !userProfile) return;
+    if (!user || !effectiveCompanyId) return;
 
     setLoading(true);
 
     try {
-      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-
-      if (!companyId) {
-        console.error("Company ID not found");
-        setLoading(false);
-        return;
-      }
-
       // Use onSnapshot for real-time updates
       const unsubscribe = db
         .collection("companyUsers")
-        .where("companyId", "==", companyId)
+        .where("companyId", "==", effectiveCompanyId)
         .onSnapshot(
           (snapshot) => {
             const usersData = snapshot.docs.map((doc) => ({
@@ -175,6 +172,11 @@ const UserManagementPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!user?.uid || !effectiveCompanyId) {
+      setLoading(false);
+      return;
+    }
+
     let unsubscribe: (() => void) | undefined;
 
     const setupListener = async () => {
@@ -182,15 +184,12 @@ const UserManagementPage: React.FC = () => {
       await loadCustomRoles();
     };
 
-    setupListener();
+    void setupListener();
 
-    // Cleanup listener on unmount
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      unsubscribe?.();
     };
-  }, [user, userProfile]);
+  }, [user?.uid, effectiveCompanyId]);
 
   // Filter users based on search term and status
   useEffect(() => {
@@ -236,7 +235,7 @@ const UserManagementPage: React.FC = () => {
 
       const customRole = customRoles.find(role => role.name === createForm.role);
       if (customRole) {
-        granularPermissions = customRole.granularPermissions || [];
+        granularPermissions = ensurePerformanceHubWithContent(customRole.granularPermissions || []);
       }
 
 
@@ -613,7 +612,7 @@ const UserManagementPage: React.FC = () => {
 
       const customRole = customRoles.find(role => role.name === editForm.role);
       if (customRole) {
-        granularPermissions = customRole.granularPermissions || [];
+        granularPermissions = ensurePerformanceHubWithContent(customRole.granularPermissions || []);
       }
 
       // Update company user record

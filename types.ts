@@ -322,7 +322,9 @@ export type LeadCallOutcome =
   | "No Answer"
   | "Busy"
   | "Connected"
-  | "Wrong Number";
+  | "Wrong Number"
+  | "Hangup"
+  | "Voicemail";
 
 /** Optional fields toggled in UI; no strict validation */
 export interface LeadExtras {
@@ -401,6 +403,18 @@ export interface LeadAssignmentEvent {
   createdAt: firebase.firestore.Timestamp;
 }
 
+/** Append-only log for “who was assigned which lead on which day” (dashboard reporting). */
+export interface AssigneeAssignmentLog {
+  id: string;
+  companyId: string;
+  assigneeUserId: string;
+  leadId: string;
+  assignedByUserId: string;
+  /** Local calendar YYYY-MM-DD (same convention as `<input type="date">`). */
+  dayKey: string;
+  createdAt: firebase.firestore.Timestamp;
+}
+
 // ─── Outreach Events (unified timeline, replaces callLogs subcollection) ───
 
 export type OutreachChannel = "call" | "email" | "whatsapp" | "sms" | "in_person" | "other";
@@ -411,7 +425,7 @@ export interface OutreachEvent {
   leadId: string;
   channel: OutreachChannel;
   notes: string;
-  /** For "call": No Answer / Busy / Connected / Wrong Number. Free text for other channels. */
+  /** For "call": No Answer / Busy / Connected / Wrong Number / Hangup / Voicemail. Free text for other channels. */
   outcome?: string | null;
   nextFollowUpDate?: firebase.firestore.Timestamp | null;
   createdAt: firebase.firestore.Timestamp;

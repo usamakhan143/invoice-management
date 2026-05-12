@@ -1,5 +1,6 @@
 import { auth, db } from "./firebase";
 import type firebase from "firebase/compat/app";
+import { TokenService } from "./tokenService";
 
 class UserMonitoringService {
   private static unsubscribeCompanyUser: (() => void) | null = null;
@@ -38,8 +39,7 @@ class UserMonitoringService {
       console.warn("Failed to setup user document monitoring:", error);
     }
 
-    // Monitor user tokens for revocation
-    this.monitorUserTokens(user);
+    void this.monitorUserTokens(user);
 
     // Monitor company user document for deactivation - with better error handling
     try {
@@ -67,37 +67,55 @@ class UserMonitoringService {
     }
   }
 
-  static monitorUserTokens(user: firebase.User) {
-    // Monitor user tokens for deletion
+  static async monitorUserTokens(user: firebase.User) {
     const currentToken = localStorage.getItem("userToken");
-    if (currentToken && !currentToken.startsWith("impersonation_")) {
-      try {
-        this.unsubscribeTokens = db
-          .collection("userTokens")
-          .where("userId", "==", user.uid)
-          .where("token", "==", currentToken)
-          .onSnapshot(
-            (snapshot) => {
-              if (snapshot.empty) {
-                this.forceLogout();
-                return;
-              }
+    if (!currentToken || currentToken.startsWith("impersonation_")) return;
 
-              const tokenDoc = snapshot.docs[0];
-              const tokenData = tokenDoc.data();
+    try {
+      const docRef = db
+        .collection("userTokens")
+        .doc(TokenService.tokenDocumentId(user.uid, currentToken));
+      const initial = await docRef.get({ source: "default" });
 
-              if (!tokenData.isActive) {
-                this.forceLogout();
-              }
-            },
-            (error) => {
-              console.warn("Token monitoring disabled due to permissions:", error.message);
-              // Don't retry if it's a permission error
+      const onTokenInactive = (data: { isActive?: boolean } | undefined) => {
+        if (!data || data.isActive === false) this.forceLogout();
+      };
+
+      if (initial.exists) {
+        this.unsubscribeTokens = docRef.onSnapshot(
+          (snap) => {
+            if (!snap.exists) {
+              this.forceLogout();
+              return;
             }
-          );
-      } catch (error) {
-        console.warn("Failed to setup token monitoring:", error);
+            onTokenInactive(snap.data());
+          },
+          (error) => {
+            console.warn("Token monitoring disabled due to permissions:", error.message);
+          },
+        );
+        return;
       }
+
+      // Legacy auto-id session rows
+      this.unsubscribeTokens = db
+        .collection("userTokens")
+        .where("userId", "==", user.uid)
+        .onSnapshot(
+          (snapshot) => {
+            const tokenDoc = snapshot.docs.find((d) => d.data().token === currentToken);
+            if (!tokenDoc) {
+              this.forceLogout();
+              return;
+            }
+            onTokenInactive(tokenDoc.data());
+          },
+          (error) => {
+            console.warn("Token monitoring disabled due to permissions:", error.message);
+          },
+        );
+    } catch (error) {
+      console.warn("Failed to setup token monitoring:", error);
     }
   }
 

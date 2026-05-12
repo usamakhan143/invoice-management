@@ -34,6 +34,11 @@ export const usePermissions = () => {
   const canViewDebugInfo = (): boolean => hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_DEBUG_INFO);
   const canViewDashboardMyAssignedLeads = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_ASSIGNED_LEADS);
+  /** Dashboard + Performance “Your call activity” (new perm or legacy dashboard toggle). */
+  const canViewMyCallActivity = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.MY_CALL_ACTIVITY_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_MY_CALL_ACTIVITY);
+  const canViewDashboardMyCallActivity = (): boolean => canViewMyCallActivity();
   const canViewLeadGenAnalytics = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.DASHBOARD_VIEW_LEAD_GEN_ANALYTICS);
   const canViewLeadGenCreated = (): boolean =>
@@ -274,6 +279,18 @@ export const usePermissions = () => {
   /** List/query scope: all company leads vs assigned-or-created only */
   const leadsListViewAll = (): boolean => canViewAllLeads();
 
+  /** Performance hub: assignment report for self — only this toggle (plus owner bypass). */
+  const canViewPerformanceAssignmentReportMy = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_MY);
+
+  /** Performance hub: team assignment report — only this toggle (plus owner bypass). Still needs leads scope to load data (see PerformancePage). */
+  const canViewPerformanceAssignmentReportTeam = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_TEAM);
+
+  /** Sidebar + /performance. Required: when off, the Performance menu and route are hidden (assignment/call toggles alone do not open Performance). */
+  const canAccessPerformancePage = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.PERFORMANCE_HUB_ACCESS);
+
   // Legacy compatibility functions (to be gradually removed)
   const hasPageAccess = (page: string): boolean => {
     // Map legacy page access to new permissions
@@ -305,6 +322,8 @@ export const usePermissions = () => {
         return canAccessMyAssignedLeadsPage();
       case "campaigns":
         return canViewCampaigns();
+      case "performance":
+        return canAccessPerformancePage();
       default:
         return false;
     }
@@ -414,6 +433,8 @@ export const usePermissions = () => {
     canAccessInvoiceVerification,
     canViewDebugInfo,
     canViewDashboardMyAssignedLeads,
+    canViewMyCallActivity,
+    canViewDashboardMyCallActivity,
     canViewLeadGenAnalytics,
     canViewLeadGenCreated,
     canViewLeadGenAssigned,
@@ -529,6 +550,10 @@ export const usePermissions = () => {
     canViewCampaigns,
     canManageCampaigns,
     canAssignLeadCampaign,
+
+    canViewPerformanceAssignmentReportMy,
+    canViewPerformanceAssignmentReportTeam,
+    canAccessPerformancePage,
 
     // Legacy compatibility
     hasPageAccess,

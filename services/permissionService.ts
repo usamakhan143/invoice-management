@@ -1,4 +1,5 @@
 import { db } from "./firebase";
+import { ensurePerformanceHubWithContent } from "../config/permissions";
 
 export class PermissionService {
   /**
@@ -14,30 +15,35 @@ export class PermissionService {
       return getAllPermissions();
     }
 
-    // If user already has granular permissions directly, use them
-    if (userProfile.granularPermissions && userProfile.granularPermissions.length > 0) {
-      return userProfile.granularPermissions;
-    }
-
-    // If user has a role assigned, load permissions from the role
+    /**
+     * Custom role document is the source of truth when the user has a named role.
+     * If we returned `users.granularPermissions` first, new toggles added in Role Management
+     * would never apply until every user was re-saved manually — `users` kept a stale copy.
+     */
     if (userProfile.role && userProfile.role !== "custom") {
       try {
-        const companyId = userProfile.isOwner ? userProfile.uid : userProfile.companyId;
-        if (!companyId) return [];
+        const companyId = userProfile.isOwner
+          ? (userProfile.uid ?? "").trim()
+          : (userProfile.companyId ?? "").trim();
+        if (companyId) {
+          const rolesSnapshot = await db
+            .collection("customRoles")
+            .where("companyId", "==", companyId)
+            .where("name", "==", userProfile.role)
+            .get();
 
-        const rolesSnapshot = await db
-          .collection("customRoles")
-          .where("companyId", "==", companyId)
-          .where("name", "==", userProfile.role)
-          .get();
-
-        if (!rolesSnapshot.empty) {
-          const roleData = rolesSnapshot.docs[0].data();
-          return roleData.granularPermissions || [];
+          if (!rolesSnapshot.empty) {
+            const roleData = rolesSnapshot.docs[0].data();
+            return ensurePerformanceHubWithContent(roleData.granularPermissions || []);
+          }
         }
       } catch (error) {
         console.error("Error loading role permissions:", error);
       }
+    }
+
+    if (userProfile.granularPermissions && userProfile.granularPermissions.length > 0) {
+      return ensurePerformanceHubWithContent(userProfile.granularPermissions);
     }
 
     return [];

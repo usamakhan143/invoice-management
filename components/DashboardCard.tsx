@@ -101,18 +101,34 @@ export const DashboardMiniStat: React.FC<{
   label: string;
   value: string | number;
   hint?: string;
-}> = ({ label, value, hint }) => (
-  <div className="rounded-xl border border-gray-200/80 bg-gradient-to-b from-gray-50/80 to-white/60 px-4 py-3.5 shadow-sm dark:border-gray-700/80 dark:from-gray-900/40 dark:to-gray-800/40">
-    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
-      {label}
-    </p>
-    <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-gray-900 dark:text-white">
-      {value}
-    </p>
-    {hint ? (
-      <p className="mt-1 text-xs leading-snug text-gray-500 dark:text-gray-400">
-        {hint}
+  /** Accent: subtle left border + tint for agent dashboard metrics. */
+  tone?: "default" | "violet" | "emerald" | "amber" | "sky";
+  className?: string;
+}> = ({ label, value, hint, tone = "default", className = "" }) => {
+  const toneClass =
+    tone === "violet"
+      ? "border-l-[3px] border-l-violet-500 bg-gradient-to-br from-violet-50/90 to-white/70 dark:border-l-violet-400 dark:from-violet-950/30 dark:to-gray-900/50"
+      : tone === "emerald"
+        ? "border-l-[3px] border-l-emerald-500 bg-gradient-to-br from-emerald-50/90 to-white/70 dark:border-l-emerald-400 dark:from-emerald-950/25 dark:to-gray-900/50"
+        : tone === "amber"
+          ? "border-l-[3px] border-l-amber-500 bg-gradient-to-br from-amber-50/90 to-white/70 dark:border-l-amber-400 dark:from-amber-950/25 dark:to-gray-900/50"
+          : tone === "sky"
+            ? "border-l-[3px] border-l-sky-500 bg-gradient-to-br from-sky-50/90 to-white/70 dark:border-l-sky-400 dark:from-sky-950/25 dark:to-gray-900/50"
+            : "bg-gradient-to-b from-gray-50/80 to-white/60 dark:from-gray-900/40 dark:to-gray-800/40";
+
+  return (
+    <div
+      className={`rounded-xl border border-gray-200/80 px-4 py-3.5 shadow-sm dark:border-gray-700/80 ${toneClass} ${className}`}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
+        {label}
       </p>
-    ) : null}
-  </div>
-);
+      <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-gray-900 dark:text-white">
+        {value}
+      </p>
+      {hint ? (
+        <p className="mt-1 text-xs leading-snug text-gray-500 dark:text-gray-400">{hint}</p>
+      ) : null}
+    </div>
+  );
+};

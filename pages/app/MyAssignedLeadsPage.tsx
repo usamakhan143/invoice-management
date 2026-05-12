@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -7,8 +7,9 @@ import AgentWorkspaceModals, {
   type AgentWorkspaceModalMode,
 } from "../../components/leads/AgentWorkspaceModals";
 import { LeadService } from "../../services/leadService";
+import { ActivityLogger } from "../../services/activityLogger";
+import { OutreachService } from "../../services/outreachService";
 import type { Lead, LeadStatus } from "../../types";
-import Spinner from "../../components/Spinner";
 import LeadPitchReadyIcon, { leadHasPitchNotes } from "../../components/LeadPitchReadyIcon";
 
 const MailIcon: React.FC<{ className?: string }> = ({ className = "text-current" }) => (
@@ -78,12 +79,18 @@ function isClosedLead(l: Lead): boolean {
   return l.status === "Won" || l.status === "Lost";
 }
 
-/** Customer created from lead, or lead linked to existing customer — ready for invoicing */
+/** Open leads with a scheduled next follow-up (excluded from Fresh queue). */
+function leadHasFollowUpScheduled(l: Lead): boolean {
+  const fu = l.nextFollowUpDate?.toMillis?.();
+  return fu != null && !Number.isNaN(fu);
+}
+
+/** Customer created from lead, or lead linked to existing customer; ready for invoicing */
 function leadHasCustomerOrLink(l: Lead): boolean {
   return !!(l.convertedCustomerId || "").trim() || !!(l.linkedCustomerId || "").trim();
 }
 
-type WorkspaceTab = "queue" | "closed";
+type WorkspaceTab = "fresh" | "called" | "followups" | "closed";
 
 const FILTER_FIELD =
   "mt-1 w-full rounded-lg border text-sm text-gray-900 bg-white border-gray-300 shadow-sm " +
@@ -96,16 +103,147 @@ const FILTER_OPT = "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-50";
 type FollowFilter = "all" | "overdue" | "week" | "none";
 type SortKey = "assigned" | "followup" | "name";
 
-const StatCard: React.FC<{ label: string; value: string | number; sub?: string }> = ({
-  label,
-  value,
-  sub,
-}) => (
-  <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-3 shadow-sm">
+const WORKSPACE_PAGE_SIZE = 20;
+
+/** Run async work with bounded parallelism (same total reads, less head-of-line blocking than tiny sequential chunks). */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) return [];
+  const cap = Math.min(Math.max(1, limit), items.length);
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: cap }, () => worker()));
+  return out;
+}
+
+function ShimmerLine({ className }: { className: string }) {
+  return <div className={`my-workspace-shimmer ${className}`.trim()} aria-hidden />;
+}
+
+/** Full-page skeleton while assigned leads stream is connecting. */
+function MyWorkspacePageSkeleton() {
+  return (
+    <div
+      className="space-y-6 w-full min-w-0"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="sr-only">Loading your workspace</span>
+      <div className="grid w-full min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 p-1.5 rounded-2xl bg-gray-100/90 dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-600/80">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl bg-white/60 dark:bg-gray-900/50 p-4 space-y-3 ring-1 ring-gray-200/60 dark:ring-gray-600/50"
+          >
+            <ShimmerLine className="h-4 w-28 rounded-lg" />
+            <ShimmerLine className="h-3 w-full max-w-[11rem] rounded-md" />
+          </div>
+        ))}
+      </div>
+      <div className="grid w-full min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-3 shadow-sm space-y-2"
+          >
+            <ShimmerLine className="h-3 w-24 rounded-md" />
+            <ShimmerLine className="h-8 w-12 rounded-md" />
+            <ShimmerLine className="h-3 w-full rounded-md" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/80 shadow-sm p-4 sm:p-5 space-y-3 w-full min-w-0">
+        <ShimmerLine className="h-3 w-32 rounded-md" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="space-y-2 min-w-0">
+              <ShimmerLine className="h-3 w-20 rounded-md" />
+              <ShimmerLine className="h-10 w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
+        <ShimmerLine className="h-3 w-56 max-w-full rounded-md" />
+      </div>
+      <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/60 shadow-sm overflow-hidden w-full min-w-0">
+        <div className="grid grid-cols-5 gap-2 px-3 py-2.5 bg-gray-50 dark:bg-gray-900/70 border-b border-gray-200 dark:border-gray-600">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <ShimmerLine key={i} className="h-3 w-12 sm:w-16 rounded-md" />
+          ))}
+        </div>
+        {[0, 1, 2, 3, 4, 5].map((r) => (
+          <div
+            key={r}
+            className="grid grid-cols-5 gap-2 px-3 py-3.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 items-center"
+          >
+            <ShimmerLine className="h-4 col-span-2 rounded-md max-w-[14rem]" />
+            <ShimmerLine className="h-4 w-20 rounded-md" />
+            <ShimmerLine className="h-4 w-24 rounded-md" />
+            <ShimmerLine className="h-9 w-full max-w-[5.5rem] rounded-lg justify-self-end" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** List area only: Fresh vs Call logged split still resolving. */
+function MyWorkspaceQueueBodySkeleton() {
+  return (
+    <div
+      className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/60 shadow-sm overflow-hidden min-w-0"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="sr-only">Preparing queue by call activity</span>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700/80 bg-gray-50/80 dark:bg-gray-900/40">
+        <ShimmerLine className="h-4 w-64 max-w-full rounded-md" />
+      </div>
+      <div className="grid grid-cols-5 gap-2 px-3 py-2.5 bg-gray-50 dark:bg-gray-900/70 border-b border-gray-200 dark:border-gray-600">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <ShimmerLine key={i} className="h-3 w-12 sm:w-16 rounded-md" />
+        ))}
+      </div>
+      {[0, 1, 2, 3, 4, 5, 6].map((r) => (
+        <div
+          key={r}
+          className="grid grid-cols-5 gap-2 px-3 py-3.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 items-center"
+        >
+          <ShimmerLine className="h-4 col-span-2 rounded-md max-w-[14rem]" />
+          <ShimmerLine className="h-4 w-20 rounded-md" />
+          <ShimmerLine className="h-4 w-24 rounded-md" />
+          <ShimmerLine className="h-9 w-full max-w-[5.5rem] rounded-lg justify-self-end" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const StatCard: React.FC<{
+  label: string;
+  value: string | number;
+  sub?: string;
+  /** Shimmer bar instead of the main value (loading split or assignment dates). */
+  valuePending?: boolean;
+}> = ({ label, value, sub, valuePending }) => (
+  <div
+    className={`rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-3 shadow-sm ${valuePending ? "min-h-[5.5rem]" : ""}`.trim()}
+  >
     <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
       {label}
     </p>
-    <p className="text-xl font-bold text-gray-900 dark:text-white mt-0.5">{value}</p>
+    {valuePending ? (
+      <div className="mt-1.5 h-8 w-[3.25rem] sm:w-16 max-w-[40%]" aria-busy="true" aria-label="Loading">
+        <ShimmerLine className="h-8 w-full rounded-md" />
+      </div>
+    ) : (
+      <p className="text-xl font-bold text-gray-900 dark:text-white mt-0.5">{value}</p>
+    )}
     {sub ? <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sub}</p> : null}
   </div>
 );
@@ -135,14 +273,22 @@ const MyAssignedLeadsPage: React.FC = () => {
   const [assignedAtMs, setAssignedAtMs] = useState<Map<string, number>>(new Map());
   const [loadingDates, setLoadingDates] = useState(false);
 
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("queue");
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("fresh");
+  const [leadIdsWithCallActivity, setLeadIdsWithCallActivity] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [loadingCallFlags, setLoadingCallFlags] = useState(false);
+  const [callActivityNonce, setCallActivityNonce] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | LeadStatus>("");
   const [followFilter, setFollowFilter] = useState<FollowFilter>("all");
   const [filterPitchReady, setFilterPitchReady] = useState<"" | "ready" | "not_ready">("");
   const [sortKey, setSortKey] = useState<SortKey>("assigned");
+  const [workspaceListPage, setWorkspaceListPage] = useState(1);
 
   const [modal, setModal] = useState<{ mode: AgentWorkspaceModalMode; leadId: string } | null>(null);
+  /** Optional one-tap pipeline nudge after a connected call on a New lead */
+  const [markContactedBannerLeadId, setMarkContactedBannerLeadId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const copyToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -207,6 +353,62 @@ const MyAssignedLeadsPage: React.FC = () => {
     return () => unsub();
   }, [user, userProfile, mayAccessMyAssigned]);
 
+  const workspaceCompanyId =
+    user && userProfile ? LeadService.resolveCompanyId(user, userProfile) : "";
+
+  const openLeadIdsKey = useMemo(
+    () =>
+      leads
+        .filter((l) => !isClosedLead(l))
+        .map((l) => l.id)
+        .sort()
+        .join("\u0001"),
+    [leads],
+  );
+
+  useEffect(() => {
+    if (!mayAccessMyAssigned || !workspaceCompanyId) {
+      setLeadIdsWithCallActivity(new Set());
+      setLoadingCallFlags(false);
+      return;
+    }
+    const openIds = openLeadIdsKey ? openLeadIdsKey.split("\u0001") : [];
+    if (openIds.length === 0) {
+      setLeadIdsWithCallActivity(new Set());
+      setLoadingCallFlags(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCallFlags(true);
+    void (async () => {
+      try {
+        const fromOutreach = await OutreachService.getLeadIdsWithCallOutreach(
+          workspaceCompanyId,
+          openIds,
+        );
+        const merged = new Set(fromOutreach);
+        const missingLegacy = openIds.filter((id) => !merged.has(id));
+        if (missingLegacy.length > 0 && !cancelled) {
+          const flags = await mapWithConcurrency(missingLegacy, 24, (id) =>
+            LeadService.hasAnyLegacyCallLog(id),
+          );
+          missingLegacy.forEach((id, j) => {
+            if (flags[j]) merged.add(id);
+          });
+        }
+        if (!cancelled) setLeadIdsWithCallActivity(merged);
+      } catch (e) {
+        console.error("[MyAssignedLeads] call activity flags:", e);
+        if (!cancelled) setLeadIdsWithCallActivity(new Set());
+      } finally {
+        if (!cancelled) setLoadingCallFlags(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mayAccessMyAssigned, workspaceCompanyId, openLeadIdsKey, callActivityNonce]);
+
   const assignedLeadIdsKey = leads.map((l) => l.id).sort().join("\u0001");
 
   useEffect(() => {
@@ -220,22 +422,24 @@ const MyAssignedLeadsPage: React.FC = () => {
     setLoadingDates(true);
     const snapshotLeads = leads;
     (async () => {
-      const next = new Map<string, number>();
-      await Promise.all(
-        snapshotLeads.map(async (l) => {
-          const ev = await LeadService.getLastAssignmentToUserAsAssignee(l.id, uid);
-          const ms =
-            ev?.toMillis?.() ??
-            l.updatedAt?.toMillis?.() ??
-            l.createdAt?.toMillis?.() ??
-            0;
-          next.set(l.id, ms);
-        }),
+      const tsMap = await LeadService.getLastAssignmentToUserAsAssigneeForLeads(
+        snapshotLeads.map((l) => l.id),
+        uid,
+        { concurrency: 16 },
       );
-      if (!cancelled) {
-        setAssignedAtMs(next);
-        setLoadingDates(false);
+      if (cancelled) return;
+      const next = new Map<string, number>();
+      for (const l of snapshotLeads) {
+        const ev = tsMap.get(l.id);
+        const ms =
+          ev?.toMillis?.() ??
+          l.updatedAt?.toMillis?.() ??
+          l.createdAt?.toMillis?.() ??
+          0;
+        next.set(l.id, ms);
       }
+      setAssignedAtMs(next);
+      setLoadingDates(false);
     })();
     return () => {
       cancelled = true;
@@ -253,12 +457,36 @@ const MyAssignedLeadsPage: React.FC = () => {
   );
   const closedLeads = useMemo(() => leads.filter(isClosedLead), [leads]);
 
+  const followUpQueueLeads = useMemo(
+    () => queueLeads.filter(leadHasFollowUpScheduled),
+    [queueLeads],
+  );
+
+  const freshQueueLeads = useMemo(
+    () =>
+      queueLeads.filter(
+        (l) => !leadIdsWithCallActivity.has(l.id) && !leadHasFollowUpScheduled(l),
+      ),
+    [queueLeads, leadIdsWithCallActivity],
+  );
+  const calledQueueLeads = useMemo(
+    () => queueLeads.filter((l) => leadIdsWithCallActivity.has(l.id)),
+    [queueLeads, leadIdsWithCallActivity],
+  );
+
   const filteredLeads = useMemo(() => {
     const sod = new Date();
     sod.setHours(0, 0, 0, 0);
     const startOfTodayMs = sod.getTime();
 
-    const base = workspaceTab === "queue" ? queueLeads : closedLeads;
+    const base =
+      workspaceTab === "fresh"
+        ? freshQueueLeads
+        : workspaceTab === "called"
+          ? calledQueueLeads
+          : workspaceTab === "followups"
+            ? followUpQueueLeads
+            : closedLeads;
     let rows = base;
     const q = search.trim().toLowerCase();
     if (q) {
@@ -310,7 +538,9 @@ const MyAssignedLeadsPage: React.FC = () => {
     return out;
   }, [
     workspaceTab,
-    queueLeads,
+    freshQueueLeads,
+    calledQueueLeads,
+    followUpQueueLeads,
     closedLeads,
     search,
     statusFilter,
@@ -321,17 +551,101 @@ const MyAssignedLeadsPage: React.FC = () => {
     sevenDaysAhead,
   ]);
 
-  const queueStats = useMemo(() => {
+  const workspaceCallQueueIds = useMemo(() => filteredLeads.map((l) => l.id), [filteredLeads]);
+
+  const handleWorkspaceCallSaveFinish = useCallback(
+    (info: {
+      andNext: boolean;
+      nextLeadId: string | null;
+      savedLeadId: string;
+      offerMarkContacted: boolean;
+    }) => {
+      setCallActivityNonce((n) => n + 1);
+      if (info.offerMarkContacted) setMarkContactedBannerLeadId(info.savedLeadId);
+      if (info.andNext && info.nextLeadId) {
+        setModal({ mode: "call", leadId: info.nextLeadId });
+      } else if (info.andNext && !info.nextLeadId) {
+        setModal(null);
+      }
+    },
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (!modal || modal.mode !== "call") return;
+    const id = modal.leadId;
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-workspace-lead-row="${id}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [modal?.leadId, modal?.mode]);
+
+  const workspaceListTotalPages = Math.max(
+    1,
+    Math.ceil(filteredLeads.length / WORKSPACE_PAGE_SIZE),
+  );
+
+  useEffect(() => {
+    setWorkspaceListPage(1);
+  }, [workspaceTab, search, statusFilter, followFilter, filterPitchReady, sortKey]);
+
+  useEffect(() => {
+    setWorkspaceListPage((p) => Math.min(Math.max(1, p), workspaceListTotalPages));
+  }, [workspaceListTotalPages, filteredLeads.length]);
+
+  const paginatedFilteredLeads = useMemo(() => {
+    const start = (workspaceListPage - 1) * WORKSPACE_PAGE_SIZE;
+    return filteredLeads.slice(start, start + WORKSPACE_PAGE_SIZE);
+  }, [filteredLeads, workspaceListPage]);
+
+  const paginationRangeLabel = useMemo(() => {
+    if (filteredLeads.length === 0) return { from: 0, to: 0 };
+    const from = (workspaceListPage - 1) * WORKSPACE_PAGE_SIZE + 1;
+    const to = Math.min(workspaceListPage * WORKSPACE_PAGE_SIZE, filteredLeads.length);
+    return { from, to };
+  }, [filteredLeads.length, workspaceListPage]);
+
+  const freshStats = useMemo(() => {
+    let assignedWeek = 0;
+    for (const l of freshQueueLeads) {
+      const ams = assignedAtMs.get(l.id) ?? l.createdAt?.toMillis?.() ?? 0;
+      if (ams >= weekAgo) assignedWeek += 1;
+    }
+    return {
+      count: freshQueueLeads.length,
+      assignedWeek,
+      onFollowUpTab: followUpQueueLeads.length,
+      calledOpen: calledQueueLeads.length,
+    };
+  }, [freshQueueLeads, followUpQueueLeads, calledQueueLeads, assignedAtMs, weekAgo]);
+
+  const followUpTabStats = useMemo(() => {
+    const sod = new Date();
+    sod.setHours(0, 0, 0, 0);
+    const startMs = sod.getTime();
+    let overdue = 0;
+    let dueWeek = 0;
+    for (const l of followUpQueueLeads) {
+      const fu = l.nextFollowUpDate?.toMillis?.();
+      if (fu == null || Number.isNaN(fu)) continue;
+      if (fu < startMs) overdue += 1;
+      else if (fu <= sevenDaysAhead) dueWeek += 1;
+    }
+    return { count: followUpQueueLeads.length, overdue, dueWeek };
+  }, [followUpQueueLeads, sevenDaysAhead]);
+
+  const calledStats = useMemo(() => {
     let assignedWeek = 0;
     let followDue = 0;
-    for (const l of queueLeads) {
+    for (const l of calledQueueLeads) {
       const ams = assignedAtMs.get(l.id) ?? l.createdAt?.toMillis?.() ?? 0;
       if (ams >= weekAgo) assignedWeek += 1;
       const fu = l.nextFollowUpDate?.toMillis?.();
       if (fu != null && !Number.isNaN(fu) && fu <= sevenDaysAhead) followDue += 1;
     }
-    return { count: queueLeads.length, assignedWeek, followDue };
-  }, [queueLeads, assignedAtMs, weekAgo, sevenDaysAhead]);
+    return { count: calledQueueLeads.length, assignedWeek, followDue };
+  }, [calledQueueLeads, assignedAtMs, weekAgo, sevenDaysAhead]);
 
   const closedStats = useMemo(() => {
     let won = 0;
@@ -343,10 +657,26 @@ const MyAssignedLeadsPage: React.FC = () => {
     return { won, lost, total: closedLeads.length };
   }, [closedLeads]);
 
+  /** Fresh vs Call logged buckets need outreach + legacy probes; until then counts would be wrong. */
+  const callSplitReady = !loadingCallFlags || queueLeads.length === 0;
+  const statsNeedSplit = !callSplitReady && queueLeads.length > 0;
+  const statsNeedAssignmentDates = loadingDates && leads.length > 0;
+  const showOpenQueueLoader =
+    !loadingList &&
+    (workspaceTab === "fresh" || workspaceTab === "called") &&
+    loadingCallFlags &&
+    queueLeads.length > 0;
+
   const groupedByDay = useMemo(() => {
     const map = new Map<string, Lead[]>();
-    for (const l of filteredLeads) {
-      const ms = assignedAtMs.get(l.id) ?? l.createdAt?.toMillis?.() ?? Date.now();
+    for (const l of paginatedFilteredLeads) {
+      const ms =
+        workspaceTab === "followups"
+          ? l.nextFollowUpDate?.toMillis?.() ??
+            assignedAtMs.get(l.id) ??
+            l.createdAt?.toMillis?.() ??
+            Date.now()
+          : assignedAtMs.get(l.id) ?? l.createdAt?.toMillis?.() ?? Date.now();
       const key = formatDayKey(ms);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(l);
@@ -356,16 +686,26 @@ const MyAssignedLeadsPage: React.FC = () => {
       const items = [...(map.get(key) ?? [])];
       const labelMs =
         items.length > 0
-          ? assignedAtMs.get(items[0].id) ?? items[0].createdAt?.toMillis?.() ?? Date.now()
+          ? workspaceTab === "followups"
+            ? items[0].nextFollowUpDate?.toMillis?.() ??
+              assignedAtMs.get(items[0].id) ??
+              items[0].createdAt?.toMillis?.() ??
+              Date.now()
+            : assignedAtMs.get(items[0].id) ?? items[0].createdAt?.toMillis?.() ?? Date.now()
           : Date.now();
       items.sort((a, b) => {
+        if (workspaceTab === "followups") {
+          const fa = a.nextFollowUpDate?.toMillis?.() ?? Infinity;
+          const fb = b.nextFollowUpDate?.toMillis?.() ?? Infinity;
+          return fa - fb;
+        }
         const ta = assignedAtMs.get(a.id) ?? a.createdAt?.toMillis?.() ?? 0;
         const tb = assignedAtMs.get(b.id) ?? b.createdAt?.toMillis?.() ?? 0;
         return tb - ta;
       });
       return { key, label: formatDayLabel(labelMs), items };
     });
-  }, [filteredLeads, assignedAtMs]);
+  }, [paginatedFilteredLeads, assignedAtMs, workspaceTab]);
 
   if (!user || !userProfile) return null;
   if (!mayAccessMyAssigned) return null;
@@ -375,9 +715,16 @@ const MyAssignedLeadsPage: React.FC = () => {
       ? Math.round((closedStats.won / (closedStats.won + closedStats.lost)) * 100)
       : null;
 
-  const tabBaseCount = workspaceTab === "queue" ? queueLeads.length : closedLeads.length;
+  const tabBaseCount =
+    workspaceTab === "fresh"
+      ? freshQueueLeads.length
+      : workspaceTab === "called"
+        ? calledQueueLeads.length
+        : workspaceTab === "followups"
+          ? followUpQueueLeads.length
+          : closedLeads.length;
   const statusOptions: LeadStatus[] =
-    workspaceTab === "queue" ? ACTIVE_STATUSES : CLOSED_STATUSES;
+    workspaceTab === "closed" ? CLOSED_STATUSES : ACTIVE_STATUSES;
 
   const canStatus = canAgentQuickUpdateStatus();
   const canCall = canAgentQuickLogCall();
@@ -405,7 +752,7 @@ const MyAssignedLeadsPage: React.FC = () => {
   };
 
   return (
-    <div className="mobile-p-4 p-4 sm:p-6 max-w-6xl mx-auto pb-16">
+    <div className="mobile-p-4 p-4 sm:p-6 w-full min-w-0 max-w-6xl mx-auto pb-16">
       {user && userProfile && modal && modalLead ? (
         <AgentWorkspaceModals
           lead={modalLead}
@@ -419,6 +766,9 @@ const MyAssignedLeadsPage: React.FC = () => {
           canApproveCallLog={canApproveCallLog}
           canSetFollowup={canFollow}
           canAccessLeadConversionHub={conversionHubAllowed}
+          onOutreachTimelineChanged={() => setCallActivityNonce((n) => n + 1)}
+          workspaceCallQueueIds={workspaceCallQueueIds}
+          onWorkspaceCallSaveFinish={handleWorkspaceCallSaveFinish}
         />
       ) : null}
 
@@ -428,12 +778,21 @@ const MyAssignedLeadsPage: React.FC = () => {
             My workspace
           </h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-            {workspaceTab === "queue"
-              ? "Open pipeline only — focus on leads you still need to connect with. Won and Lost stay under Closed."
-              : "Won and Lost history. For deals you won, finish by linking or creating a customer so you can invoice."}
+            {workspaceTab === "fresh"
+              ? "Fresh queue: open leads with no call logged and no follow-up date yet. Set F/U or log a call and the lead leaves this list."
+              : workspaceTab === "called"
+                ? "Open leads you’ve already called: follow up, update status, or log another touch. Won and Lost stay under Closed."
+                : workspaceTab === "followups"
+                  ? "All open leads with a next follow-up scheduled, grouped by that date so nothing slips. They are not listed in Fresh queue."
+                  : "Won and Lost history. For deals you won, finish by linking or creating a customer so you can invoice."}
           </p>
           {loadingDates && leads.length > 0 ? (
             <p className="text-xs text-primary-600 dark:text-primary-400 mt-1">Syncing assignment dates…</p>
+          ) : null}
+          {loadingCallFlags && queueLeads.length > 0 ? (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Updating call-logged lists…
+            </p>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -449,33 +808,81 @@ const MyAssignedLeadsPage: React.FC = () => {
       </div>
 
       {loadingList ? (
-        <div className="flex justify-center py-20">
-          <Spinner />
-        </div>
+        <MyWorkspacePageSkeleton />
       ) : (
         <>
           <div
-            className="flex flex-col sm:flex-row gap-2 p-1.5 rounded-2xl bg-gray-100/90 dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-600/80 mb-6"
+            className="grid w-full min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 p-1.5 rounded-2xl bg-gray-100/90 dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-600/80 mb-6"
             role="tablist"
             aria-label="Lead workspace"
           >
             <button
               type="button"
               role="tab"
-              aria-selected={workspaceTab === "queue"}
+              aria-selected={workspaceTab === "fresh"}
               onClick={() => {
-                setWorkspaceTab("queue");
+                setWorkspaceTab("fresh");
                 setStatusFilter("");
               }}
               className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition-colors text-left sm:text-center ${
-                workspaceTab === "queue"
+                workspaceTab === "fresh"
                   ? "bg-white dark:bg-gray-900 text-primary-700 dark:text-primary-300 shadow-sm ring-1 ring-gray-200/80 dark:ring-gray-600"
                   : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
               }`}
             >
-              <span className="block">Working queue</span>
+              <span className="block">Fresh queue</span>
+              <span className="text-xs font-normal opacity-90 mt-0.5 inline-flex flex-wrap items-center gap-x-1 gap-y-1 justify-start sm:justify-center w-full sm:w-auto">
+                {callSplitReady ? (
+                  <span>{freshQueueLeads.length} untouched</span>
+                ) : (
+                  <ShimmerLine className="h-3.5 w-9 sm:w-10 rounded shrink-0" />
+                )}
+                <span className="text-gray-400 dark:text-gray-500">·</span>
+                <span>{queueLeads.length} open total</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceTab === "called"}
+              onClick={() => {
+                setWorkspaceTab("called");
+                setStatusFilter("");
+              }}
+              className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition-colors text-left sm:text-center ${
+                workspaceTab === "called"
+                  ? "bg-white dark:bg-gray-900 text-indigo-800 dark:text-indigo-200 shadow-sm ring-1 ring-gray-200/80 dark:ring-gray-600"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+              }`}
+            >
+              <span className="block">Call logged</span>
+              <span className="text-xs font-normal opacity-90 mt-0.5 inline-flex flex-wrap items-center gap-x-1 gap-y-1 justify-start sm:justify-center w-full sm:w-auto">
+                {callSplitReady ? (
+                  <span>{calledQueueLeads.length} open</span>
+                ) : (
+                  <ShimmerLine className="h-3.5 w-9 sm:w-10 rounded shrink-0" />
+                )}
+                <span className="text-gray-400 dark:text-gray-500">·</span>
+                <span>call or legacy log</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceTab === "followups"}
+              onClick={() => {
+                setWorkspaceTab("followups");
+                setStatusFilter("");
+              }}
+              className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition-colors text-left sm:text-center ${
+                workspaceTab === "followups"
+                  ? "bg-white dark:bg-gray-900 text-amber-800 dark:text-amber-200 shadow-sm ring-1 ring-gray-200/80 dark:ring-gray-600"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+              }`}
+            >
+              <span className="block">Follow-ups</span>
               <span className="block text-xs font-normal opacity-90 mt-0.5">
-                {queueLeads.length} to work · no Won/Lost here
+                {followUpQueueLeads.length} scheduled · open only
               </span>
             </button>
             <button
@@ -499,31 +906,77 @@ const MyAssignedLeadsPage: React.FC = () => {
             </button>
           </div>
 
-          {workspaceTab === "queue" ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-              <StatCard label="In your queue" value={queueStats.count} sub="Open pipeline only" />
-              <StatCard label="Follow-ups" value={queueStats.followDue} sub="Next 7d or overdue" />
-              <StatCard label="New in queue (7d)" value={queueStats.assignedWeek} sub="By assignment date" />
-              <StatCard label="Closed (reference)" value={closedStats.total} sub="See Closed tab" />
+          {workspaceTab === "fresh" ? (
+            <div className="grid w-full min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <StatCard
+                label="Fresh leads"
+                value={freshStats.count}
+                valuePending={statsNeedSplit}
+                sub="No call · no F/U date"
+              />
+              <StatCard
+                label="New here (7d)"
+                value={freshStats.assignedWeek}
+                valuePending={statsNeedSplit || statsNeedAssignmentDates}
+                sub="By assignment date"
+              />
+              <StatCard label="Follow-ups tab" value={freshStats.onFollowUpTab} sub="Scheduled F/U" />
+              <StatCard
+                label="Call logged (open)"
+                value={freshStats.calledOpen}
+                valuePending={statsNeedSplit}
+                sub="See Call logged tab"
+              />
+            </div>
+          ) : workspaceTab === "called" ? (
+            <div className="grid w-full min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <StatCard
+                label="Call logged"
+                value={calledStats.count}
+                valuePending={statsNeedSplit}
+                sub="Still in pipeline"
+              />
+              <StatCard
+                label="Follow-ups"
+                value={calledStats.followDue}
+                valuePending={statsNeedSplit}
+                sub="Next 7d or overdue"
+              />
+              <StatCard
+                label="New here (7d)"
+                value={calledStats.assignedWeek}
+                valuePending={statsNeedSplit || statsNeedAssignmentDates}
+                sub="By assignment date"
+              />
+              <StatCard label="Follow-ups tab" value={followUpTabStats.count} sub="See Follow-ups tab" />
+            </div>
+          ) : workspaceTab === "followups" ? (
+            <div className="grid w-full min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <StatCard label="Scheduled" value={followUpTabStats.count} sub="Open pipeline" />
+              <StatCard label="Overdue" value={followUpTabStats.overdue} sub="Before today" />
+              <StatCard label="Due ≤ 7 days" value={followUpTabStats.dueWeek} sub="From today onward" />
+              <StatCard
+                label="Fresh (open)"
+                value={freshStats.count}
+                valuePending={statsNeedSplit}
+                sub="No F/U date yet"
+              />
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="grid w-full min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
               <StatCard label="Closed total" value={closedStats.total} sub="Won + Lost" />
               <StatCard label="Won" value={closedStats.won} />
               <StatCard label="Lost" value={closedStats.lost} />
               <StatCard
                 label="Win rate"
-                value={winRate != null ? `${winRate}%` : "—"}
+                value={winRate != null ? `${winRate}%` : "-"}
                 sub={winRate != null ? `${closedStats.won} won / ${closedStats.total} closed` : "No closed yet"}
               />
             </div>
           )}
 
-          {!(
-            (workspaceTab === "queue" && queueLeads.length === 0) ||
-            (workspaceTab === "closed" && closedLeads.length === 0)
-          ) ? (
-            <div className="rounded-2xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/80 shadow-sm p-4 sm:p-5 mb-8">
+          {leads.length > 0 ? (
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/80 shadow-sm p-4 sm:p-5 mb-8 w-full min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
                 Filters &amp; sort
               </p>
@@ -546,7 +999,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                     className={FILTER_FIELD}
                   >
                     <option value="" className={FILTER_OPT}>
-                      All {workspaceTab === "queue" ? "open" : "closed"} statuses
+                      All {workspaceTab === "closed" ? "closed" : "open"} statuses
                     </option>
                     {statusOptions.map((s) => (
                       <option key={s} value={s} className={FILTER_OPT}>
@@ -608,31 +1061,63 @@ const MyAssignedLeadsPage: React.FC = () => {
                       Follow-up date (soonest first)
                     </option>
                     <option value="name" className={FILTER_OPT}>
-                      Name (A–Z)
+                      Name (A-Z)
                     </option>
                   </select>
                 </label>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-                Showing <strong>{filteredLeads.length}</strong> of {tabBaseCount} in{" "}
-                {workspaceTab === "queue" ? "working queue" : "closed"} ({leads.length} assigned overall)
+                {filteredLeads.length === 0 ? (
+                  <>
+                    No leads match the current filters · {tabBaseCount} in{" "}
+                    {workspaceTab === "fresh"
+                      ? "fresh queue"
+                      : workspaceTab === "called"
+                        ? "call logged"
+                        : workspaceTab === "followups"
+                          ? "follow-ups"
+                          : "closed"}{" "}
+                    ({leads.length} assigned overall)
+                  </>
+                ) : (
+                  <>
+                    Showing <strong>{paginationRangeLabel.from}</strong> to <strong>{paginationRangeLabel.to}</strong> of{" "}
+                    <strong>{filteredLeads.length}</strong> on this page (max {WORKSPACE_PAGE_SIZE} per page) ·{" "}
+                    {tabBaseCount} in{" "}
+                    {workspaceTab === "fresh"
+                      ? "fresh queue"
+                      : workspaceTab === "called"
+                        ? "call logged"
+                        : workspaceTab === "followups"
+                          ? "follow-ups"
+                          : "closed"}{" "}
+                    ({leads.length} assigned overall)
+                  </>
+                )}
               </p>
             </div>
           ) : null}
 
-          {leads.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 p-12 text-center text-gray-600 dark:text-gray-400">
+          {showOpenQueueLoader ? (
+            <div className="w-full space-y-3">
+              <MyWorkspaceQueueBodySkeleton />
+              <p className="text-xs text-center text-gray-500 dark:text-gray-400 px-2">
+                Preparing Fresh vs Call logged split (outreach and legacy call checks).
+              </p>
+            </div>
+          ) : leads.length === 0 ? (
+            <div className="w-full rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 p-12 text-center text-gray-600 dark:text-gray-400">
               <p className="font-semibold text-gray-800 dark:text-gray-200 text-lg">Nothing in your queue yet</p>
-              <p className="text-sm mt-2 max-w-md mx-auto">
+              <p className="text-sm mt-2 max-w-3xl mx-auto">
                 When a manager assigns leads to you, they appear here instantly. You&apos;ll be able to work them with
                 the actions on each card.
               </p>
             </div>
-          ) : workspaceTab === "queue" && queueLeads.length === 0 ? (
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-950/25 p-10 text-center">
+          ) : workspaceTab !== "closed" && queueLeads.length === 0 ? (
+            <div className="w-full rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-950/25 p-10 text-center">
               <p className="font-semibold text-emerald-900 dark:text-emerald-100 text-lg">Queue clear</p>
-              <p className="text-sm text-emerald-800/90 dark:text-emerald-200/90 mt-2 max-w-md mx-auto">
-                You don&apos;t have any open leads right now — everything assigned to you is already{" "}
+              <p className="text-sm text-emerald-800/90 dark:text-emerald-200/90 mt-2 max-w-3xl mx-auto">
+                You don&apos;t have any open leads right now; everything assigned to you is already{" "}
                 <strong>Won</strong> or <strong>Lost</strong>.
               </p>
               {closedLeads.length > 0 ? (
@@ -648,27 +1133,106 @@ const MyAssignedLeadsPage: React.FC = () => {
                 </button>
               ) : null}
             </div>
+          ) : workspaceTab === "fresh" &&
+            freshQueueLeads.length === 0 &&
+            queueLeads.length > 0 ? (
+            <div className="w-full rounded-2xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/60 dark:bg-sky-950/25 p-10 text-center">
+              <p className="font-semibold text-sky-900 dark:text-sky-100 text-lg">Fresh queue is clear</p>
+              <p className="text-sm text-sky-900/85 dark:text-sky-200/90 mt-2 max-w-3xl mx-auto">
+                Every open lead already has a call logged and/or a follow-up date. Use{" "}
+                <strong>Call logged</strong> or <strong>Follow-ups</strong> to keep working them.
+              </p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {calledQueueLeads.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkspaceTab("called");
+                      setStatusFilter("");
+                    }}
+                    className="inline-flex items-center justify-center rounded-xl bg-indigo-600 text-white px-5 py-2.5 text-sm font-medium hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400"
+                  >
+                    Call logged ({calledQueueLeads.length})
+                  </button>
+                ) : null}
+                {followUpQueueLeads.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkspaceTab("followups");
+                      setStatusFilter("");
+                    }}
+                    className="inline-flex items-center justify-center rounded-xl bg-amber-600 text-white px-5 py-2.5 text-sm font-medium hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-400"
+                  >
+                    Follow-ups ({followUpQueueLeads.length})
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : workspaceTab === "called" &&
+            calledQueueLeads.length === 0 &&
+            queueLeads.length > 0 ? (
+            <div className="w-full rounded-2xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-950/20 p-10 text-center">
+              <p className="font-semibold text-indigo-900 dark:text-indigo-100 text-lg">No call logs on open leads yet</p>
+              <p className="text-sm text-indigo-900/85 dark:text-indigo-200/90 mt-2 max-w-3xl mx-auto">
+                Log a call from the workspace on a lead in <strong>Fresh queue</strong> and it will appear here.
+              </p>
+              {freshQueueLeads.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWorkspaceTab("fresh");
+                    setStatusFilter("");
+                  }}
+                  className="mt-5 inline-flex items-center justify-center rounded-xl bg-primary-600 text-white px-5 py-2.5 text-sm font-medium hover:bg-primary-700"
+                >
+                  Back to Fresh queue ({freshQueueLeads.length})
+                </button>
+              ) : null}
+            </div>
+          ) : workspaceTab === "followups" &&
+            followUpQueueLeads.length === 0 &&
+            queueLeads.length > 0 ? (
+            <div className="w-full rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-10 text-center">
+              <p className="font-semibold text-amber-900 dark:text-amber-100 text-lg">No follow-ups on open leads</p>
+              <p className="text-sm text-amber-900/85 dark:text-amber-200/90 mt-2 max-w-3xl mx-auto">
+                Set a next follow-up from a lead card (F/U) or from the call modal; then it appears here and leaves
+                Fresh queue.
+              </p>
+              {freshQueueLeads.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWorkspaceTab("fresh");
+                    setStatusFilter("");
+                  }}
+                  className="mt-5 inline-flex items-center justify-center rounded-xl bg-primary-600 text-white px-5 py-2.5 text-sm font-medium hover:bg-primary-700"
+                >
+                  Fresh queue ({freshQueueLeads.length})
+                </button>
+              ) : null}
+            </div>
           ) : workspaceTab === "closed" && closedLeads.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 p-10 text-center text-gray-600 dark:text-gray-400">
+            <div className="w-full rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 p-10 text-center text-gray-600 dark:text-gray-400">
               <p className="font-medium text-gray-800 dark:text-gray-200">No closed leads yet</p>
-              <p className="text-sm mt-2 max-w-md mx-auto">
+              <p className="text-sm mt-2 max-w-3xl mx-auto">
                 Won and Lost leads show up here so they stay out of your working queue.
               </p>
               {queueLeads.length > 0 ? (
                 <button
                   type="button"
                   onClick={() => {
-                    setWorkspaceTab("queue");
+                    setWorkspaceTab("fresh");
                     setStatusFilter("");
                   }}
                   className="mt-4 text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
                 >
-                  Back to working queue ({queueLeads.length})
+                  Back to Fresh queue ({queueLeads.length} open)
                 </button>
               ) : null}
             </div>
           ) : filteredLeads.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-10 text-center">
+            <div className="w-full rounded-2xl border border-dashed border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-10 text-center">
               <p className="font-medium text-gray-800 dark:text-gray-200">No leads match your filters</p>
               <button
                 type="button"
@@ -684,7 +1248,8 @@ const MyAssignedLeadsPage: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="space-y-8">
+            <>
+              <div className="w-full min-w-0 space-y-8">
               {groupedByDay.map(({ key, label, items }) => (
                 <section key={key} aria-labelledby={`day-${key}`}>
                   <h2
@@ -692,6 +1257,11 @@ const MyAssignedLeadsPage: React.FC = () => {
                     className="text-sm font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-gray-600 pb-2 mb-3 flex flex-wrap items-baseline gap-2"
                   >
                     {label}
+                    {workspaceTab === "followups" ? (
+                      <span className="font-normal text-amber-700 dark:text-amber-300 text-xs">
+                        (follow-up date)
+                      </span>
+                    ) : null}
                     <span className="font-normal text-gray-500 dark:text-gray-400">
                       · {items.length} lead{items.length === 1 ? "" : "s"}
                     </span>
@@ -733,6 +1303,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                             return (
                               <tr
                                 key={l.id}
+                                data-workspace-lead-row={l.id}
                                 className="border-b border-gray-100 dark:border-gray-700/80 last:border-0 hover:bg-gray-50/90 dark:hover:bg-gray-800/50 align-top"
                               >
                                 <td className="px-3 py-2">
@@ -744,7 +1315,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                                     ) : null}
                                     <div className="min-w-0 flex-1">
                                       <div className="font-medium text-gray-900 dark:text-white leading-snug">
-                                        {name || company || "—"}
+                                        {name || company || "-"}
                                       </div>
                                       {name && company ? (
                                         <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
@@ -779,7 +1350,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                                       </button>
                                     ) : null}
                                     {!em && !ph ? (
-                                      <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>
+                                      <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
                                     ) : null}
                                   </div>
                                 </td>
@@ -864,7 +1435,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                                             {!leadHasCustomerOrLink(l) ? (
                                               <>
                                                 <p className="text-[10px] text-emerald-900/90 dark:text-emerald-100/90 leading-snug font-medium">
-                                                  No customer on this deal yet — link an existing contact or create one to
+                                                  No customer on this deal yet. Link an existing contact or create one to
                                                   enable invoicing.
                                                 </p>
                                                 <div className="mt-1.5 flex flex-wrap justify-end gap-1">
@@ -905,7 +1476,7 @@ const MyAssignedLeadsPage: React.FC = () => {
                                             ) : (
                                               <>
                                                 <p className="text-[10px] text-emerald-900/90 dark:text-emerald-100/90 font-medium">
-                                                  Customer on file — you can create an invoice.
+                                                  Customer on file. You can create an invoice.
                                                 </p>
                                                 <div className="mt-1.5 flex flex-wrap justify-end gap-1">
                                                   {canInvoiceShortcut ? (
@@ -958,7 +1529,40 @@ const MyAssignedLeadsPage: React.FC = () => {
                   </div>
                 </section>
               ))}
-            </div>
+              </div>
+              {filteredLeads.length > 0 && workspaceListTotalPages > 1 ? (
+                <div className="mt-6 flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-gray-600 dark:bg-gray-900/40 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Page <span className="font-semibold tabular-nums">{workspaceListPage}</span> of{" "}
+                    <span className="font-semibold tabular-nums">{workspaceListTotalPages}</span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {" "}
+                      ({WORKSPACE_PAGE_SIZE} leads per page)
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={workspaceListPage <= 1}
+                      onClick={() => setWorkspaceListPage((p) => Math.max(1, p - 1))}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={workspaceListPage >= workspaceListTotalPages}
+                      onClick={() =>
+                        setWorkspaceListPage((p) => Math.min(workspaceListTotalPages, p + 1))
+                      }
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
         </>
       )}
@@ -969,6 +1573,60 @@ const MyAssignedLeadsPage: React.FC = () => {
           className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-md bg-gray-900 px-4 py-2 text-sm text-white shadow-lg dark:bg-gray-100 dark:text-gray-900"
         >
           {copyToast}
+        </div>
+      ) : null}
+      {markContactedBannerLeadId && user && userProfile && canStatus ? (
+        <div
+          role="dialog"
+          aria-label="Pipeline quick update"
+          className="fixed bottom-20 left-1/2 z-[70] w-[min(100%-1.5rem,26rem)] -translate-x-1/2 rounded-xl border border-primary-200 bg-white p-4 shadow-xl dark:border-primary-900/80 dark:bg-gray-900"
+        >
+          <p className="text-sm text-gray-800 dark:text-gray-100 leading-snug">
+            You logged a <strong>connected</strong> call while this lead is still <strong>New</strong>. Move the deal to{" "}
+            <strong>Contacted</strong> in one tap, or dismiss and use <strong>Status</strong> on the card anytime.
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+            {(() => {
+              const bl = leads.find((l) => l.id === markContactedBannerLeadId);
+              return bl ? leadTitle(bl) : "Lead";
+            })()}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setMarkContactedBannerLeadId(null)}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const id = markContactedBannerLeadId;
+                if (!id) return;
+                void (async () => {
+                  try {
+                    await LeadService.updateLeadFields(id, { status: "Contacted" });
+                    await ActivityLogger.logActivity(
+                      user,
+                      userProfile,
+                      "lead_updated",
+                      "Pipeline → Contacted (after connected call)",
+                      { entityId: id, entityType: "lead" },
+                    );
+                    setMarkContactedBannerLeadId(null);
+                    setCallActivityNonce((n) => n + 1);
+                  } catch (e) {
+                    console.error(e);
+                    alert("Could not update pipeline");
+                  }
+                })();
+              }}
+              className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+            >
+              Mark Contacted
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

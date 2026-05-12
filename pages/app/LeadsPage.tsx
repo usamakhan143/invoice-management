@@ -395,13 +395,17 @@ const LeadsPage: React.FC = () => {
   }, [leadsCompanyId, mayAccessLeads]);
 
   useEffect(() => {
-    if (!filterCampaignId.trim()) {
+    if (!leadsCompanyId || !filterCampaignId.trim()) {
       setTagsForCampaignFilter([]);
       return;
     }
-    const unsub = CampaignService.subscribeTags(filterCampaignId, setTagsForCampaignFilter);
+    const unsub = CampaignService.subscribeTags(
+      leadsCompanyId,
+      filterCampaignId,
+      setTagsForCampaignFilter,
+    );
     return () => unsub();
-  }, [filterCampaignId]);
+  }, [leadsCompanyId, filterCampaignId]);
 
   useEffect(() => {
     if (bulkLeadAction !== "campaign") {
@@ -409,13 +413,13 @@ const LeadsPage: React.FC = () => {
       return;
     }
     const id = bulkTargetCampaignId;
-    if (!id || id === "__pick__" || id === "__none__") {
+    if (!leadsCompanyId || !id || id === "__pick__" || id === "__none__") {
       setTagsForBulkAssign([]);
       return;
     }
-    const unsub = CampaignService.subscribeTags(id, setTagsForBulkAssign);
+    const unsub = CampaignService.subscribeTags(leadsCompanyId, id, setTagsForBulkAssign);
     return () => unsub();
-  }, [bulkLeadAction, bulkTargetCampaignId]);
+  }, [bulkLeadAction, bulkTargetCampaignId, leadsCompanyId]);
 
   const campaignsFilterOptions = useMemo(() => {
     const list = [...campaignsForFilter];

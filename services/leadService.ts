@@ -13,6 +13,7 @@ import type {
   Customer,
 } from "../types";
 import { OutreachService } from "./outreachService";
+import { AssigneeAssignmentLogService } from "./assigneeAssignmentLogService";
 import { normalizeLeadTargetSalesGender } from "../config/leadTargetSalesGender";
 import type firebase from "firebase/compat/app";
 
@@ -318,6 +319,17 @@ export class LeadService {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() } as LeadCallLog));
   }
 
+  /** Legacy subcollection: true if any row exists (for workspace “call logged” split). */
+  static async hasAnyLegacyCallLog(leadId: string): Promise<boolean> {
+    const snap = await db
+      .collection("leads")
+      .doc(leadId)
+      .collection("callLogs")
+      .limit(1)
+      .get();
+    return !snap.empty;
+  }
+
   static subscribeCallLogs(
     leadId: string,
     callback: (logs: LeadCallLog[]) => void,
@@ -429,8 +441,14 @@ export class LeadService {
     if (!toId) {
       throw new Error("assignLead: assignee user id is required");
     }
-    const batch = db.batch();
     const leadRef = db.collection("leads").doc(leadId);
+    const leadSnap = await leadRef.get();
+    if (!leadSnap.exists) {
+      throw new Error("assignLead: lead not found");
+    }
+    const companyId = String((leadSnap.data() as Record<string, unknown>)?.companyId ?? "").trim();
+
+    const batch = db.batch();
     batch.update(leadRef, {
       assignedUserId: toId,
       updatedAt: Timestamp.now(),
@@ -444,6 +462,19 @@ export class LeadService {
       createdAt: Timestamp.now(),
     });
     await batch.commit();
+
+    if (companyId) {
+      try {
+        await AssigneeAssignmentLogService.record({
+          companyId,
+          assigneeUserId: toId,
+          leadId,
+          assignedByUserId,
+        });
+      } catch (e) {
+        console.error("[LeadService] assigneeAssignmentLog record failed:", e);
+      }
+    }
   }
 
   static async updateLeadFields(
@@ -559,27 +590,65 @@ export class LeadService {
 
   /**
    * When `toUserId` last appeared as assignee in assignment history (most recent matching event).
+   * Uses `toUserId` + `createdAt` + `limit(1)` so Firestore returns at most one document (cheap reads).
+   * Requires composite index on `assignmentEvents`: `toUserId` ASC, `createdAt` DESC.
    */
   static async getLastAssignmentToUserAsAssignee(
     leadId: string,
     toUserId: string,
   ): Promise<firebase.firestore.Timestamp | null> {
+    const uid = (toUserId || "").trim();
+    if (!leadId || !uid) return null;
+    const col = db.collection("leads").doc(leadId).collection("assignmentEvents");
     try {
-      const snap = await db
-        .collection("leads")
-        .doc(leadId)
-        .collection("assignmentEvents")
+      const snap = await col
+        .where("toUserId", "==", uid)
         .orderBy("createdAt", "desc")
-        .limit(40)
+        .limit(1)
         .get();
+      const d0 = snap.docs[0]?.data() as { createdAt?: firebase.firestore.Timestamp } | undefined;
+      if (d0?.createdAt) return d0.createdAt;
+    } catch (e) {
+      console.error("getLastAssignmentToUserAsAssignee (indexed query)", leadId, e);
+    }
+    // Fallback if index not deployed yet: scan a small recent window (same as historical behaviour).
+    try {
+      const snap = await col.orderBy("createdAt", "desc").limit(40).get();
       for (const docSnap of snap.docs) {
         const d = docSnap.data() as { toUserId?: string; createdAt?: firebase.firestore.Timestamp };
-        if (d.toUserId === toUserId && d.createdAt) return d.createdAt;
+        if (d.toUserId === uid && d.createdAt) return d.createdAt;
       }
-    } catch (e) {
-      console.error("getLastAssignmentToUserAsAssignee", leadId, e);
+    } catch (e2) {
+      console.error("getLastAssignmentToUserAsAssignee (fallback scan)", leadId, e2);
     }
     return null;
+  }
+
+  /**
+   * Load last assignment timestamps for many leads with bounded concurrency (fewer parallel sockets than unbounded Promise.all).
+   */
+  static async getLastAssignmentToUserAsAssigneeForLeads(
+    leadIds: string[],
+    toUserId: string,
+    options?: { concurrency?: number },
+  ): Promise<Map<string, firebase.firestore.Timestamp | null>> {
+    const uid = (toUserId || "").trim();
+    const out = new Map<string, firebase.firestore.Timestamp | null>();
+    const unique = [...new Set(leadIds.filter(Boolean))];
+    if (!uid || unique.length === 0) return out;
+    const concurrency = Math.min(24, Math.max(1, options?.concurrency ?? 16));
+    let cursor = 0;
+    const worker = async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= unique.length) return;
+        const leadId = unique[i];
+        const ts = await LeadService.getLastAssignmentToUserAsAssignee(leadId, uid);
+        out.set(leadId, ts);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, () => worker()));
+    return out;
   }
 
   /**

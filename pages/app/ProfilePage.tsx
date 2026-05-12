@@ -9,6 +9,14 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { auth, db } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { TokenService, type UserToken } from "../../services/tokenService";
+import { CompanyAppSettingsService } from "../../services/companyAppSettingsService";
+import {
+  DEFAULT_MY_CALL_ACTIVITY_WORKDAY_SETTINGS,
+  MY_CALL_ACTIVITY_COMMON_TIMEZONES,
+  canManageCompanyWorkdaySettings,
+  mergeMyCallActivityWorkdaySettings,
+  type MyCallActivityWorkdaySettings,
+} from "../../utils/myCallActivityBusinessDay";
 import Spinner from "../../components/Spinner";
 import firebase from "firebase/compat/app";
 
@@ -40,6 +48,70 @@ const ProfilePage: React.FC = () => {
   const [screenPinNew, setScreenPinNew] = useState("");
   const [screenPinConfirm, setScreenPinConfirm] = useState("");
   const [pinSaving, setPinSaving] = useState(false);
+
+  const mayEditCompanyWorkday = canManageCompanyWorkdaySettings(userProfile);
+  const companyIdForAppSettings = useMemo(() => {
+    if (!user || !userProfile) return "";
+    if (userProfile.isOwner === true) return user.uid;
+    return (userProfile.companyId ?? "").trim();
+  }, [user, userProfile]);
+
+  const [workdayForm, setWorkdayForm] = useState<MyCallActivityWorkdaySettings>(() =>
+    mergeMyCallActivityWorkdaySettings(null),
+  );
+  const [workdayLoading, setWorkdayLoading] = useState(false);
+  const [workdaySaving, setWorkdaySaving] = useState(false);
+  const [workdayMsg, setWorkdayMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!mayEditCompanyWorkday || !companyIdForAppSettings) return;
+    let alive = true;
+    setWorkdayLoading(true);
+    setWorkdayMsg(null);
+    void (async () => {
+      try {
+        const s = await CompanyAppSettingsService.getMyCallActivityWorkday(companyIdForAppSettings);
+        if (alive) setWorkdayForm(s);
+      } catch (e) {
+        console.error("[Profile] load call activity workday", e);
+        if (alive) {
+          setWorkdayForm(mergeMyCallActivityWorkdaySettings(null));
+          setWorkdayMsg({ type: "err", text: "Could not load company workday settings." });
+        }
+      } finally {
+        if (alive) setWorkdayLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [mayEditCompanyWorkday, companyIdForAppSettings]);
+
+  const handleSaveCompanyCallWorkday = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !userProfile || !mayEditCompanyWorkday || !companyIdForAppSettings) return;
+    setWorkdaySaving(true);
+    setWorkdayMsg(null);
+    try {
+      const merged = mergeMyCallActivityWorkdaySettings(workdayForm);
+      await CompanyAppSettingsService.saveMyCallActivityWorkday(companyIdForAppSettings, merged);
+      setWorkdayForm(merged);
+      setWorkdayMsg({
+        type: "ok",
+        text: "Saved. All team members’ dashboard “My call activity” uses this shift window.",
+      });
+      await ActivityLogger.logActivity(user, userProfile, "user_updated", "Updated company call activity workday", {
+        entityId: companyIdForAppSettings,
+        entityType: "company_settings",
+        newValue: { myCallActivityWorkday: merged },
+      });
+    } catch (err) {
+      console.error(err);
+      setWorkdayMsg({ type: "err", text: "Could not save. Try again." });
+    } finally {
+      setWorkdaySaving(false);
+    }
+  };
 
   const resolveProfileUserDocId = async (): Promise<string | null> => {
     if (!user) return null;
@@ -716,6 +788,157 @@ const ProfilePage: React.FC = () => {
           </form>
         </div>
       </div>
+
+      {mayEditCompanyWorkday && companyIdForAppSettings ? (
+        <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
+            Company call activity (dashboard)
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            One shift window for the whole team: calls after midnight stay on the same business day until shift
+            ends (e.g. 6:00 PM → 3:00 AM). Applies to the “My call activity” section on each user’s dashboard.
+          </p>
+          {workdayLoading ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+          ) : (
+            <form onSubmit={handleSaveCompanyCallWorkday} className="space-y-4 max-w-2xl">
+              {workdayMsg ? (
+                <div
+                  className={
+                    workdayMsg.type === "ok"
+                      ? "p-3 rounded-md bg-green-100 border border-green-400 text-green-800 dark:bg-green-900/30 dark:border-green-700 dark:text-green-200"
+                      : "p-3 rounded-md bg-red-100 border border-red-400 text-red-800 dark:bg-red-900/30 dark:border-red-700 dark:text-red-200"
+                  }
+                >
+                  {workdayMsg.text}
+                </div>
+              ) : null}
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={workdayForm.useBusinessWorkday}
+                  onChange={(e) =>
+                    setWorkdayForm((w) => ({
+                      ...mergeMyCallActivityWorkdaySettings(w),
+                      useBusinessWorkday: e.target.checked,
+                    }))
+                  }
+                />
+                <span className="text-sm text-gray-800 dark:text-gray-200">
+                  Use business workday (recommended for overnight shifts)
+                </span>
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">IANA timezone</span>
+                  <input
+                    type="text"
+                    list="profile-call-activity-tz"
+                    value={workdayForm.timezone}
+                    onChange={(e) =>
+                      setWorkdayForm((w) => ({
+                        ...mergeMyCallActivityWorkdaySettings(w),
+                        timezone: e.target.value,
+                      }))
+                    }
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="Asia/Karachi"
+                  />
+                  <datalist id="profile-call-activity-tz">
+                    {MY_CALL_ACTIVITY_COMMON_TIMEZONES.map((z) => (
+                      <option key={z} value={z} />
+                    ))}
+                  </datalist>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Start hour</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={workdayForm.workdayStartHour}
+                      onChange={(e) =>
+                        setWorkdayForm((w) => ({
+                          ...mergeMyCallActivityWorkdaySettings(w),
+                          workdayStartHour: Number(e.target.value),
+                        }))
+                      }
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Start min</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={workdayForm.workdayStartMinute}
+                      onChange={(e) =>
+                        setWorkdayForm((w) => ({
+                          ...mergeMyCallActivityWorkdaySettings(w),
+                          workdayStartMinute: Number(e.target.value),
+                        }))
+                      }
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">End hour</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={workdayForm.workdayEndHour}
+                      onChange={(e) =>
+                        setWorkdayForm((w) => ({
+                          ...mergeMyCallActivityWorkdaySettings(w),
+                          workdayEndHour: Number(e.target.value),
+                        }))
+                      }
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">End min</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={workdayForm.workdayEndMinute}
+                      onChange={(e) =>
+                        setWorkdayForm((w) => ({
+                          ...mergeMyCallActivityWorkdaySettings(w),
+                          workdayEndMinute: Number(e.target.value),
+                        }))
+                      }
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={workdaySaving}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {workdaySaving ? "Saving…" : "Save company workday"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWorkdayForm(mergeMyCallActivityWorkdaySettings(DEFAULT_MY_CALL_ACTIVITY_WORKDAY_SETTINGS))
+                  }
+                  className="text-sm text-primary-700 underline dark:text-primary-300"
+                >
+                  Reset to default (6 PM → 3 AM, Asia/Karachi)
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      ) : null}
 
       <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between gap-3 mb-4">

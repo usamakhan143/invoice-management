@@ -79,18 +79,22 @@ const CampaignsPage: React.FC = () => {
   }, [companyId]);
 
   // Subscribe to tags when a campaign is expanded
-  const openTags = useCallback((campaignId: string) => {
-    if (tagsUnsubRef.current) tagsUnsubRef.current();
-    setTagsCampaignId(campaignId);
-    setTags([]);
-    setTagsLoading(true);
-    setTagForm(BLANK_TAG);
-    setEditingTag(null);
-    tagsUnsubRef.current = CampaignService.subscribeTags(campaignId, (rows) => {
-      setTags(rows);
-      setTagsLoading(false);
-    });
-  }, []);
+  const openTags = useCallback(
+    (campaignId: string) => {
+      if (!companyId) return;
+      if (tagsUnsubRef.current) tagsUnsubRef.current();
+      setTagsCampaignId(campaignId);
+      setTags([]);
+      setTagsLoading(true);
+      setTagForm(BLANK_TAG);
+      setEditingTag(null);
+      tagsUnsubRef.current = CampaignService.subscribeTags(companyId, campaignId, (rows) => {
+        setTags(rows);
+        setTagsLoading(false);
+      });
+    },
+    [companyId],
+  );
 
   const closeTags = () => {
     if (tagsUnsubRef.current) tagsUnsubRef.current();

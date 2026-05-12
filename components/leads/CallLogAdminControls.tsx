@@ -14,7 +14,7 @@ interface CallLogAdminControlsProps {
 }
 
 /**
- * Recording/reference + verification — only rendered when `canApprove` (granular permission).
+ * Recording/reference + verification; only rendered when `canApprove` (granular permission).
  */
 const CallLogAdminControls: React.FC<CallLogAdminControlsProps> = ({
   leadId,

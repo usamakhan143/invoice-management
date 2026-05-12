@@ -35,13 +35,18 @@ export const usePermissionRefresh = () => {
   const setupRealTimeListeners = () => {
     if (!userProfile) return;
 
-    RealTimePermissionService.setupPermissionListeners(
-      userProfile,
-      (updatedProfile) => {
-
-        setUserProfile(updatedProfile);
-      }
-    );
+    RealTimePermissionService.setupPermissionListeners(userProfile, (updatedProfile) => {
+      setUserProfile((prev) => {
+        if (!prev) return updatedProfile;
+        const nextRole = updatedProfile.role ?? prev.role;
+        const nextPerms = updatedProfile.granularPermissions ?? prev.granularPermissions ?? [];
+        const prevPerms = prev.granularPermissions ?? [];
+        if (prev.role === nextRole && JSON.stringify(prevPerms) === JSON.stringify(nextPerms)) {
+          return prev;
+        }
+        return { ...prev, role: nextRole, granularPermissions: nextPerms };
+      });
+    });
   };
 
   return {

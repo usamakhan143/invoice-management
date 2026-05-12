@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { usePermissions } from "../hooks/usePermissions";
 import { db, Timestamp } from "../services/firebase";
@@ -7,7 +7,8 @@ import {
   PERMISSION_GROUPS,
   PERMISSION_CATEGORIES,
   GRANULAR_PERMISSIONS,
-  PERMISSION_DESCRIPTIONS
+  PERMISSION_DESCRIPTIONS,
+  ensurePerformanceHubWithContent,
 } from "../config/permissions";
 import Spinner from "./Spinner";
 
@@ -35,6 +36,12 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
 }) => {
   const { user, userProfile } = useAuth();
   const { canCreateCustomRole, canEditCustomRole, canDeleteCustomRole } = usePermissions();
+  /** Avoid `[userProfile]` in effects — Auth updates profile object on every Firestore `users` snapshot. */
+  const effectiveCompanyId = useMemo(() => {
+    if (!user?.uid || !userProfile) return "";
+    if (userProfile.isOwner === true) return user.uid;
+    return (userProfile.companyId ?? "").trim();
+  }, [user?.uid, userProfile?.isOwner, userProfile?.companyId]);
   const [roles, setRoles] = useState<CustomRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,21 +54,18 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
     granularPermissions: [] as string[],
   });
 
-  const loadRoles = async () => {
-    if (!user || !userProfile) return;
+  const loadRoles = useCallback(async () => {
+    if (!user?.uid || !effectiveCompanyId) {
+      setRoles([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     try {
-      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-
-      if (!companyId) {
-        setLoading(false);
-        return;
-      }
-
       const rolesSnapshot = await db
         .collection("customRoles")
-        .where("companyId", "==", companyId)
+        .where("companyId", "==", effectiveCompanyId)
         .orderBy("createdAt", "desc")
         .get();
 
@@ -79,11 +83,11 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid, effectiveCompanyId]);
 
   useEffect(() => {
-    loadRoles();
-  }, [user, userProfile]);
+    void loadRoles();
+  }, [loadRoles]);
 
   const initializePermissions = () => {
     // Return empty array - permissions will be selected individually
@@ -156,7 +160,7 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
       const roleData = {
         name: roleForm.name.trim(),
         description: roleForm.description.trim(),
-        granularPermissions: roleForm.granularPermissions,
+        granularPermissions: ensurePerformanceHubWithContent(roleForm.granularPermissions),
         companyId,
         isDefault: false,
         ...(editingRole
