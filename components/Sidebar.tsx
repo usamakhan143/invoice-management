@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useScreenLock } from "../contexts/ScreenLockContext";
 import { usePermissions } from "../hooks/usePermissions";
@@ -22,9 +22,20 @@ import { BRAND_LOGO_ALT, BRAND_LOGO_DARK } from "../config/brand";
 const Sidebar: React.FC = () => {
   const { logout, userProfile } = useAuth();
   const { hasScreenPin, lockScreen } = useScreenLock();
-  const { hasPageAccess, isOwner, isAdmin } = usePermissions();
+  const { hasPageAccess, isOwner, isAdmin, canImportLeads } = usePermissions();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [leadsOpen, setLeadsOpen] = useState(
+    () =>
+      location.pathname === "/leads" || location.pathname.startsWith("/leads/"),
+  );
+
+  useEffect(() => {
+    if (location.pathname === "/leads" || location.pathname.startsWith("/leads/")) {
+      setLeadsOpen(true);
+    }
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     try {
@@ -53,26 +64,6 @@ const Sidebar: React.FC = () => {
       icon: <CustomerIcon />,
       label: "Customers",
       page: PAGES.CUSTOMERS,
-    },
-    {
-      to: "/leads",
-      icon: (
-        <svg
-          className="h-6 w-6 shrink-0"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.5}
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
-          />
-        </svg>
-      ),
-      label: "Leads",
-      page: PAGES.LEADS,
     },
     {
       to: "/leads/my-assigned",
@@ -233,6 +224,31 @@ const Sidebar: React.FC = () => {
   // Check if user is super admin (IT VEINS LLC owner)
   const isSuperAdmin = isOwner && userProfile?.companyName?.toLowerCase().includes('it veins');
 
+  const canAssignedLeadsHub = hasPageAccess(PAGES.LEADS_ASSIGNED_HUB);
+
+  const leadsNavIcon = (
+    <svg
+      className="h-6 w-6 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
+      />
+    </svg>
+  );
+
+  const leadsSubLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-sm font-medium transition-colors ${
+      isActive
+        ? "bg-primary-50 text-primary-800 ring-1 ring-primary-500/15 dark:bg-gray-800 dark:text-white dark:ring-primary-400/20"
+        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+    }`;
+
   // Filter navigation items based on permissions
   const navItems = allNavItems.filter((item) => {
     // For super admin items, only show to IT VEINS LLC owners
@@ -250,6 +266,66 @@ const Sidebar: React.FC = () => {
     // Check page access permission
     return hasPageAccess(item.page);
   });
+
+  /** Keep Leads with CRM/sales flow: after Customers, else after Invoices, else after Dashboard. */
+  const leadsMenuAfterTo = navItems.some((i) => i.to === "/customers")
+    ? "/customers"
+    : navItems.some((i) => i.to === "/invoices")
+      ? "/invoices"
+      : "/";
+
+  const leadsMenuBlock =
+    hasPageAccess(PAGES.LEADS) ? (
+      <li className="space-y-0.5">
+        <button
+          type="button"
+          onClick={() => setLeadsOpen((o) => !o)}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+            location.pathname.startsWith("/leads")
+              ? "text-primary-700 dark:text-primary-300"
+              : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+          }`}
+          aria-expanded={leadsOpen}
+        >
+          {leadsNavIcon}
+          <span className="min-w-0 flex-1 truncate">Leads</span>
+          <span className="shrink-0 text-xs text-slate-400 dark:text-gray-500" aria-hidden>
+            {leadsOpen ? "▲" : "▼"}
+          </span>
+        </button>
+        {leadsOpen ? (
+          <ul className="ml-3 space-y-0.5 border-l border-slate-200/90 pl-2 dark:border-gray-700">
+            <li>
+              <NavLink to="/leads" end onClick={() => setIsOpen(false)} className={leadsSubLinkClass}>
+                All leads
+              </NavLink>
+            </li>
+            {canAssignedLeadsHub ? (
+              <li>
+                <NavLink
+                  to="/leads/assigned"
+                  onClick={() => setIsOpen(false)}
+                  className={leadsSubLinkClass}
+                >
+                  Assigned leads
+                </NavLink>
+              </li>
+            ) : null}
+            {canImportLeads() ? (
+              <li>
+                <NavLink
+                  to="/leads/import"
+                  onClick={() => setIsOpen(false)}
+                  className={leadsSubLinkClass}
+                >
+                  Import
+                </NavLink>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+      </li>
+    ) : null;
 
   const sidebarContent = (
     <div className="flex h-full flex-col border-r-2 border-slate-200/90 bg-gradient-to-b from-slate-100 to-slate-50 shadow-[4px_0_24px_-12px_rgba(15,23,42,0.25)] dark:border-gray-700 dark:from-gray-950 dark:to-gray-900 dark:shadow-[4px_0_32px_-8px_rgba(0,0,0,0.65)]">
@@ -272,22 +348,25 @@ const Sidebar: React.FC = () => {
         <nav className="mt-3 flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar sidebar-scrollbar">
           <ul className="space-y-0.5">
             {navItems.map((item) => (
-              <li key={item.to}>
-                <NavLink
-                  to={item.to}
-                  onClick={() => setIsOpen(false)}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                      isActive
-                        ? "bg-white text-primary-700 shadow-sm ring-1 ring-primary-500/20 dark:bg-gray-800 dark:text-white dark:ring-primary-400/25"
-                        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
-                    }`
-                  }
-                >
-                  {item.icon}
-                  <span className="truncate">{item.label}</span>
-                </NavLink>
-              </li>
+              <React.Fragment key={item.to}>
+                <li>
+                  <NavLink
+                    to={item.to}
+                    onClick={() => setIsOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-white text-primary-700 shadow-sm ring-1 ring-primary-500/20 dark:bg-gray-800 dark:text-white dark:ring-primary-400/25"
+                          : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+                      }`
+                    }
+                  >
+                    {item.icon}
+                    <span className="truncate">{item.label}</span>
+                  </NavLink>
+                </li>
+                {leadsMenuBlock && item.to === leadsMenuAfterTo ? leadsMenuBlock : null}
+              </React.Fragment>
             ))}
           </ul>
         </nav>

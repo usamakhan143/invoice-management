@@ -9,8 +9,10 @@ import AgentWorkspaceModals, {
 import { LeadService } from "../../services/leadService";
 import { ActivityLogger } from "../../services/activityLogger";
 import { OutreachService } from "../../services/outreachService";
-import type { Lead, LeadStatus } from "../../types";
+import type { Lead, LeadCallOutcome, LeadStatus } from "../../types";
 import LeadPitchReadyIcon, { leadHasPitchNotes } from "../../components/LeadPitchReadyIcon";
+import { leadPhoneMatchesSearch } from "../../utils/leadSearchPhone";
+import { leadHasWebsiteUrl } from "../../utils/leadWebsite";
 
 const MailIcon: React.FC<{ className?: string }> = ({ className = "text-current" }) => (
   <svg className={`w-4 h-4 shrink-0 ${className}`.trim()} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
@@ -72,6 +74,32 @@ function statusPillClass(status: LeadStatus): string {
   }
 }
 
+const WORKSPACE_CALL_OUTCOME_OPTIONS: LeadCallOutcome[] = [
+  "No Answer",
+  "Busy",
+  "Connected",
+  "Wrong Number",
+  "Hangup",
+  "Voicemail",
+];
+
+function callOutcomePillClass(outcome: string): string {
+  const o = outcome.trim();
+  if (o === "Connected") {
+    return "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/45 dark:text-emerald-100 ring-1 ring-emerald-400/55 dark:ring-emerald-600/50 shadow-sm";
+  }
+  if (o === "Voicemail") {
+    return "bg-violet-100 text-violet-900 dark:bg-violet-900/45 dark:text-violet-100 ring-1 ring-violet-400/50 dark:ring-violet-600/50 shadow-sm";
+  }
+  if (o === "Wrong Number") {
+    return "bg-orange-100 text-orange-900 dark:bg-orange-900/45 dark:text-orange-100 ring-1 ring-orange-300/60 dark:ring-orange-700/45 shadow-sm";
+  }
+  if (o === "Busy" || o === "No Answer" || o === "Hangup") {
+    return "bg-slate-200 text-slate-900 dark:bg-slate-700/80 dark:text-slate-100 ring-1 ring-slate-400/40 dark:ring-slate-500/50 shadow-sm";
+  }
+  return "bg-indigo-100 text-indigo-900 dark:bg-indigo-900/45 dark:text-indigo-100 ring-1 ring-indigo-300/50 dark:ring-indigo-600/45 shadow-sm";
+}
+
 const ACTIVE_STATUSES: LeadStatus[] = ["New", "Contacted", "Qualified", "Proposal Sent"];
 const CLOSED_STATUSES: LeadStatus[] = ["Won", "Lost"];
 
@@ -101,6 +129,7 @@ const FILTER_FIELD =
 const FILTER_OPT = "bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-50";
 
 type FollowFilter = "all" | "overdue" | "week" | "none";
+type WebsiteFilter = "" | "no_website";
 type SortKey = "assigned" | "followup" | "name";
 
 const WORKSPACE_PAGE_SIZE = 20;
@@ -283,6 +312,14 @@ const MyAssignedLeadsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<"" | LeadStatus>("");
   const [followFilter, setFollowFilter] = useState<FollowFilter>("all");
   const [filterPitchReady, setFilterPitchReady] = useState<"" | "ready" | "not_ready">("");
+  const [filterWebsite, setFilterWebsite] = useState<WebsiteFilter>("");
+  const [filterCallOutcome, setFilterCallOutcome] = useState<"" | LeadCallOutcome>("");
+  const [latestCallOutcomeByLeadId, setLatestCallOutcomeByLeadId] = useState<Map<string, string | null>>(
+    () => new Map(),
+  );
+  const [callCountsByLeadId, setCallCountsByLeadId] = useState<Map<string, number>>(() => new Map());
+  const [loadingCallOutcomes, setLoadingCallOutcomes] = useState(false);
+  const [callOutcomeNonce, setCallOutcomeNonce] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>("assigned");
   const [workspaceListPage, setWorkspaceListPage] = useState(1);
 
@@ -326,7 +363,16 @@ const MyAssignedLeadsPage: React.FC = () => {
     };
   }, []);
 
-  const openModal = (leadId: string, mode: AgentWorkspaceModalMode) => setModal({ leadId, mode });
+  const openModal = (leadId: string, mode: AgentWorkspaceModalMode) => {
+    if (mode === "call") {
+      const target = leads.find((l) => l.id === leadId);
+      if (target && !(target.phone || "").trim()) {
+        window.alert("Cannot log a call because this lead has no phone number.");
+        return;
+      }
+    }
+    setModal({ leadId, mode });
+  };
   const closeModal = () => setModal(null);
 
   const modalLead = modal ? leads.find((l) => l.id === modal.leadId) ?? null : null;
@@ -474,6 +520,88 @@ const MyAssignedLeadsPage: React.FC = () => {
     [queueLeads, leadIdsWithCallActivity],
   );
 
+  const calledQueueLeadIdsKey = useMemo(
+    () => calledQueueLeads.map((l) => l.id).sort().join("\u0001"),
+    [calledQueueLeads],
+  );
+
+  useEffect(() => {
+    if (workspaceTab !== "called") setFilterCallOutcome("");
+  }, [workspaceTab]);
+
+  useEffect(() => {
+    if (!mayAccessMyAssigned || !workspaceCompanyId || workspaceTab !== "called") {
+      return;
+    }
+    const ids = calledQueueLeadIdsKey ? calledQueueLeadIdsKey.split("\u0001") : [];
+    if (ids.length === 0) {
+      setLatestCallOutcomeByLeadId(new Map());
+      setCallCountsByLeadId(new Map());
+      setLoadingCallOutcomes(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCallOutcomes(true);
+    void (async () => {
+      try {
+        const [fromOutreach, outreachCallCounts] = await Promise.all([
+          OutreachService.fetchLatestCallOutcomesForLeads(workspaceCompanyId, ids, { concurrency: 14 }),
+          OutreachService.fetchCallChannelCountsForLeads(workspaceCompanyId, ids),
+        ]);
+        const merged = new Map<string, string | null>();
+        for (const id of ids) {
+          const raw = fromOutreach.get(id) ?? null;
+          merged.set(id, raw != null && String(raw).trim() ? String(raw).trim() : null);
+        }
+        const needLegacy = ids.filter((id) => {
+          const v = merged.get(id);
+          return v == null || !String(v).trim();
+        });
+        if (needLegacy.length > 0 && !cancelled) {
+          const legacyRows = await mapWithConcurrency(needLegacy, 16, async (id) => {
+            const leg = await LeadService.getLatestLegacyCallLogOutcome(id);
+            return { id, leg };
+          });
+          if (!cancelled) {
+            for (const { id, leg } of legacyRows) {
+              if (leg) merged.set(id, leg);
+            }
+          }
+        }
+        const totals = new Map<string, number>();
+        for (const id of ids) {
+          totals.set(id, outreachCallCounts.get(id) ?? 0);
+        }
+        if (!cancelled) {
+          const legacyCounts = await mapWithConcurrency(ids, 12, async (id) => {
+            const c = await LeadService.countLegacyCallLogs(id);
+            return { id, c };
+          });
+          if (!cancelled) {
+            for (const { id, c } of legacyCounts) {
+              totals.set(id, (totals.get(id) ?? 0) + c);
+            }
+          }
+        }
+        if (!cancelled) {
+          setLatestCallOutcomeByLeadId(merged);
+          setCallCountsByLeadId(totals);
+        }
+      } catch (e) {
+        console.error("[MyAssignedLeads] call outcomes:", e);
+        if (!cancelled) {
+          setLatestCallOutcomeByLeadId(new Map());
+          setCallCountsByLeadId(new Map());
+        }
+      } finally {
+        if (!cancelled) setLoadingCallOutcomes(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mayAccessMyAssigned, workspaceCompanyId, workspaceTab, calledQueueLeadIdsKey, callOutcomeNonce]);
+
   const filteredLeads = useMemo(() => {
     const sod = new Date();
     sod.setHours(0, 0, 0, 0);
@@ -495,7 +623,7 @@ const MyAssignedLeadsPage: React.FC = () => {
           (l.name || "").toLowerCase().includes(q) ||
           (l.company || "").toLowerCase().includes(q) ||
           (l.email || "").toLowerCase().includes(q) ||
-          (l.phone || "").toLowerCase().includes(q) ||
+          leadPhoneMatchesSearch(l.phone, search.trim()) ||
           (l.source || "").toLowerCase().includes(q) ||
           (l.country || "").toLowerCase().includes(q) ||
           (l.category || "").toLowerCase().includes(q)
@@ -520,6 +648,12 @@ const MyAssignedLeadsPage: React.FC = () => {
       rows = rows.filter((l) => leadHasPitchNotes(l.notes));
     } else if (filterPitchReady === "not_ready") {
       rows = rows.filter((l) => !leadHasPitchNotes(l.notes));
+    }
+    if (filterWebsite === "no_website") {
+      rows = rows.filter((l) => !leadHasWebsiteUrl(l));
+    }
+    if (workspaceTab === "called" && filterCallOutcome && !loadingCallOutcomes) {
+      rows = rows.filter((l) => (latestCallOutcomeByLeadId.get(l.id) ?? "") === filterCallOutcome);
     }
     const out = [...rows];
     out.sort((a, b) => {
@@ -546,12 +680,19 @@ const MyAssignedLeadsPage: React.FC = () => {
     statusFilter,
     followFilter,
     filterPitchReady,
+    filterWebsite,
+    filterCallOutcome,
+    loadingCallOutcomes,
+    latestCallOutcomeByLeadId,
     sortKey,
     assignedAtMs,
     sevenDaysAhead,
   ]);
 
-  const workspaceCallQueueIds = useMemo(() => filteredLeads.map((l) => l.id), [filteredLeads]);
+  const workspaceCallQueueIds = useMemo(
+    () => filteredLeads.filter((l) => (l.phone || "").trim()).map((l) => l.id),
+    [filteredLeads],
+  );
 
   const handleWorkspaceCallSaveFinish = useCallback(
     (info: {
@@ -561,6 +702,7 @@ const MyAssignedLeadsPage: React.FC = () => {
       offerMarkContacted: boolean;
     }) => {
       setCallActivityNonce((n) => n + 1);
+      setCallOutcomeNonce((n) => n + 1);
       if (info.offerMarkContacted) setMarkContactedBannerLeadId(info.savedLeadId);
       if (info.andNext && info.nextLeadId) {
         setModal({ mode: "call", leadId: info.nextLeadId });
@@ -588,7 +730,16 @@ const MyAssignedLeadsPage: React.FC = () => {
 
   useEffect(() => {
     setWorkspaceListPage(1);
-  }, [workspaceTab, search, statusFilter, followFilter, filterPitchReady, sortKey]);
+  }, [
+    workspaceTab,
+    search,
+    statusFilter,
+    followFilter,
+    filterPitchReady,
+    filterWebsite,
+    filterCallOutcome,
+    sortKey,
+  ]);
 
   useEffect(() => {
     setWorkspaceListPage((p) => Math.min(Math.max(1, p), workspaceListTotalPages));
@@ -980,14 +1131,20 @@ const MyAssignedLeadsPage: React.FC = () => {
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
                 Filters &amp; sort
               </p>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              <div
+                className={
+                  workspaceTab === "called"
+                    ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
+                    : "grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+                }
+              >
                 <label className="block min-w-0">
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Search</span>
                   <input
                     type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Name, company, email, phone…"
+                    placeholder="Name, company, email, phone (digits OK)…"
                     className={FILTER_FIELD}
                   />
                 </label>
@@ -1047,6 +1204,44 @@ const MyAssignedLeadsPage: React.FC = () => {
                     </option>
                   </select>
                 </label>
+                <label className="block min-w-0">
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Website</span>
+                  <select
+                    value={filterWebsite}
+                    onChange={(e) => setFilterWebsite((e.target.value || "") as WebsiteFilter)}
+                    className={FILTER_FIELD}
+                  >
+                    <option value="" className={FILTER_OPT}>
+                      All
+                    </option>
+                    <option value="no_website" className={FILTER_OPT}>
+                      No website on file
+                    </option>
+                  </select>
+                </label>
+                {workspaceTab === "called" ? (
+                  <label className="block min-w-0">
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Last call outcome</span>
+                    <select
+                      value={filterCallOutcome}
+                      onChange={(e) =>
+                        setFilterCallOutcome((e.target.value || "") as "" | LeadCallOutcome)
+                      }
+                      className={FILTER_FIELD}
+                      disabled={loadingCallOutcomes}
+                      title={loadingCallOutcomes ? "Loading outcomes…" : undefined}
+                    >
+                      <option value="" className={FILTER_OPT}>
+                        All outcomes
+                      </option>
+                      {WORKSPACE_CALL_OUTCOME_OPTIONS.map((o) => (
+                        <option key={o} value={o} className={FILTER_OPT}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <label className="block min-w-0">
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Sort</span>
                   <select
@@ -1241,6 +1436,8 @@ const MyAssignedLeadsPage: React.FC = () => {
                   setStatusFilter("");
                   setFollowFilter("all");
                   setFilterPitchReady("");
+                  setFilterWebsite("");
+                  setFilterCallOutcome("");
                 }}
                 className="mt-3 text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
               >
@@ -1268,12 +1465,20 @@ const MyAssignedLeadsPage: React.FC = () => {
                   </h2>
                   <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/60 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[800px] text-left text-sm border-collapse">
+                      <table className="w-full min-w-[920px] text-left text-sm border-collapse">
                         <thead>
                           <tr className="border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/70 text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             <th className="px-3 py-2 font-semibold w-[22%]">Lead</th>
                             <th className="px-3 py-2 font-semibold w-[7rem]">Contact</th>
                             <th className="px-3 py-2 font-semibold whitespace-nowrap w-[11%]">Status</th>
+                            {workspaceTab === "called" ? (
+                              <th className="px-3 py-2 font-semibold whitespace-nowrap min-w-[9.5rem]">
+                                <span className="block">Calls</span>
+                                <span className="block font-normal normal-case text-[10px] text-gray-500 dark:text-gray-400">
+                                  Last outcome
+                                </span>
+                              </th>
+                            ) : null}
                             <th className="px-3 py-2 font-semibold min-w-[9rem]">Follow-up</th>
                             <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">
                               Actions
@@ -1361,6 +1566,47 @@ const MyAssignedLeadsPage: React.FC = () => {
                                     {l.status}
                                   </span>
                                 </td>
+                                {workspaceTab === "called" ? (
+                                  <td className="px-3 py-2 whitespace-nowrap align-top">
+                                    {loadingCallOutcomes ? (
+                                      <span
+                                        className="inline-block h-10 w-[6.5rem] max-w-full rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"
+                                        aria-hidden
+                                      />
+                                    ) : (
+                                      (() => {
+                                        const raw = latestCallOutcomeByLeadId.get(l.id);
+                                        const oc =
+                                          raw != null && String(raw).trim() ? String(raw).trim() : "";
+                                        const n = callCountsByLeadId.get(l.id) ?? 0;
+                                        return (
+                                          <div className="flex flex-col gap-1.5">
+                                            <div className="text-xs font-semibold tabular-nums text-gray-800 dark:text-gray-100">
+                                              {n === 0 ? (
+                                                <span className="text-gray-400 dark:text-gray-500">—</span>
+                                              ) : (
+                                                <>
+                                                  {n} call{n === 1 ? "" : "s"}
+                                                </>
+                                              )}
+                                            </div>
+                                            {oc ? (
+                                              <span
+                                                className={`inline-flex w-fit max-w-full rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${callOutcomePillClass(oc)}`}
+                                              >
+                                                {oc}
+                                              </span>
+                                            ) : (
+                                              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                                                No outcome
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })()
+                                    )}
+                                  </td>
+                                ) : null}
                                 <td className="px-3 py-2">
                                   <span className={followClass} title={followLabel(l)}>
                                     {followLabel(l)}
@@ -1404,13 +1650,26 @@ const MyAssignedLeadsPage: React.FC = () => {
                                             </button>
                                           ) : null}
                                           {!hidePipelineClosedNormal && canCall ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => openModal(l.id, "call")}
-                                              className="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                                            >
-                                              Call
-                                            </button>
+                                            (() => {
+                                              const hasPhone = Boolean((l.phone || "").trim());
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  disabled={!hasPhone}
+                                                  title={
+                                                    hasPhone
+                                                      ? "Log call"
+                                                      : "Add a phone number before logging a call"
+                                                  }
+                                                  onClick={() => openModal(l.id, "call")}
+                                                  className={`shrink-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80 ${
+                                                    hasPhone ? "" : "cursor-not-allowed opacity-45"
+                                                  }`}
+                                                >
+                                                  Call
+                                                </button>
+                                              );
+                                            })()
                                           ) : null}
                                           {!hidePipelineClosedNormal && canFollow ? (
                                             <button

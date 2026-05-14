@@ -8,6 +8,7 @@ import { LeadService } from "../../services/leadService";
 import type { Lead, CompanyUser } from "../../types";
 import LeadAssignmentDailyReport from "../../components/dashboard/LeadAssignmentDailyReport";
 import MyTodayCallActivity from "../../components/dashboard/MyTodayCallActivity";
+import AgentPerformanceReport from "../../components/dashboard/AgentPerformanceReport";
 import Spinner from "../../components/Spinner";
 
 const tabBtn =
@@ -182,12 +183,21 @@ const PerformancePage: React.FC = () => {
           ) : null}
 
           {teamPerfMode && (!selfPerfMode || assignmentTab === "team") ? (
-            <LeadAssignmentDailyReport
-              mode="team"
-              companyId={assignmentReportCompanyId}
-              leads={companyLeadsTeamView}
-              assigneeLabels={teamAssigneeLabels}
-            />
+            <div className="space-y-6">
+              <LeadAssignmentDailyReport
+                mode="team"
+                companyId={assignmentReportCompanyId}
+                leads={companyLeadsTeamView}
+                assigneeLabels={teamAssigneeLabels}
+              />
+              {assignmentReportCompanyId ? (
+                <AgentPerformanceReport
+                  companyId={assignmentReportCompanyId}
+                  allLeads={companyLeadsTeamView}
+                  assigneeLabels={teamAssigneeLabels}
+                />
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}

@@ -234,6 +234,9 @@ export const usePermissions = () => {
   const canAccessLeadsPage = (): boolean =>
     canViewLeads() || canViewAllLeads();
   const canCreateLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_CREATE);
+  /** Bulk CSV import wizard — needs lead-create as well (the wizard reuses the standard create path). */
+  const canImportLeads = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_IMPORT) && canCreateLead();
   const canEditLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_EDIT);
   const canDeleteLead = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_DELETE);
   const canBulkDeleteLeads = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LEADS_BULK_DELETE);
@@ -267,6 +270,12 @@ export const usePermissions = () => {
   const canConvertLead = (): boolean => canAccessLeadConversionHub();
   const canAccessMyAssignedLeadsPage = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE);
+
+  /** Company “Assigned leads” hub (`#/leads/assigned`) and sidebar entry — requires hub toggle plus leads + view-all scope. */
+  const canAccessAssignedLeadsHubPage = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LEADS_ASSIGNED_HUB_PAGE) &&
+    canAccessLeadsPage() &&
+    canViewAllLeads();
 
   /** “My assigned” workspace modals — also covered by broader lead edit/call perms for backward compatibility */
   const canAgentQuickUpdateStatus = (): boolean =>
@@ -318,6 +327,8 @@ export const usePermissions = () => {
         return canViewUserManagement();
       case "leads":
         return canAccessLeadsPage();
+      case "leads-assigned-hub":
+        return canAccessAssignedLeadsHubPage();
       case "my-assigned-leads":
         return canAccessMyAssignedLeadsPage();
       case "campaigns":
@@ -527,6 +538,7 @@ export const usePermissions = () => {
     canViewAllLeads,
     canAccessLeadsPage,
     canCreateLead,
+    canImportLeads,
     canEditLead,
     canDeleteLead,
     canBulkDeleteLeads,
@@ -541,6 +553,7 @@ export const usePermissions = () => {
     canCreateInvoiceFromLead,
     canAccessLeadConversionHub,
     canAccessMyAssignedLeadsPage,
+    canAccessAssignedLeadsHubPage,
     canAgentQuickUpdateStatus,
     canAgentQuickLogCall,
     canAgentQuickSetFollowup,

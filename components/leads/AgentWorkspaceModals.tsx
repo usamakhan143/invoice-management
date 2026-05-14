@@ -216,6 +216,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
 
   const [copyFlash, setCopyFlash] = useState<null | "email" | "phone">(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leadHasPhone = Boolean((lead?.phone || "").trim());
 
   useEffect(() => {
     return () => {
@@ -246,13 +247,14 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
         if (t.tagName === "SELECT") return;
         if (t.tagName === "INPUT" && (t as HTMLInputElement).type === "datetime-local") return;
         if (t.tagName === "BUTTON") return;
+        if (!leadHasPhone) return;
         e.preventDefault();
         void saveCallActionRef.current(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, onClose]);
+  }, [mode, onClose, leadHasPhone]);
 
   useEffect(() => {
     if (!lead) return;
@@ -345,6 +347,10 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
   const saveCall = useCallback(
     async (andNext: boolean) => {
       if (!lead || !canLogCall) return;
+      if (!(lead.phone || "").trim()) {
+        alert("Cannot log a call because this lead has no phone number.");
+        return;
+      }
       let followTs: firebase.firestore.Timestamp | null = null;
       if (callFollowUp.trim()) {
         const parsed = fromDatetimeLocalValue(callFollowUp);
@@ -855,7 +861,14 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
             <p className="text-sm text-gray-600 dark:text-gray-400">You don&apos;t have permission to change status.</p>
           )}
 
-          {mode === "call" && canLogCall && (
+          {mode === "call" && canLogCall && !leadHasPhone && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+              This lead has no phone number, so a call log cannot be recorded. Add a phone number first, or use
+              Details to copy any available contact information.
+            </div>
+          )}
+
+          {mode === "call" && canLogCall && leadHasPhone && (
             <div className="space-y-5">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
@@ -1078,7 +1091,7 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
               </button>
             </>
           )}
-          {mode === "call" && canLogCall && (
+          {mode === "call" && canLogCall && leadHasPhone && (
             <>
               <button
                 type="button"
@@ -1106,6 +1119,15 @@ const AgentWorkspaceModals: React.FC<AgentWorkspaceModalsProps> = ({
                 </button>
               ) : null}
             </>
+          )}
+          {mode === "call" && canLogCall && !leadHasPhone && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium bg-primary-600 text-white hover:bg-primary-700"
+            >
+              Done
+            </button>
           )}
           {mode === "followup" && canSetFollowup && (
             <>

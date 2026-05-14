@@ -343,6 +343,7 @@ const LeadDetailPage: React.FC = () => {
   const [convertBizName, setConvertBizName] = useState("");
   const [converting, setConverting] = useState(false);
   const [convertFeedback, setConvertFeedback] = useState<null | { type: "success" | "error"; message: string }>(null);
+  const leadHasPhone = Boolean((lead?.phone || "").trim());
 
   useEffect(() => {
     if (!callLogsTabAllowed && activeTab === "outreach") {
@@ -722,6 +723,10 @@ const LeadDetailPage: React.FC = () => {
 
   const handleAddOutreachEvent = async () => {
     if (!user || !userProfile || !lead || !canLogLeadCalls()) return;
+    if (outreachChannel === "call" && !(lead.phone || "").trim()) {
+      alert("Cannot log a call because this lead has no phone number.");
+      return;
+    }
     let followTs: firebase.firestore.Timestamp | null = null;
     if (callFollowUp.trim()) {
       const parsed = fromDatetimeLocalValue(callFollowUp);
@@ -1913,9 +1918,18 @@ const LeadDetailPage: React.FC = () => {
                 onChange={(e) => setOutreachChannel(e.target.value as OutreachChannel)}
               >
                 {OUTREACH_CHANNELS.map((ch) => (
-                  <option key={ch.value} value={ch.value}>{ch.label}</option>
+                  <option key={ch.value} value={ch.value} disabled={ch.value === "call" && !leadHasPhone}>
+                    {ch.label}
+                    {ch.value === "call" && !leadHasPhone ? " (phone required)" : ""}
+                  </option>
                 ))}
               </select>
+              {outreachChannel === "call" && !leadHasPhone ? (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                  This lead has no phone number, so a call log cannot be recorded. Add a phone number first,
+                  or choose another outreach channel.
+                </p>
+              ) : null}
             </div>
             {outreachChannel === "call" && (
               <div className="space-y-1">
@@ -1966,8 +1980,9 @@ const LeadDetailPage: React.FC = () => {
             </div>
             <button
               type="button"
+              disabled={outreachChannel === "call" && !leadHasPhone}
               onClick={() => void handleAddOutreachEvent()}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md w-fit text-sm font-medium hover:bg-primary-700"
+              className="px-4 py-2 bg-primary-600 text-white rounded-md w-fit text-sm font-medium hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Log outreach
             </button>

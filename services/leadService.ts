@@ -319,6 +319,14 @@ export class LeadService {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() } as LeadCallLog));
   }
 
+  /** Legacy subcollection: total call rows (for multi-call counts). */
+  static async countLegacyCallLogs(leadId: string): Promise<number> {
+    const lid = (leadId || "").trim();
+    if (!lid) return 0;
+    const snap = await db.collection("leads").doc(lid).collection("callLogs").get();
+    return snap.size;
+  }
+
   /** Legacy subcollection: true if any row exists (for workspace “call logged” split). */
   static async hasAnyLegacyCallLog(leadId: string): Promise<boolean> {
     const snap = await db
@@ -328,6 +336,23 @@ export class LeadService {
       .limit(1)
       .get();
     return !snap.empty;
+  }
+
+  /** Most recent legacy call log outcome (subcollection), if any. */
+  static async getLatestLegacyCallLogOutcome(leadId: string): Promise<LeadCallOutcome | null> {
+    const lid = (leadId || "").trim();
+    if (!lid) return null;
+    const snap = await db
+      .collection("leads")
+      .doc(lid)
+      .collection("callLogs")
+      .orderBy("createdAt", "desc")
+      .limit(1)
+      .get();
+    if (snap.empty) return null;
+    const o = snap.docs[0].data()?.outcome;
+    if (o == null || typeof o !== "string" || !o.trim()) return null;
+    return o as LeadCallOutcome;
   }
 
   static subscribeCallLogs(
@@ -741,5 +766,169 @@ export class LeadService {
     });
 
     return { customerId, businessId };
+  }
+
+  /** Company-wide aggregate over assigned leads (paginated reads; capped for safety). */
+  static async summarizeAssignedLeadsCompany(
+    companyId: string,
+    options?: { maxDocs?: number },
+  ): Promise<{
+    totalScanned: number;
+    withFollowUp: number;
+    closedWon: number;
+    closedLost: number;
+    byStatus: Record<string, number>;
+    byCountry: Record<string, number>;
+    byCategory: Record<string, number>;
+    capped: boolean;
+  }> {
+    const cid = (companyId || "").trim();
+    const maxDocs = Math.min(Math.max(50, options?.maxDocs ?? 2500), 15_000);
+    let scanned = 0;
+    let lastDoc: firebase.firestore.QueryDocumentSnapshot | null = null;
+    const byStatus: Record<string, number> = {};
+    const byCountry: Record<string, number> = {};
+    const byCategory: Record<string, number> = {};
+    let withFollowUp = 0;
+    let closedWon = 0;
+    let closedLost = 0;
+
+    if (!cid) {
+      return {
+        totalScanned: 0,
+        withFollowUp: 0,
+        closedWon: 0,
+        closedLost: 0,
+        byStatus: {},
+        byCountry: {},
+        byCategory: {},
+        capped: false,
+      };
+    }
+
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop
+      const { leads, endDoc, hasMore } = await LeadService.fetchAssignedLeadsPage(cid, {
+        pageSize: 100,
+        startAfterDoc: lastDoc,
+        assigneeUserId: "",
+      });
+      if (leads.length === 0) break;
+      for (const l of leads) {
+        byStatus[l.status] = (byStatus[l.status] ?? 0) + 1;
+        const c = (l.country || "").trim() || "(none)";
+        const cat = (l.category || "").trim() || "(none)";
+        byCountry[c] = (byCountry[c] ?? 0) + 1;
+        byCategory[cat] = (byCategory[cat] ?? 0) + 1;
+        if (l.nextFollowUpDate?.toMillis?.()) withFollowUp += 1;
+        if (l.status === "Won") closedWon += 1;
+        if (l.status === "Lost") closedLost += 1;
+      }
+      scanned += leads.length;
+      lastDoc = endDoc;
+      if (scanned >= maxDocs) {
+        return {
+          totalScanned: scanned,
+          withFollowUp,
+          closedWon,
+          closedLost,
+          byStatus,
+          byCountry,
+          byCategory,
+          capped: true,
+        };
+      }
+      if (!hasMore || !endDoc) {
+        return {
+          totalScanned: scanned,
+          withFollowUp,
+          closedWon,
+          closedLost,
+          byStatus,
+          byCountry,
+          byCategory,
+          capped: false,
+        };
+      }
+    }
+    return {
+      totalScanned: scanned,
+      withFollowUp,
+      closedWon,
+      closedLost,
+      byStatus,
+      byCountry,
+      byCategory,
+      capped: false,
+    };
+  }
+
+  /**
+   * Paginated assigned leads (non-empty assignee). Uses indexes on `companyId` + `assignedUserId` + `createdAt` or `updatedAt`.
+   */
+  static async fetchAssignedLeadsPage(
+    companyId: string,
+    params: {
+      pageSize: number;
+      startAfterDoc: firebase.firestore.QueryDocumentSnapshot | null;
+      assigneeUserId: string;
+      updatedFrom?: firebase.firestore.Timestamp | null;
+      updatedToExclusive?: firebase.firestore.Timestamp | null;
+    },
+  ): Promise<{
+    leads: Lead[];
+    endDoc: firebase.firestore.QueryDocumentSnapshot | null;
+    hasMore: boolean;
+  }> {
+    const cid = (companyId || "").trim();
+    const pageSize = Math.min(Math.max(5, params.pageSize), 100);
+    const aid = (params.assigneeUserId || "").trim();
+    if (!cid) return { leads: [], endDoc: null, hasMore: false };
+
+    let q: firebase.firestore.Query;
+
+    if (aid) {
+      const hasDate =
+        params.updatedFrom != null ||
+        (params.updatedToExclusive != null && params.updatedToExclusive.toMillis() > 0);
+      if (hasDate) {
+        q = db.collection("leads").where("companyId", "==", cid).where("assignedUserId", "==", aid);
+        if (params.updatedFrom) {
+          q = q.where("updatedAt", ">=", params.updatedFrom);
+        }
+        if (params.updatedToExclusive) {
+          q = q.where("updatedAt", "<", params.updatedToExclusive);
+        }
+        q = q.orderBy("updatedAt", "desc");
+      } else {
+        q = db
+          .collection("leads")
+          .where("companyId", "==", cid)
+          .where("assignedUserId", "==", aid)
+          .orderBy("createdAt", "desc");
+      }
+    } else {
+      q = db
+        .collection("leads")
+        .where("companyId", "==", cid)
+        .where("assignedUserId", ">", "")
+        .orderBy("assignedUserId")
+        .orderBy("createdAt", "desc");
+    }
+
+    if (params.startAfterDoc) {
+      q = q.startAfter(params.startAfterDoc);
+    }
+
+    try {
+      const snap = await q.limit(pageSize).get();
+      const leads = snap.docs.map((d) => docToLead(d));
+      const endDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1]! : null;
+      const hasMore = snap.docs.length === pageSize;
+      return { leads, endDoc, hasMore };
+    } catch (e) {
+      logFirestoreQueryError("fetchAssignedLeadsPage", e);
+      return { leads: [], endDoc: null, hasMore: false };
+    }
   }
 }

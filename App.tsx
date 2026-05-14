@@ -19,9 +19,11 @@ const InvoiceFormPage = lazy(() => import("./pages/app/InvoiceFormPage"));
 const CustomersPage = lazy(() => import("./pages/app/CustomersPage"));
 const CustomerDetailPage = lazy(() => import("./pages/app/CustomerDetailPage"));
 const LeadsPage = lazy(() => import("./pages/app/LeadsPage"));
+const LeadImportPage = lazy(() => import("./pages/app/LeadImportPage"));
 const CampaignsPage = lazy(() => import("./pages/app/CampaignsPage"));
 const LeadDetailPage = lazy(() => import("./pages/app/LeadDetailPage"));
 const MyAssignedLeadsPage = lazy(() => import("./pages/app/MyAssignedLeadsPage"));
+const AssignedLeadsHubPage = lazy(() => import("./pages/app/AssignedLeadsHubPage"));
 const PerformancePage = lazy(() => import("./pages/app/PerformancePage"));
 const ProductsPage = lazy(() => import("./pages/app/ProductsPage"));
 const BankAccountsPage = lazy(() => import("./pages/app/BankAccountsPage"));
@@ -167,6 +169,8 @@ const App: React.FC = () => {
                 <Route path="/customers" element={<CustomersPage />} />
                 <Route path="/customers/:id" element={<CustomerDetailPage />} />
                 <Route path="/leads" element={<LeadsPage />} />
+                <Route path="/leads/import" element={<LeadImportPage />} />
+                <Route path="/leads/assigned" element={<AssignedLeadsHubPage />} />
                 <Route path="/leads/my-assigned" element={<MyAssignedLeadsPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
                 <Route path="/leads/:id" element={<LeadDetailPage />} />

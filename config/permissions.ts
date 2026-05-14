@@ -146,6 +146,8 @@ export const GRANULAR_PERMISSIONS = {
   LEADS_VIEW: "leads_view",
   LEADS_VIEW_ALL: "leads_view_all",
   LEADS_CREATE: "leads_create",
+  /** Bulk import leads from a CSV file via the Import Leads wizard (mapping + dedupe). Still uses lead-create writes. */
+  LEADS_IMPORT: "leads_import",
   LEADS_EDIT: "leads_edit",
   LEADS_DELETE: "leads_delete",
   /** Delete multiple leads from the list (separate from single-row / detail delete) */
@@ -167,6 +169,8 @@ export const GRANULAR_PERMISSIONS = {
   INVOICES_CREATE_FROM_LEAD: "invoices_create_from_lead",
   /** Dedicated page: leads currently assigned to the signed-in user, grouped by assignment date */
   LEADS_MY_ASSIGNED_PAGE: "leads_my_assigned_page",
+  /** Company-wide “Assigned leads” hub (all assignees, filters, call summaries). Requires leads + view-all scope; gate with this toggle in roles. */
+  LEADS_ASSIGNED_HUB_PAGE: "leads_assigned_hub_page",
   /** My assigned workspace: change pipeline status from the quick modal (also allowed if user has leads_edit) */
   LEADS_AGENT_QUICK_STATUS: "leads_agent_quick_status",
   /** My assigned workspace: add/view call logs in modals (also allowed if user has leads_log_calls) */
@@ -325,6 +329,8 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.LEADS_VIEW]: "Access leads and view leads assigned to you or created by you",
   [GRANULAR_PERMISSIONS.LEADS_VIEW_ALL]: "View all leads in the company (monitoring)",
   [GRANULAR_PERMISSIONS.LEADS_CREATE]: "Create new leads",
+  [GRANULAR_PERMISSIONS.LEADS_IMPORT]:
+    "Bulk import leads from a CSV file (mapping + duplicate skip). Writes still use the standard lead create flow, so duplicates / invalid rows are blocked before they touch the database.",
   [GRANULAR_PERMISSIONS.LEADS_EDIT]: "Edit lead fields, status, and follow-up date",
   [GRANULAR_PERMISSIONS.LEADS_DELETE]: "Delete leads",
   [GRANULAR_PERMISSIONS.LEADS_BULK_DELETE]:
@@ -343,6 +349,8 @@ export const PERMISSION_DESCRIPTIONS = {
     "Create a new customer record from a Won lead (optional business). Does not open the invoice screen by itself.",
   [GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE]:
     "Access “My assigned leads” page (your assigned leads, grouped by date, with progress stats)",
+  [GRANULAR_PERMISSIONS.LEADS_ASSIGNED_HUB_PAGE]:
+    "Access the company “Assigned leads” hub (monitor every assignee’s assigned leads, filters, and call activity). Requires “View all leads” for data; use this to show or hide the sidebar link and route.",
   [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS]:
     "On “My assigned leads”: open the status modal to update pipeline stage (Won/Lost/etc.)",
   [GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL]:
@@ -470,6 +478,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_VIEW,
     GRANULAR_PERMISSIONS.LEADS_VIEW_ALL,
     GRANULAR_PERMISSIONS.LEADS_CREATE,
+    GRANULAR_PERMISSIONS.LEADS_IMPORT,
     GRANULAR_PERMISSIONS.LEADS_EDIT,
     GRANULAR_PERMISSIONS.LEADS_DELETE,
     GRANULAR_PERMISSIONS.LEADS_BULK_DELETE,
@@ -482,6 +491,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LEADS_CONVERT,
     GRANULAR_PERMISSIONS.LEADS_CONVERT_WON_TO_CUSTOMER,
     GRANULAR_PERMISSIONS.LEADS_MY_ASSIGNED_PAGE,
+    GRANULAR_PERMISSIONS.LEADS_ASSIGNED_HUB_PAGE,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_STATUS,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_CALL,
     GRANULAR_PERMISSIONS.LEADS_AGENT_QUICK_FOLLOWUP,
@@ -542,6 +552,8 @@ export const PAGES = {
   USER_MANAGEMENT: "user-management",
   REPORTS: "reports",
   LEADS: "leads",
+  /** Company-wide assigned leads hub (`leads_assigned_hub_page` + view-all leads in app). */
+  LEADS_ASSIGNED_HUB: "leads-assigned-hub",
   MY_ASSIGNED_LEADS: "my-assigned-leads",
   PERFORMANCE: "performance",
 } as const;

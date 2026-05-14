@@ -30,6 +30,8 @@ import {
   normalizeLeadTargetSalesGender,
   type LeadTargetSalesGender,
 } from "../../config/leadTargetSalesGender";
+import { leadPhoneMatchesSearch } from "../../utils/leadSearchPhone";
+import { leadHasWebsiteUrl } from "../../utils/leadWebsite";
 
 const LEAD_STATUS_OPTIONS: LeadStatus[] = [
   "New",
@@ -95,10 +97,19 @@ function leadListStatusBadgeClasses(status: LeadStatus): string {
   }
 }
 
-type ContactPresenceFilter = "" | "has_email" | "has_phone" | "has_both" | "has_any";
+type ContactPresenceFilter =
+  | ""
+  | "has_email"
+  | "has_phone"
+  | "email_only"
+  | "phone_only"
+  | "has_both"
+  | "has_any";
 
 /** Notes filled = pitch/call context on file (matches green check in list). */
 type PitchReadyFilter = "" | "ready" | "not_ready";
+
+type WebsiteFilter = "" | "no_website";
 
 type FilterTargetSalesGender = "" | LeadTargetSalesGender;
 
@@ -250,6 +261,7 @@ const LeadsPage: React.FC = () => {
   const {
     canAccessLeadsPage,
     canCreateLead,
+    canImportLeads,
     canAssignLeads,
     canBulkDeleteLeads,
     canAssignLeadCampaign,
@@ -264,10 +276,13 @@ const LeadsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
+  const [filterCountry, setFilterCountry] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
   const [filterAssignee, setFilterAssignee] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("");
   const [filterContact, setFilterContact] = useState<ContactPresenceFilter>("");
   const [filterPitchReady, setFilterPitchReady] = useState<PitchReadyFilter>("");
+  const [filterWebsite, setFilterWebsite] = useState<WebsiteFilter>("");
   const [filterTargetGender, setFilterTargetGender] = useState<FilterTargetSalesGender>("");
   const [filterCampaignId, setFilterCampaignId] = useState("");
   const [filterCampaignTagId, setFilterCampaignTagId] = useState("");
@@ -492,6 +507,22 @@ const LeadsPage: React.FC = () => {
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [leads]);
 
+  const uniqueCountries = useMemo(() => {
+    const s = new Set<string>();
+    leads.forEach((l) => {
+      if (l.country?.trim()) s.add(l.country.trim());
+    });
+    return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [leads]);
+
+  const uniqueCategories = useMemo(() => {
+    const s = new Set<string>();
+    leads.forEach((l) => {
+      if (l.category?.trim()) s.add(l.category.trim());
+    });
+    return [...s].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [leads]);
+
   const filteredRows = useMemo(() => {
     let rows = leads;
     const q = searchTerm.trim().toLowerCase();
@@ -509,7 +540,7 @@ const LeadsPage: React.FC = () => {
           (l.name || "").toLowerCase().includes(q) ||
           (l.company || "").toLowerCase().includes(q) ||
           (l.email || "").toLowerCase().includes(q) ||
-          (l.phone || "").toLowerCase().includes(q) ||
+          leadPhoneMatchesSearch(l.phone, searchTerm.trim()) ||
           (l.source || "").toLowerCase().includes(q) ||
           (l.status || "").toLowerCase().includes(q) ||
           (l.country || "").toLowerCase().includes(q) ||
@@ -521,6 +552,8 @@ const LeadsPage: React.FC = () => {
     }
     if (filterStatus) rows = rows.filter((l) => l.status === filterStatus);
     if (filterSource) rows = rows.filter((l) => (l.source || "").trim() === filterSource);
+    if (filterCountry) rows = rows.filter((l) => (l.country || "").trim() === filterCountry);
+    if (filterCategory) rows = rows.filter((l) => (l.category || "").trim() === filterCategory);
     if (isLeadsAdmin && filterAssignee) {
       if (filterAssignee === "__unassigned__") {
         rows = rows.filter((l) => !(l.assignedUserId || "").trim());
@@ -540,6 +573,10 @@ const LeadsPage: React.FC = () => {
             return hasEmail;
           case "has_phone":
             return hasPhone;
+          case "email_only":
+            return hasEmail && !hasPhone;
+          case "phone_only":
+            return hasPhone && !hasEmail;
           case "has_both":
             return hasEmail && hasPhone;
           case "has_any":
@@ -553,6 +590,9 @@ const LeadsPage: React.FC = () => {
       rows = rows.filter((l) => leadHasPitchNotes(l.notes));
     } else if (filterPitchReady === "not_ready") {
       rows = rows.filter((l) => !leadHasPitchNotes(l.notes));
+    }
+    if (filterWebsite === "no_website") {
+      rows = rows.filter((l) => !leadHasWebsiteUrl(l));
     }
     if (filterTargetGender) {
       rows = rows.filter(
@@ -571,10 +611,13 @@ const LeadsPage: React.FC = () => {
     searchTerm,
     filterStatus,
     filterSource,
+    filterCountry,
+    filterCategory,
     filterAssignee,
     filterCreatedBy,
     filterContact,
     filterPitchReady,
+    filterWebsite,
     filterTargetGender,
     filterCampaignId,
     filterCampaignTagId,
@@ -589,10 +632,13 @@ const LeadsPage: React.FC = () => {
     searchTerm,
     filterStatus,
     filterSource,
+    filterCountry,
+    filterCategory,
     filterAssignee,
     filterCreatedBy,
     filterContact,
     filterPitchReady,
+    filterWebsite,
     filterTargetGender,
     filterCampaignId,
     filterCampaignTagId,
@@ -957,6 +1003,53 @@ const LeadsPage: React.FC = () => {
     clearLeadSelection,
   ]);
 
+  const selectedHasAssignedLead = useMemo(
+    () =>
+      selectedLeadIds.some((id) => {
+        const l = leads.find((x) => x.id === id);
+        return !!(l && (l.assignedUserId || "").trim());
+      }),
+    [selectedLeadIds, leads],
+  );
+
+  const handleBulkUnassignSelected = useCallback(async () => {
+    if (!user || !userProfile || !allowBulkAssign || selectedLeadIds.length === 0 || bulkAssigning) {
+      return;
+    }
+    const n = selectedLeadIds.filter((id) => {
+      const l = leads.find((x) => x.id === id);
+      return l && (l.assignedUserId || "").trim();
+    }).length;
+    if (n === 0) return;
+    if (
+      !window.confirm(
+        `Unassign ${n} lead${n === 1 ? "" : "s"}? They will move to the unassigned pool (admins can assign again).`,
+      )
+    ) {
+      return;
+    }
+    setBulkAssigning(true);
+    try {
+      for (const leadId of selectedLeadIds) {
+        const lead = leads.find((l) => l.id === leadId);
+        if (!lead) continue;
+        const current = (lead.assignedUserId || "").trim();
+        if (!current) continue;
+        await LeadService.updateLeadFields(leadId, { assignedUserId: "" });
+        await ActivityLogger.logActivity(user, userProfile, "lead_assigned", "Bulk unassigned lead", {
+          entityId: leadId,
+          entityType: "lead",
+        });
+      }
+      clearLeadSelection();
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : "Bulk unassign failed.");
+    } finally {
+      setBulkAssigning(false);
+    }
+  }, [user, userProfile, allowBulkAssign, selectedLeadIds, bulkAssigning, leads, clearLeadSelection]);
+
   const handleBulkCampaignApply = useCallback(async () => {
     if (!user || !userProfile || !allowBulkCampaign || selectedLeadIds.length === 0 || bulkCampaignApplying) {
       return;
@@ -1044,6 +1137,16 @@ const LeadsPage: React.FC = () => {
             Leads
           </h1>
           <div className="button-group">
+            {canImportLeads() && (
+              <button
+                type="button"
+                onClick={() => navigate("/leads/import")}
+                className="mobile-btn px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 whitespace-nowrap dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                title="Bulk import leads from a CSV file"
+              >
+                Import CSV
+              </button>
+            )}
             {canCreateLead() && (
               <button
                 type="button"
@@ -1068,7 +1171,7 @@ const LeadsPage: React.FC = () => {
             placeholder={
               (() => {
                 let h =
-                  "Search name, company, email, phone, source, status, country, category";
+                  "Search name, company, email, phone (digits or formatted), source, status, country, category";
                 if (isLeadsAdmin) h += ", creator";
                 if (showAssigneeColumn) h += ", assignee";
                 return `${h}…`;
@@ -1103,6 +1206,32 @@ const LeadsPage: React.FC = () => {
             {uniqueSources.map((s) => (
               <option key={s} value={s}>
                 {s}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterCountry}
+            onChange={(e) => setFilterCountry(e.target.value)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[10rem]"
+            aria-label="Filter by country"
+          >
+            <option value="">All countries</option>
+            {uniqueCountries.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[10rem]"
+            aria-label="Filter by business category"
+          >
+            <option value="">All categories</option>
+            {uniqueCategories.map((c) => (
+              <option key={c} value={c}>
+                {c}
               </option>
             ))}
           </select>
@@ -1178,6 +1307,8 @@ const LeadsPage: React.FC = () => {
             <option value="">All leads (no contact filter)</option>
             <option value="has_email">Has email</option>
             <option value="has_phone">Has phone</option>
+            <option value="email_only">Email only (no phone)</option>
+            <option value="phone_only">Phone only (no email)</option>
             <option value="has_both">Has email &amp; phone</option>
             <option value="has_any">Has email or phone</option>
           </select>
@@ -1190,6 +1321,15 @@ const LeadsPage: React.FC = () => {
             <option value="">All leads (notes filter)</option>
             <option value="ready">Ready for calls (has notes)</option>
             <option value="not_ready">Not ready (no notes)</option>
+          </select>
+          <select
+            value={filterWebsite}
+            onChange={(e) => setFilterWebsite((e.target.value || "") as WebsiteFilter)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[12rem]"
+            aria-label="Filter by website on file"
+          >
+            <option value="">All leads (website)</option>
+            <option value="no_website">No website on file</option>
           </select>
           <select
             value={filterTargetGender}
@@ -1208,12 +1348,15 @@ const LeadsPage: React.FC = () => {
           </select>
           {(filterStatus ||
             filterSource ||
+            filterCountry ||
+            filterCategory ||
             filterCampaignId ||
             filterCampaignTagId ||
             (isLeadsAdmin && filterAssignee) ||
             (isLeadsAdmin && filterCreatedBy) ||
             filterContact ||
             filterPitchReady ||
+            filterWebsite ||
             filterTargetGender) && (
             <button
               type="button"
@@ -1221,12 +1364,15 @@ const LeadsPage: React.FC = () => {
               onClick={() => {
                 setFilterStatus("");
                 setFilterSource("");
+                setFilterCountry("");
+                setFilterCategory("");
                 setFilterCampaignId("");
                 setFilterCampaignTagId("");
                 setFilterAssignee("");
                 setFilterCreatedBy("");
                 setFilterContact("");
                 setFilterPitchReady("");
+                setFilterWebsite("");
                 setFilterTargetGender("");
               }}
             >
@@ -1238,12 +1384,15 @@ const LeadsPage: React.FC = () => {
           {searchTerm ||
           filterStatus ||
           filterSource ||
+          filterCountry ||
+          filterCategory ||
           filterCampaignId ||
           filterCampaignTagId ||
           (isLeadsAdmin && filterAssignee) ||
           (isLeadsAdmin && filterCreatedBy) ||
           filterContact ||
           filterPitchReady ||
+          filterWebsite ||
           filterTargetGender
             ? `Showing ${filteredRows.length} of ${leads.length} lead(s)`
             : `Total ${leads.length} lead(s)`}
@@ -1315,6 +1464,17 @@ const LeadsPage: React.FC = () => {
                 className="text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {bulkAssigning ? "Applying…" : "Apply assignment"}
+              </button>
+              <button
+                type="button"
+                disabled={
+                  bulkAssigning || bulkCampaignApplying || !selectedHasAssignedLead
+                }
+                onClick={() => void handleBulkUnassignSelected()}
+                className="text-sm px-3 py-1.5 rounded-md border border-amber-300 bg-amber-50 text-amber-950 font-medium hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-900/40"
+                title="Clear assignee on all selected leads that are currently assigned"
+              >
+                Unassign selected
               </button>
             </div>
           ) : null}

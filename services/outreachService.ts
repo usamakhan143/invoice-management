@@ -8,6 +8,25 @@ const BATCH_SIZE = 400;
 /** Firestore `in` queries accept at most 30 disjunctions. */
 const LEAD_ID_IN_CHUNK = 30;
 
+/** Scan recent outreach docs (newest first) until we find a call row — bounded reads, uses companyId+leadId+createdAt index. */
+const OUTREACH_RECENT_SCAN_CAP = 24;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) return [];
+  const cap = Math.min(Math.max(1, limit), items.length);
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: cap }, () => worker()));
+  return out;
+}
+
 function docToEvent(
   doc: firebase.firestore.QueryDocumentSnapshot | firebase.firestore.DocumentSnapshot,
 ): OutreachEvent {
@@ -93,6 +112,114 @@ export class OutreachService {
       .limit(max)
       .get();
     return snap.docs.map(docToEvent);
+  }
+
+  /**
+   * Latest call-channel outreach outcome per lead (newest call event by `createdAt`).
+   * Legacy `callLogs` are not included — merge with `LeadService.getLatestLegacyCallLogOutcome` in the UI if needed.
+   */
+  static async fetchLatestCallOutcomesForLeads(
+    companyId: string,
+    leadIds: string[],
+    options?: { concurrency?: number },
+  ): Promise<Map<string, string | null>> {
+    const cid = companyId.trim();
+    const unique = [...new Set(leadIds.map((id) => (id || "").trim()).filter(Boolean))];
+    const out = new Map<string, string | null>();
+    if (!cid || unique.length === 0) return out;
+    const conc = Math.min(20, Math.max(1, options?.concurrency ?? 12));
+    const pairs = await mapWithConcurrency(unique, conc, async (leadId) => {
+      try {
+        const snap = await db
+          .collection("outreachEvents")
+          .where("companyId", "==", cid)
+          .where("leadId", "==", leadId)
+          .orderBy("createdAt", "desc")
+          .limit(OUTREACH_RECENT_SCAN_CAP)
+          .get();
+        for (const doc of snap.docs) {
+          const ev = doc.data() as { channel?: string; outcome?: string | null };
+          if (ev.channel !== "call") continue;
+          const raw = ev.outcome;
+          const o = raw != null && String(raw).trim() ? String(raw).trim() : null;
+          return [leadId, o] as const;
+        }
+        return [leadId, null] as const;
+      } catch (e) {
+        console.error("[OutreachService] fetchLatestCallOutcomesForLeads:", leadId, e);
+        return [leadId, null] as const;
+      }
+    });
+    for (const [leadId, o] of pairs) out.set(leadId, o);
+    return out;
+  }
+
+  /**
+   * Counts call-channel outreach events per lead (for workspace “how many times called”).
+   * Legacy `callLogs` are not included — add `LeadService.countLegacyCallLogs` per lead and sum.
+   */
+  static async fetchCallChannelCountsForLeads(
+    companyId: string,
+    leadIds: string[],
+  ): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    const cid = companyId.trim();
+    const unique = [...new Set(leadIds.map((id) => (id || "").trim()).filter(Boolean))];
+    if (!cid || unique.length === 0) return counts;
+
+    for (let i = 0; i < unique.length; i += LEAD_ID_IN_CHUNK) {
+      const chunk = unique.slice(i, i + LEAD_ID_IN_CHUNK);
+      // eslint-disable-next-line no-await-in-loop
+      const snap = await db
+        .collection("outreachEvents")
+        .where("companyId", "==", cid)
+        .where("channel", "==", "call")
+        .where("leadId", "in", chunk)
+        .get();
+      for (const d of snap.docs) {
+        const lid = (d.data() as { leadId?: string }).leadId;
+        if (!lid) continue;
+        counts.set(lid, (counts.get(lid) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
+  /**
+   * Latest call-channel outreach event per lead. Bounded reads, one query per visible lead.
+   * Use for list rows where owner needs last outcome / caller / time without loading full timelines.
+   */
+  static async fetchLatestCallEventsForLeads(
+    companyId: string,
+    leadIds: string[],
+    options?: { concurrency?: number },
+  ): Promise<Map<string, OutreachEvent | null>> {
+    const cid = companyId.trim();
+    const unique = [...new Set(leadIds.map((id) => (id || "").trim()).filter(Boolean))];
+    const out = new Map<string, OutreachEvent | null>();
+    if (!cid || unique.length === 0) return out;
+    const conc = Math.min(16, Math.max(1, options?.concurrency ?? 8));
+    const pairs = await mapWithConcurrency(unique, conc, async (leadId) => {
+      try {
+        const snap = await db
+          .collection("outreachEvents")
+          .where("companyId", "==", cid)
+          .where("leadId", "==", leadId)
+          .orderBy("createdAt", "desc")
+          .limit(OUTREACH_RECENT_SCAN_CAP)
+          .get();
+        for (const doc of snap.docs) {
+          const ev = docToEvent(doc);
+          if (ev.channel === "call") return [leadId, ev] as const;
+        }
+        return [leadId, null] as const;
+      } catch (e) {
+        console.error("[OutreachService] fetchLatestCallEventsForLeads:", leadId, e);
+        return [leadId, null] as const;
+      }
+    });
+    for (const [leadId, ev] of pairs) out.set(leadId, ev);
+    return out;
   }
 
   static async getLeadIdsWithCallOutreach(
@@ -190,6 +317,33 @@ export class OutreachService {
   /** Delete a single outreach event. */
   static async deleteEvent(eventId: string): Promise<void> {
     await db.collection("outreachEvents").doc(eventId).delete();
+  }
+
+  /**
+   * Recent call-channel events per lead (bounded: one query per lead, concurrency-limited).
+   * For large lists, call with only visible / expanded lead IDs.
+   */
+  static async fetchCallEventsForLeads(
+    companyId: string,
+    leadIds: string[],
+    options?: { maxPerLead?: number; concurrency?: number },
+  ): Promise<Map<string, OutreachEvent[]>> {
+    const cid = companyId.trim();
+    const unique = [...new Set(leadIds.map((id) => (id || "").trim()).filter(Boolean))];
+    const out = new Map<string, OutreachEvent[]>();
+    if (!cid || unique.length === 0) return out;
+    const maxPerLead = Math.min(100, Math.max(1, options?.maxPerLead ?? 30));
+    const scanCap = Math.min(200, maxPerLead * 4);
+    const conc = Math.min(12, Math.max(1, options?.concurrency ?? 6));
+    const pairs = await mapWithConcurrency(unique, conc, async (leadId) => {
+      const ev = await OutreachService.fetchEventsByLead(cid, leadId, { maxDocs: scanCap });
+      const calls = ev.filter((e) => e.channel === "call").slice(0, maxPerLead);
+      return [leadId, calls] as const;
+    });
+    for (const [leadId, calls] of pairs) {
+      out.set(leadId, calls);
+    }
+    return out;
   }
 
   /** Admin QA: recording/reference and call verification fields. */

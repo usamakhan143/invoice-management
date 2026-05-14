@@ -5,10 +5,22 @@ import { CampaignService } from './campaignService';
 import { OutreachService } from './outreachService';
 
 /** Canonical on-device backup: root collections + companyId / owner userId. */
-export const FLAT_BACKUP_FORMAT_VERSION = 4;
+export const FLAT_BACKUP_FORMAT_VERSION = 5;
 
 const BACKUP_PAGE_SIZE = 400;
 const FIRESTORE_BATCH_LIMIT = 450;
+
+/** Major export milestones (company meta → … → finalize). Used for progress UI. */
+export const BACKUP_EXPORT_TOTAL_STAGES = 24;
+
+export interface BackupExportProgress {
+  /** Stages fully finished (0 … totalStages). */
+  completedStages: number;
+  totalStages: number;
+  /** What we are doing now (or just finished, same label). */
+  stageLabel: string;
+  detail?: string;
+}
 
 /**
  * New Database Structure:
@@ -191,14 +203,44 @@ export class DatabaseMigrationService {
   }
   
   // 📤 Export company data (flat root collections — matches running app)
-  static async exportCompanyData(companyId: string): Promise<Record<string, unknown>> {
+  static async exportCompanyData(
+    companyId: string,
+    onProgress?: (p: BackupExportProgress) => void,
+  ): Promise<Record<string, unknown>> {
+    const totalStages = BACKUP_EXPORT_TOTAL_STAGES;
+    let completed = 0;
+
+    const emit = (stageLabel: string, detail?: string) => {
+      onProgress?.({
+        completedStages: completed,
+        totalStages,
+        stageLabel,
+        detail,
+      });
+    };
+
+    const finishStage = (stageLabel: string, detail?: string) => {
+      completed = Math.min(completed + 1, totalStages);
+      onProgress?.({
+        completedStages: completed,
+        totalStages,
+        stageLabel,
+        detail,
+      });
+    };
+
     try {
       const data: Record<string, unknown> = {};
 
+      emit("Company profile", "Reading…");
       const companySnap = await db.collection("companies").doc(companyId).get();
       data.companyMeta = companySnap.exists
         ? serializeDocData(companySnap.data() as Record<string, unknown>)
         : null;
+      finishStage(
+        "Company profile",
+        companySnap.exists ? "Loaded" : "No company document",
+      );
 
       const toRows = (rows: { id: string; data: Record<string, unknown> }[]) =>
         rows.map(({ id, data: row }) => ({
@@ -206,60 +248,170 @@ export class DatabaseMigrationService {
           ...serializeDocData(row),
         }));
 
-      data.invoices = toRows(
-        await this.queryAllByField("invoices", "companyId", companyId),
-      );
-      data.customers = toRows(
-        await this.queryAllByField("customers", "companyId", companyId),
-      );
-      data.products = toRows(
-        await this.queryAllByField("products", "companyId", companyId),
-      );
+      const countFmt = (n: number) =>
+        `${n.toLocaleString()} document${n === 1 ? "" : "s"}`;
+
+      const runQueryStage = async (
+        stageLabel: string,
+        collectionName: string,
+        field: "companyId" | "userId",
+        value: string,
+      ) => {
+        emit(stageLabel, "Reading…");
+        const rows = await this.queryAllByField(collectionName, field, value, (n) => {
+          emit(stageLabel, countFmt(n));
+        });
+        finishStage(stageLabel, countFmt(rows.length));
+        return rows;
+      };
+
+      data.invoices = toRows(await runQueryStage("Invoices", "invoices", "companyId", companyId));
+      data.customers = toRows(await runQueryStage("Customers", "customers", "companyId", companyId));
+      data.products = toRows(await runQueryStage("Products", "products", "companyId", companyId));
+
       {
-        const baCo = await this.queryAllByField("bankAccounts", "companyId", companyId);
-        const baLegacy = await this.queryAllByField("bankAccounts", "userId", companyId);
+        emit("Bank accounts", "Reading company-linked…");
+        const baCo = await this.queryAllByField("bankAccounts", "companyId", companyId, (n) =>
+          emit("Bank accounts", `Company-linked: ${countFmt(n)}`),
+        );
+        emit("Bank accounts", "Reading legacy owner-linked…");
+        const baLegacy = await this.queryAllByField("bankAccounts", "userId", companyId, (n) =>
+          emit("Bank accounts", `Owner-linked: ${countFmt(n)}`),
+        );
         const baMerged = new Map<string, { id: string; data: Record<string, unknown> }>();
         for (const row of [...baCo, ...baLegacy]) {
           baMerged.set(row.id, row);
         }
         data.bankAccounts = toRows(Array.from(baMerged.values()));
+        finishStage("Bank accounts", `${countFmt(baMerged.size)} merged`);
       }
-      data.expenses = toRows(
-        await this.queryAllByField("expenses", "userId", companyId),
-      );
+
+      {
+        emit("Expenses", "Reading company-linked…");
+        const expByCompany = await this.queryAllByField(
+          "expenses",
+          "companyId",
+          companyId,
+          (n) => emit("Expenses", `Company-linked: ${countFmt(n)}`),
+        );
+        emit("Expenses", "Reading by owner user…");
+        const expByOwnerUserId = await this.queryAllByField(
+          "expenses",
+          "userId",
+          companyId,
+          (n) => emit("Expenses", `By owner user: ${countFmt(n)}`),
+        );
+        const expMerged = new Map<string, { id: string; data: Record<string, unknown> }>();
+        for (const row of [...expByCompany, ...expByOwnerUserId]) {
+          expMerged.set(row.id, row);
+        }
+        data.expenses = toRows(Array.from(expMerged.values()));
+        finishStage("Expenses", `${countFmt(expMerged.size)} merged`);
+      }
+
       data.activities = toRows(
-        await this.queryAllByField("activities", "companyId", companyId),
+        await runQueryStage("Activities", "activities", "companyId", companyId),
+      );
+      data.activity = toRows(
+        await runQueryStage("Activity (legacy)", "activity", "companyId", companyId),
+      );
+      data.vendors = toRows(await runQueryStage("Vendors", "vendors", "companyId", companyId));
+      data.expenseCategories = toRows(
+        await runQueryStage("Expense categories", "expenseCategories", "companyId", companyId),
+      );
+      data.bankTransfers = toRows(
+        await runQueryStage("Bank transfers", "bankTransfers", "companyId", companyId),
+      );
+      data.assigneeAssignmentLog = toRows(
+        await runQueryStage(
+          "Assignment audit log",
+          "assigneeAssignmentLog",
+          "companyId",
+          companyId,
+        ),
       );
       data.companyUsers = toRows(
-        await this.queryAllByField("companyUsers", "companyId", companyId),
+        await runQueryStage("Team (company users)", "companyUsers", "companyId", companyId),
       );
       data.customRoles = toRows(
-        await this.queryAllByField("customRoles", "companyId", companyId),
+        await runQueryStage("Custom roles", "customRoles", "companyId", companyId),
       );
       data.businesses = toRows(
-        await this.queryAllByField("businesses", "companyId", companyId),
+        await runQueryStage("Businesses", "businesses", "companyId", companyId),
       );
-      data.leads = await this.exportLeadsNested(companyId);
+
+      data.leads = await this.exportLeadsNested(companyId, (i, total) => {
+        emit("Leads & nested logs", `${i.toLocaleString()} / ${total.toLocaleString()} leads`);
+      });
+      finishStage(
+        "Leads & nested logs",
+        Array.isArray(data.leads) ? `${countFmt(data.leads.length)} with call logs / events` : "—",
+      );
+
       data.subscriptions = toRows(
-        await this.queryAllByField("subscriptions", "companyId", companyId),
+        await runQueryStage("Subscriptions", "subscriptions", "companyId", companyId),
       );
-      // v4: campaigns, tags, outreach events
+
+      emit("Campaigns", "Reading…");
       const campaigns = await CampaignService.getAllForCompany(companyId);
       data.campaigns = campaigns.map((c) => ({ ...serializeDocData(c as unknown as Record<string, unknown>) }));
+      finishStage("Campaigns", countFmt(campaigns.length));
+
+      emit("Campaign tags", "Reading…");
       const campaignTags = await CampaignService.getAllTagsForCompany(companyId);
       data.campaignTags = campaignTags.map((t) => ({ ...serializeDocData(t as unknown as Record<string, unknown>) }));
+      finishStage("Campaign tags", countFmt(campaignTags.length));
+
+      emit("Outreach events", "Reading…");
       const outreachEvents = await OutreachService.getAllForCompany(companyId);
       data.outreachEvents = outreachEvents.map((e) => ({ ...serializeDocData(e as unknown as Record<string, unknown>) }));
+      finishStage("Outreach events", countFmt(outreachEvents.length));
 
-      data.users = toRows(await this.exportUsersForCompany(companyId));
+      emit("Users", "Reading…");
+      data.users = toRows(await this.exportUsersForCompany(companyId, (n) => emit("Users", countFmt(n))));
+      finishStage("Users", countFmt((data.users as unknown[]).length));
 
-      return {
+      emit("Company app settings", "Reading…");
+      const companyAppSettingsSnap = await db
+        .collection("companyAppSettings")
+        .doc(companyId)
+        .get();
+      data.companyAppSettings = companyAppSettingsSnap.exists
+        ? serializeDocData(
+            companyAppSettingsSnap.data() as Record<string, unknown>,
+          )
+        : null;
+      finishStage(
+        "Company app settings",
+        companyAppSettingsSnap.exists ? "Loaded" : "None",
+      );
+
+      emit("Expense category init", "Reading…");
+      const expenseCategoryInitSnap = await db
+        .collection("expenseCategoryInit")
+        .doc(companyId)
+        .get();
+      data.expenseCategoryInit = expenseCategoryInitSnap.exists
+        ? serializeDocData(
+            expenseCategoryInitSnap.data() as Record<string, unknown>,
+          )
+        : null;
+      finishStage(
+        "Expense category init",
+        expenseCategoryInitSnap.exists ? "Loaded" : "None",
+      );
+
+      emit("Building file", "Serializing JSON — almost done…");
+      const payload = {
         formatVersion: FLAT_BACKUP_FORMAT_VERSION,
         structure: "flat",
         exportedAt: new Date().toISOString(),
         companyId,
         data,
       };
+      finishStage("Building file", "Starting download…");
+
+      return payload;
     } catch (error) {
       console.error("Export failed:", error);
       throw error;
@@ -269,10 +421,18 @@ export class DatabaseMigrationService {
   /**
    * Paginated equality query; falls back to single .get() if composite index missing.
    */
-  private static async exportLeadsNested(companyId: string): Promise<unknown[]> {
+  private static async exportLeadsNested(
+    companyId: string,
+    onLeadProgress?: (index: number, total: number) => void,
+  ): Promise<unknown[]> {
     const rows = await this.queryAllByField("leads", "companyId", companyId);
     const out: unknown[] = [];
-    for (const row of rows) {
+    const n = rows.length;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (onLeadProgress && (i % 2 === 0 || i === n - 1)) {
+        onLeadProgress(i + 1, n);
+      }
       const logsSnap = await db
         .collection("leads")
         .doc(row.id)
@@ -303,6 +463,7 @@ export class DatabaseMigrationService {
     collectionName: string,
     field: "companyId" | "userId",
     value: string,
+    onAccumulatedCount?: (totalLoaded: number) => void,
   ): Promise<{ id: string; data: Record<string, unknown> }[]> {
     const coll = db.collection(collectionName);
     const acc: { id: string; data: Record<string, unknown> }[] = [];
@@ -320,6 +481,7 @@ export class DatabaseMigrationService {
         snap.docs.forEach((d) =>
           acc.push({ id: d.id, data: d.data() as Record<string, unknown> }),
         );
+        onAccumulatedCount?.(acc.length);
         if (snap.size < BACKUP_PAGE_SIZE) break;
         last = snap.docs[snap.docs.length - 1];
       }
@@ -333,6 +495,7 @@ export class DatabaseMigrationService {
         snap.docs.forEach((d) =>
           acc.push({ id: d.id, data: d.data() as Record<string, unknown> }),
         );
+        onAccumulatedCount?.(acc.length);
       } else {
         throw e;
       }
@@ -343,10 +506,11 @@ export class DatabaseMigrationService {
 
   private static async exportUsersForCompany(
     companyId: string,
+    onStaffCount?: (n: number) => void,
   ): Promise<{ id: string; data: Record<string, unknown> }[]> {
     const byMap = new Map<string, { id: string; data: Record<string, unknown> }>();
 
-    const staff = await this.queryAllByField("users", "companyId", companyId);
+    const staff = await this.queryAllByField("users", "companyId", companyId, onStaffCount);
     staff.forEach((r) => byMap.set(r.id, r));
 
     const ownerDoc = await db.collection("users").doc(companyId).get();
@@ -420,7 +584,57 @@ export class DatabaseMigrationService {
           );
       }
 
-      const { companyMeta: _c, profile: _p, ...restForRows } = rawData;
+      const companyAppSettingsRaw = rawData.companyAppSettings;
+      if (
+        companyAppSettingsRaw &&
+        typeof companyAppSettingsRaw === "object" &&
+        !Array.isArray(companyAppSettingsRaw)
+      ) {
+        const revived = reviveFirestoreValues(
+          companyAppSettingsRaw as Record<string, unknown>,
+        ) as Record<string, unknown>;
+        delete revived.importedAt;
+        await db
+          .collection("companyAppSettings")
+          .doc(companyId)
+          .set(
+            {
+              ...revived,
+              backupImportedAt: Timestamp.now(),
+            },
+            { merge: true },
+          );
+      }
+
+      const expenseCategoryInitRaw = rawData.expenseCategoryInit;
+      if (
+        expenseCategoryInitRaw &&
+        typeof expenseCategoryInitRaw === "object" &&
+        !Array.isArray(expenseCategoryInitRaw)
+      ) {
+        const revived = reviveFirestoreValues(
+          expenseCategoryInitRaw as Record<string, unknown>,
+        ) as Record<string, unknown>;
+        delete revived.importedAt;
+        await db
+          .collection("expenseCategoryInit")
+          .doc(companyId)
+          .set(
+            {
+              ...revived,
+              backupImportedAt: Timestamp.now(),
+            },
+            { merge: true },
+          );
+      }
+
+      const {
+        companyMeta: _c,
+        profile: _p,
+        companyAppSettings: _cas,
+        expenseCategoryInit: _eci,
+        ...restForRows
+      } = rawData;
       const rows = this.normalizeImportData(restForRows as Record<string, unknown>);
 
       const collectionOrder: [string, string][] = [
@@ -428,14 +642,17 @@ export class DatabaseMigrationService {
         ["users", "users"],
         ["companyUsers", "companyUsers"],
         ["bankAccounts", "bankAccounts"],
+        ["bankTransfers", "bankTransfers"],
         ["products", "products"],
         ["customers", "customers"],
         ["businesses", "businesses"],
+        ["vendors", "vendors"],
+        ["expenseCategories", "expenseCategories"],
         ["invoices", "invoices"],
         ["expenses", "expenses"],
         ["activities", "activities"],
+        ["activity", "activity"],
         ["subscriptions", "subscriptions"],
-        // v4 additions
         ["campaigns", "campaigns"],
         ["campaignTags", "campaignTags"],
         ["outreachEvents", "outreachEvents"],
@@ -521,6 +738,29 @@ export class DatabaseMigrationService {
             }
           }
         }
+      }
+
+      const assigneeLogs = rows.assigneeAssignmentLog;
+      if (Array.isArray(assigneeLogs) && assigneeLogs.length) {
+        const ops: {
+          ref: firebase.firestore.DocumentReference;
+          data: Record<string, unknown>;
+        }[] = [];
+        for (const item of assigneeLogs) {
+          if (!item || typeof item !== "object") continue;
+          const rec = item as Record<string, unknown>;
+          const id = rec.id as string | undefined;
+          if (!id) continue;
+          const { id: _id, ...rest } = rec;
+          const revived = reviveFirestoreValues(rest) as Record<string, unknown>;
+          delete revived.importedAt;
+          revived.backupImportedAt = Timestamp.now();
+          ops.push({
+            ref: db.collection("assigneeAssignmentLog").doc(id),
+            data: revived,
+          });
+        }
+        if (ops.length) await this.commitBatches(ops);
       }
     } catch (error) {
       console.error("Import failed:", error);

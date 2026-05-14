@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { usePermissions } from "../hooks/usePermissions";
-import { DatabaseMigrationService } from "../services/databaseMigrationService";
+import {
+  BACKUP_EXPORT_TOTAL_STAGES,
+  DatabaseMigrationService,
+  type BackupExportProgress,
+} from "../services/databaseMigrationService";
 import { db, Timestamp } from "../services/firebase";
 import type firebase from "firebase/compat/app";
 
@@ -27,6 +31,11 @@ const DataBackupManager: React.FC = () => {
   } = usePermissions();
 
   const [loading, setLoading] = useState(false);
+  const [exportRunning, setExportRunning] = useState(false);
+  const [exportProgress, setExportProgress] = useState<BackupExportProgress | null>(null);
+  const exportProgressRafRef = useRef<number | null>(null);
+  const pendingExportProgressRef = useRef<BackupExportProgress | null>(null);
+
   const [backupHistory, setBackupHistory] = useState<BackupRecord[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -40,6 +49,31 @@ const DataBackupManager: React.FC = () => {
       loadBackupHistory();
     }
   }, [canViewBackupHistory, companyId]);
+
+  useEffect(() => {
+    return () => {
+      if (exportProgressRafRef.current != null) {
+        cancelAnimationFrame(exportProgressRafRef.current);
+        exportProgressRafRef.current = null;
+      }
+    };
+  }, []);
+
+  const flushExportProgress = useCallback(() => {
+    exportProgressRafRef.current = null;
+    const p = pendingExportProgressRef.current;
+    if (p) setExportProgress({ ...p });
+  }, []);
+
+  const queueExportProgress = useCallback(
+    (p: BackupExportProgress) => {
+      pendingExportProgressRef.current = p;
+      if (exportProgressRafRef.current == null) {
+        exportProgressRafRef.current = requestAnimationFrame(flushExportProgress);
+      }
+    },
+    [flushExportProgress],
+  );
 
   const loadBackupHistory = async () => {
     try {
@@ -68,12 +102,29 @@ const DataBackupManager: React.FC = () => {
       return;
     }
 
-    try {
-      setLoading(true);
-      setError("");
-      setSuccess("");
+    setError("");
+    setSuccess("");
+    setExportRunning(true);
+    setExportProgress({
+      completedStages: 0,
+      totalStages: BACKUP_EXPORT_TOTAL_STAGES,
+      stageLabel: "Starting",
+      detail: "Connecting to your data…",
+    });
 
-      const companyData = await DatabaseMigrationService.exportCompanyData(companyId);
+    try {
+      const companyData = await DatabaseMigrationService.exportCompanyData(companyId, queueExportProgress);
+
+      queueExportProgress({
+        completedStages: BACKUP_EXPORT_TOTAL_STAGES,
+        totalStages: BACKUP_EXPORT_TOTAL_STAGES,
+        stageLabel: "Creating download",
+        detail: "Serializing JSON — your browser will save the file next.",
+      });
+      flushExportProgress();
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const filename = `${userProfile?.companyName?.replace(/[^a-zA-Z0-9]/g, "") || "company"}-backup-${timestamp}.json`;
@@ -118,7 +169,13 @@ const DataBackupManager: React.FC = () => {
         });
       }
     } finally {
-      setLoading(false);
+      if (exportProgressRafRef.current != null) {
+        cancelAnimationFrame(exportProgressRafRef.current);
+        exportProgressRafRef.current = null;
+      }
+      pendingExportProgressRef.current = null;
+      setExportRunning(false);
+      setExportProgress(null);
     }
   };
 
@@ -226,20 +283,20 @@ const DataBackupManager: React.FC = () => {
             <button
               type="button"
               onClick={handleExportBackup}
-              disabled={loading}
+              disabled={exportRunning}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-500 dark:hover:bg-primary-600"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              {loading ? "Exporting…" : "Export backup"}
+              {exportRunning ? "Exporting…" : "Export backup"}
             </button>
           )}
           {canImportBackup && (
             <button
               type="button"
               onClick={() => setShowImportModal(true)}
-              disabled={loading}
+              disabled={loading || exportRunning}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,7 +333,7 @@ const DataBackupManager: React.FC = () => {
               Full company snapshot (flat Firestore): invoices, customers, products, bank accounts, expenses,
               activities, users, team, roles, subscriptions, and company settings where present.
             </li>
-            <li>Format v3 JSON — keep files private; import merges documents by ID into this company only.</li>
+            <li>Format v5 JSON — keep files private; import merges documents by ID into this company only.</li>
             <li>Large datasets use paginated export; imports are written in safe batches.</li>
           </ul>
         </div>
@@ -370,6 +427,63 @@ const DataBackupManager: React.FC = () => {
           </div>
         )}
       </div>
+
+      {exportRunning && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-backup-title"
+          aria-busy="true"
+        >
+          <div className="absolute inset-0 bg-gray-900/70 backdrop-blur-sm dark:bg-black/75" />
+          <div className="relative z-10 w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-600 dark:bg-gray-800">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 h-10 w-10 shrink-0 animate-spin rounded-full border-2 border-primary-600 border-t-transparent dark:border-primary-500" />
+              <div className="min-w-0 flex-1">
+                <h3 id="export-backup-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Export in progress
+                </h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Please keep this tab in focus until the download starts. Switching away can slow the export on some
+                  devices.
+                </p>
+                {exportProgress && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
+                      <span>
+                        {exportProgress.completedStages} / {exportProgress.totalStages} stages finished
+                      </span>
+                      <span>
+                        {Math.min(
+                          100,
+                          Math.round((exportProgress.completedStages / exportProgress.totalStages) * 100),
+                        )}
+                        %
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div
+                        className="h-full rounded-full bg-primary-600 transition-[width] duration-300 ease-out dark:bg-primary-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.round((exportProgress.completedStages / exportProgress.totalStages) * 100),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{exportProgress.stageLabel}</p>
+                    {exportProgress.detail && (
+                      <p className="text-xs text-gray-600 dark:text-gray-400">{exportProgress.detail}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

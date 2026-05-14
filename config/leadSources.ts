@@ -5,6 +5,7 @@
 const LEAD_SOURCE_RAW: string[] = [
   "Affiliate / partner program",
   "AngelList / Wellfound",
+  "Apollo",
   "AppSumo",
   "Billboard / outdoor ad",
   "Bing Ads",
