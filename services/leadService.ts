@@ -16,6 +16,7 @@ import { OutreachService } from "./outreachService";
 import { AssigneeAssignmentLogService } from "./assigneeAssignmentLogService";
 import { normalizeLeadTargetSalesGender } from "../config/leadTargetSalesGender";
 import type firebase from "firebase/compat/app";
+import { clampLeadScore, clampReviewRating } from "../utils/leadScoringFields";
 
 function normalizePhone(phone?: string): string | undefined {
   if (!phone?.trim()) return undefined;
@@ -253,6 +254,26 @@ export class LeadService {
       targetSalesGender: normalizeLeadTargetSalesGender(data.targetSalesGender),
       updatedAt: Timestamp.now(),
     };
+
+    const ls = data.leadScore;
+    if (ls != null) {
+      const n = typeof ls === "number" ? ls : Number(ls);
+      if (Number.isFinite(n)) payload.leadScore = clampLeadScore(n);
+    }
+    const rc = data.reviewsCount;
+    if (rc != null) {
+      const n = typeof rc === "number" ? rc : Number(rc);
+      if (Number.isFinite(n) && n >= 0) payload.reviewsCount = Math.floor(n);
+    }
+    const rr = data.reviewRating;
+    if (rr != null) {
+      const n = typeof rr === "number" ? rr : Number(rr);
+      if (Number.isFinite(n)) payload.reviewRating = clampReviewRating(n);
+    }
+    if (data.reviewsSource != null) {
+      const rs = String(data.reviewsSource).trim();
+      if (rs) payload.reviewsSource = rs;
+    }
 
     if (!leadId) {
       payload.assignedUserId =
@@ -522,6 +543,10 @@ export class LeadService {
       targetSalesGender: string;
       campaignId: string | null;
       campaignTagIds: string[];
+      leadScore?: number | null;
+      reviewsCount?: number | null;
+      reviewsSource?: string | null;
+      reviewRating?: number | null;
     }>,
   ): Promise<void> {
     const update: Record<string, unknown> = {

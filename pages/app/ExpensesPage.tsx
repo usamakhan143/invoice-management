@@ -24,6 +24,51 @@ import { formatBankAccountListLabel } from "../../utils/bankAccountDisplay";
 /** Expense form: directory payee or one-time payee (this sentinel value). */
 const OTHER_PAYEE_VALUE = "__other__";
 
+/** Snapshot when editing — used to credit back the prior deduction during validation. */
+type ExpenseEditSnapshot = { amount: number; bankAccountId: string };
+
+function bankStoredBalance(bank: BankAccount): number {
+  return bank.currentBalance ?? bank.initialBalance ?? 0;
+}
+
+/**
+ * Adjust stored bank balances when an expense is edited (delta-only; backward compatible).
+ * Same account: increment by -(newAmount - oldAmount). Different accounts: credit old, debit new.
+ */
+function applyExpenseEditBankBalanceUpdates(
+  transaction: firebase.firestore.Transaction,
+  oldAmount: number,
+  oldBankId: string,
+  newAmount: number,
+  newBankId: string,
+): void {
+  const oldAmt = Number.isFinite(oldAmount) ? oldAmount : 0;
+  const newAmt = Number.isFinite(newAmount) ? newAmount : 0;
+  const oldBank = (oldBankId || "").trim();
+  const newBank = (newBankId || "").trim();
+
+  if (oldBank && newBank && oldBank === newBank) {
+    const delta = newAmt - oldAmt;
+    if (delta !== 0) {
+      transaction.update(db.collection("bankAccounts").doc(oldBank), {
+        currentBalance: firebase.firestore.FieldValue.increment(-delta),
+      });
+    }
+    return;
+  }
+
+  if (oldBank && oldAmt > 0) {
+    transaction.update(db.collection("bankAccounts").doc(oldBank), {
+      currentBalance: firebase.firestore.FieldValue.increment(oldAmt),
+    });
+  }
+  if (newBank && newAmt > 0) {
+    transaction.update(db.collection("bankAccounts").doc(newBank), {
+      currentBalance: firebase.firestore.FieldValue.increment(-newAmt),
+    });
+  }
+}
+
 const ExpensesPage: React.FC = () => {
   usePageTitle("Expenses");
   const { user, userProfile } = useAuth();
@@ -91,6 +136,7 @@ const ExpensesPage: React.FC = () => {
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
   const [bulkDeletingExpenses, setBulkDeletingExpenses] = useState(false);
   const selectAllExpensesRef = useRef<HTMLInputElement>(null);
+  const expenseEditSnapshotRef = useRef<ExpenseEditSnapshot | null>(null);
 
   const loadExchangeRates = async () => {
     try {
@@ -566,6 +612,10 @@ const ExpensesPage: React.FC = () => {
     setVendorFormChoice("");
     setOneTimeVendorName("");
     if (expense) {
+      expenseEditSnapshotRef.current = {
+        amount: expense.amount ?? 0,
+        bankAccountId: expense.bankAccountId ?? "",
+      };
       setCurrentExpense(expense);
       if (
         expense.oneTimeVendor ||
@@ -577,6 +627,7 @@ const ExpensesPage: React.FC = () => {
         setVendorFormChoice(expense.vendorId);
       }
     } else {
+      expenseEditSnapshotRef.current = null;
       setCurrentExpense({
         title: "",
         description: "",
@@ -593,6 +644,7 @@ const ExpensesPage: React.FC = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setCurrentExpense(null);
+    expenseEditSnapshotRef.current = null;
     setAmountError("");
     setVendorFormChoice("");
     setOneTimeVendorName("");
@@ -611,7 +663,11 @@ const ExpensesPage: React.FC = () => {
 
     const selectedBank = bankAccounts.find(b => b.id === bankAccountId);
     if (selectedBank) {
-      const availableBalance = selectedBank.currentBalance || selectedBank.initialBalance || 0;
+      let availableBalance = bankStoredBalance(selectedBank);
+      const editSnap = expenseEditSnapshotRef.current;
+      if (editSnap && editSnap.bankAccountId === bankAccountId) {
+        availableBalance += editSnap.amount;
+      }
       if (amount > availableBalance) {
         setAmountError(`Insufficient balance. Available: ${selectedBank.currencySymbol}${availableBalance.toFixed(2)}`);
         return false;
@@ -726,16 +782,32 @@ const ExpensesPage: React.FC = () => {
       };
 
       if (isUpdate) {
+        const expenseId = currentExpense.id!;
         const { id: _omitId, ...updatePayload } = expenseData as Expense & {
           id?: string;
         };
         void _omitId;
-        await db
-          .collection("expenses")
-          .doc(currentExpense.id)
-          .update(updatePayload);
+        const newAmount = currentExpense.amount || 0;
+        const newBankId = currentExpense.bankAccountId || "";
 
-        // Log update activity
+        let priorExpense: Expense | null = null;
+        await db.runTransaction(async (transaction) => {
+          const expenseRef = db.collection("expenses").doc(expenseId);
+          const expenseSnap = await transaction.get(expenseRef);
+          if (!expenseSnap.exists) {
+            throw new Error("Expense not found");
+          }
+          priorExpense = { id: expenseSnap.id, ...expenseSnap.data() } as Expense;
+          transaction.update(expenseRef, updatePayload);
+          applyExpenseEditBankBalanceUpdates(
+            transaction,
+            priorExpense.amount ?? 0,
+            priorExpense.bankAccountId ?? "",
+            newAmount,
+            newBankId,
+          );
+        });
+
         const payeeNote = expenseData.vendorName
           ? ` · Payee: ${expenseData.vendorName}`
           : "";
@@ -745,8 +817,9 @@ const ExpensesPage: React.FC = () => {
           "expense_updated",
           `Updated expense: ${expenseData.title}${payeeNote}`,
           {
-            entityId: currentExpense.id,
+            entityId: expenseId,
             entityType: "expense",
+            oldValue: priorExpense ?? undefined,
             newValue: expenseData,
           },
         );

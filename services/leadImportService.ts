@@ -24,6 +24,12 @@ import {
   type LeadTargetSalesGender,
 } from "../config/leadTargetSalesGender";
 import { isValidEmailAddress } from "../utils/emailValidation";
+import {
+  parseOptionalLeadScoreInput,
+  parseOptionalReviewRatingInput,
+  parseOptionalReviewsCountInput,
+} from "../utils/leadScoringFields";
+import { LEAD_REVIEWS_SOURCE_PRESETS } from "../config/leadFormOptions";
 import type { LeadExtras, LeadStatus } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +61,10 @@ export const LEAD_IMPORT_FIELDS = [
   "twitterUrl",
   "tiktokUrl",
   "whatsappPhone",
+  "leadScore",
+  "reviewsCount",
+  "reviewsSource",
+  "reviewRating",
 ] as const;
 
 export type LeadImportField = (typeof LEAD_IMPORT_FIELDS)[number];
@@ -100,6 +110,22 @@ export const LEAD_IMPORT_FIELD_INFO: Record<
   whatsappPhone: {
     label: "WhatsApp number",
     hint: "If set, lead is marked as WhatsApp-reachable. Leave empty if same as phone.",
+  },
+  leadScore: {
+    label: "Lead score",
+    hint: "Optional. Whole number 0–100.",
+  },
+  reviewsCount: {
+    label: "Reviews count",
+    hint: "Optional. Number of public reviews (e.g. on Google).",
+  },
+  reviewsSource: {
+    label: "Reviews platform",
+    hint: "Optional. Where reviews are listed (Google, Trustpilot, etc.).",
+  },
+  reviewRating: {
+    label: "Review rating",
+    hint: "Optional. Typically 0–5 (stars or aggregate).",
   },
 };
 
@@ -255,6 +281,29 @@ const HEADER_GUESS: { field: LeadImportField; aliases: string[] }[] = [
     field: "whatsappPhone",
     aliases: ["whatsapp", "whatsappnumber", "whatsappphone", "wa", "wanumber"],
   },
+  {
+    field: "leadScore",
+    aliases: ["leadscore", "crmscore", "qualityscore", "leadquality"],
+  },
+  {
+    field: "reviewsCount",
+    aliases: ["reviewscount", "numreviews", "numberofreviews", "totalreviews", "reviewcount"],
+  },
+  {
+    field: "reviewsSource",
+    aliases: ["reviewssource", "reviewsplatform", "reviewplatform", "reviewsite"],
+  },
+  {
+    field: "reviewRating",
+    aliases: [
+      "reviewrating",
+      "starrating",
+      "avg_rating",
+      "averagerating",
+      "googlerating",
+      "trustpilotrating",
+    ],
+  },
 ];
 
 const canonicalKey = (s: string): string =>
@@ -385,6 +434,11 @@ export interface BuiltLeadPayload {
   extras: LeadExtras;
   phoneNormalized: string | null;
   emailNormalized: string | null;
+  /** Present when column mapped / valid */
+  leadScore?: number;
+  reviewsCount?: number;
+  reviewsSource?: string;
+  reviewRating?: number;
   // Defaults applied at commit-time:
   // assignedUserId, companyId, createdById, createdAt, updatedAt, linkedCustomerId, …
 }
@@ -409,6 +463,8 @@ export interface ValidateRowOptions {
   defaultSource?: string;
   /** Used when the mapped category cell is empty, or when category is not mapped at all. */
   defaultCategory?: string;
+  /** Used when the mapped country cell is empty, or when country is not mapped at all. */
+  defaultCountry?: string;
   /** When false, an empty phone+email is allowed (row still imports as a “light” lead). */
   requireContact?: boolean;
 }
@@ -464,6 +520,34 @@ export function validateRow(
     );
   }
 
+  let country = (mapped.country ?? "").trim();
+  const defCountry = (opts.defaultCountry ?? "").trim();
+  if (!country && defCountry) country = defCountry;
+  if (!country) {
+    errors.push(
+      "Country is missing — map a Country column in your CSV, or choose a default country in the import wizard. Leads cannot be imported without a country.",
+    );
+  }
+
+  const leadScoreParsed = parseOptionalLeadScoreInput(mapped.leadScore ?? "");
+  if (!leadScoreParsed.ok) errors.push(leadScoreParsed.message);
+
+  const reviewsCountParsed = parseOptionalReviewsCountInput(mapped.reviewsCount ?? "");
+  if (!reviewsCountParsed.ok) errors.push(reviewsCountParsed.message);
+
+  const reviewRatingParsed = parseOptionalReviewRatingInput(mapped.reviewRating ?? "");
+  if (!reviewRatingParsed.ok) errors.push(reviewRatingParsed.message);
+
+  let reviewsSourceNorm: string | undefined;
+  const rsRaw = (mapped.reviewsSource ?? "").trim();
+  if (rsRaw) {
+    const lower = rsRaw.toLowerCase();
+    const preset = (LEAD_REVIEWS_SOURCE_PRESETS as readonly string[]).find(
+      (p) => p.toLowerCase() === lower,
+    );
+    reviewsSourceNorm = preset ?? rsRaw;
+  }
+
   // Extras
   const extras: LeadExtras = {};
   if (mapped.website) extras.website = mapped.website;
@@ -497,7 +581,7 @@ export function validateRow(
   const payload: BuiltLeadPayload = {
     name: (mapped.name ?? "").trim(),
     company: (mapped.company ?? "").trim(),
-    country: (mapped.country ?? "").trim(),
+    country,
     category,
     phone: phoneRaw,
     email,
@@ -509,6 +593,10 @@ export function validateRow(
     phoneNormalized: phoneNorm || null,
     emailNormalized: emailNorm || null,
   };
+  if (leadScoreParsed.value !== undefined) payload.leadScore = leadScoreParsed.value;
+  if (reviewsCountParsed.value !== undefined) payload.reviewsCount = reviewsCountParsed.value;
+  if (reviewRatingParsed.value !== undefined) payload.reviewRating = reviewRatingParsed.value;
+  if (reviewsSourceNorm) payload.reviewsSource = reviewsSourceNorm;
 
   return {
     rowNumber,
@@ -740,6 +828,10 @@ function buildLeadDoc(
     assignedUserId,
     convertedCustomerId: null,
     convertedBusinessId: null,
+    ...(payload.leadScore !== undefined ? { leadScore: payload.leadScore } : {}),
+    ...(payload.reviewsCount !== undefined ? { reviewsCount: payload.reviewsCount } : {}),
+    ...(payload.reviewRating !== undefined ? { reviewRating: payload.reviewRating } : {}),
+    ...(payload.reviewsSource ? { reviewsSource: payload.reviewsSource } : {}),
   };
 }
 

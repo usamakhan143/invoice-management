@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CATEGORY_CUSTOM_VALUE, LEAD_CATEGORY_PRESETS } from "../../config/leadFormOptions";
+import { CATEGORY_CUSTOM_VALUE, COUNTRY_CUSTOM_VALUE, LEAD_CATEGORY_PRESETS, LEAD_COUNTRY_OPTIONS } from "../../config/leadFormOptions";
 import { useAuth } from "../../hooks/useAuth";
 import { useCompanyUserOptions } from "../../hooks/useCompanyUserOptions";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -80,6 +80,8 @@ const LeadImportPage: React.FC = () => {
   const [defaultAssignee, setDefaultAssignee] = useState<string>("");
   const [importCategorySelect, setImportCategorySelect] = useState("");
   const [importCategoryCustom, setImportCategoryCustom] = useState("");
+  const [importCountrySelect, setImportCountrySelect] = useState("");
+  const [importCountryCustom, setImportCountryCustom] = useState("");
 
   // Parse + validation state
   const [parseProgress, setParseProgress] = useState<{
@@ -124,10 +126,20 @@ const LeadImportPage: React.FC = () => {
     () => Object.values(mapping).some((v) => v === "source"),
     [mapping],
   );
+  const countryMapped = useMemo(
+    () => Object.values(mapping).some((v) => v === "country"),
+    [mapping],
+  );
+
   const categoryMapped = useMemo(
     () => Object.values(mapping).some((v) => v === "category"),
     [mapping],
   );
+
+  const resolvedImportCountryDefault = useMemo(() => {
+    if (importCountrySelect === COUNTRY_CUSTOM_VALUE) return importCountryCustom.trim();
+    return importCountrySelect.trim();
+  }, [importCountrySelect, importCountryCustom]);
 
   const resolvedImportCategoryDefault = useMemo(() => {
     if (importCategorySelect === CATEGORY_CUSTOM_VALUE) return importCategoryCustom.trim();
@@ -141,6 +153,14 @@ const LeadImportPage: React.FC = () => {
     }
     return null;
   }, [categoryMapped, resolvedImportCategoryDefault]);
+
+  /** Blocks continue when CSV has no country column and user did not pick a default country. */
+  const countryContinueBlockedReason = useMemo(() => {
+    if (!countryMapped && !resolvedImportCountryDefault) {
+      return "Select a default country / location below. It is required when your CSV has no Country column — leads cannot be imported without a country.";
+    }
+    return null;
+  }, [countryMapped, resolvedImportCountryDefault]);
 
   const resetForNewFile = useCallback(() => {
     abortRef.current.aborted = true;
@@ -156,6 +176,8 @@ const LeadImportPage: React.FC = () => {
     setError(null);
     setImportCategorySelect("");
     setImportCategoryCustom("");
+    setImportCountrySelect("");
+    setImportCountryCustom("");
   }, []);
 
   /**
@@ -251,6 +273,7 @@ const LeadImportPage: React.FC = () => {
             const validated = validateRow(r, logicalRowNumber, mapping, {
               defaultSource: "Import",
               defaultCategory: resolvedImportCategoryDefault || undefined,
+              defaultCountry: resolvedImportCountryDefault || undefined,
             });
             collected.push(validated);
             running.total += 1;
@@ -298,7 +321,7 @@ const LeadImportPage: React.FC = () => {
     } finally {
       setIndexBuilding(false);
     }
-  }, [file, user, userProfile, delimiter, mapping, resolvedImportCategoryDefault]);
+  }, [file, user, userProfile, delimiter, mapping, resolvedImportCategoryDefault, resolvedImportCountryDefault]);
 
   /**
    * Step 3 → 4: write valid rows to Firestore in batched transactions.
@@ -432,11 +455,17 @@ const LeadImportPage: React.FC = () => {
           setMapping={setMapping}
           sourceMapped={sourceMapped}
           categoryMapped={categoryMapped}
+          countryMapped={countryMapped}
           importCategorySelect={importCategorySelect}
           setImportCategorySelect={setImportCategorySelect}
           importCategoryCustom={importCategoryCustom}
           setImportCategoryCustom={setImportCategoryCustom}
           categoryContinueBlockedReason={categoryContinueBlockedReason}
+          importCountrySelect={importCountrySelect}
+          setImportCountrySelect={setImportCountrySelect}
+          importCountryCustom={importCountryCustom}
+          setImportCountryCustom={setImportCountryCustom}
+          countryContinueBlockedReason={countryContinueBlockedReason}
           assignees={assignees}
           defaultAssignee={defaultAssignee}
           setDefaultAssignee={setDefaultAssignee}
@@ -661,11 +690,17 @@ function MappingStep({
   setMapping,
   sourceMapped,
   categoryMapped,
+  countryMapped,
   importCategorySelect,
   setImportCategorySelect,
   importCategoryCustom,
   setImportCategoryCustom,
   categoryContinueBlockedReason,
+  importCountrySelect,
+  setImportCountrySelect,
+  importCountryCustom,
+  setImportCountryCustom,
+  countryContinueBlockedReason,
   assignees,
   defaultAssignee,
   setDefaultAssignee,
@@ -682,11 +717,17 @@ function MappingStep({
   >;
   sourceMapped: boolean;
   categoryMapped: boolean;
+  countryMapped: boolean;
   importCategorySelect: string;
   setImportCategorySelect: React.Dispatch<React.SetStateAction<string>>;
   importCategoryCustom: string;
   setImportCategoryCustom: React.Dispatch<React.SetStateAction<string>>;
   categoryContinueBlockedReason: string | null;
+  importCountrySelect: string;
+  setImportCountrySelect: React.Dispatch<React.SetStateAction<string>>;
+  importCountryCustom: string;
+  setImportCountryCustom: React.Dispatch<React.SetStateAction<string>>;
+  countryContinueBlockedReason: string | null;
   assignees: { uid: string; label: string }[];
   defaultAssignee: string;
   setDefaultAssignee: React.Dispatch<React.SetStateAction<string>>;
@@ -856,6 +897,53 @@ function MappingStep({
 
       <div className="mt-5 rounded-xl border border-gray-200/90 bg-white p-4 dark:border-gray-700/90 dark:bg-gray-900/50">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <label className="text-sm font-medium text-gray-800 dark:text-gray-100" htmlFor="import-default-country">
+            Default country / location
+            {!countryMapped ? (
+              <span className="ml-1 text-red-600 dark:text-red-400" title="Required">
+                *
+              </span>
+            ) : null}
+          </label>
+          {!countryMapped ? (
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+              No country column mapped — this default applies to every row
+            </span>
+          ) : (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Optional — used only when a row&apos;s country cell is empty
+            </span>
+          )}
+        </div>
+        <SearchableLeadOptionSelect
+          id="import-default-country"
+          ariaLabel="Default country for import when CSV has no country column"
+          options={LEAD_COUNTRY_OPTIONS}
+          selectValue={importCountrySelect}
+          customValue={importCountryCustom}
+          onSelectChange={(v) => {
+            setImportCountrySelect(v);
+            if (v !== COUNTRY_CUSTOM_VALUE) setImportCountryCustom("");
+          }}
+          onCustomChange={(v) => setImportCountryCustom(v)}
+          customSentinel={COUNTRY_CUSTOM_VALUE}
+          placeholder="Select default country…"
+          otherLabel="Other (type country)"
+          customPlaceholder="Country name"
+          error={!!countryContinueBlockedReason}
+        />
+        {countryContinueBlockedReason ? (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{countryContinueBlockedReason}</p>
+        ) : (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Every lead must have a country. If your file doesn&apos;t include one, pick the location that best describes
+            this list before importing.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-5 rounded-xl border border-gray-200/90 bg-white p-4 dark:border-gray-700/90 dark:bg-gray-900/50">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
           <label className="text-sm font-medium text-gray-800 dark:text-gray-100" htmlFor="import-default-category">
             Default business category
             {!categoryMapped ? (
@@ -905,7 +993,7 @@ function MappingStep({
         <button
           type="button"
           onClick={onContinue}
-          disabled={!!categoryContinueBlockedReason}
+          disabled={!!categoryContinueBlockedReason || !!countryContinueBlockedReason}
           className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-500 dark:hover:bg-primary-600"
         >
           Validate &amp; preview

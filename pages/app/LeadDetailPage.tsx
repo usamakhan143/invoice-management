@@ -14,9 +14,13 @@ import {
   COUNTRY_CUSTOM_VALUE,
   CATEGORY_CUSTOM_VALUE,
   SOURCE_CUSTOM_VALUE,
+  REVIEWS_SOURCE_CUSTOM_VALUE,
   LEAD_COUNTRY_OPTIONS,
   LEAD_CATEGORY_PRESETS,
   LEAD_SOURCE_PRESETS,
+  LEAD_REVIEWS_SOURCE_PRESETS,
+  splitStoredReviewsSource,
+  resolvedReviewsSource,
 } from "../../config/leadFormOptions";
 import {
   LEAD_TARGET_SALES_GENDER_OPTIONS,
@@ -44,6 +48,11 @@ import FieldInfoTip from "../../components/FieldInfoTip";
 import { SearchableLeadOptionSelect } from "../../components/SearchableLeadOptionSelect";
 import { InternationalPhoneInput } from "../../components/InternationalPhoneInput";
 import { formatPhoneForDisplay, getIsoFromLeadCountryName } from "../../utils/internationalPhone";
+import {
+  parseOptionalLeadScoreInput,
+  parseOptionalReviewRatingInput,
+  parseOptionalReviewsCountInput,
+} from "../../utils/leadScoringFields";
 
 const LEAD_STATUSES: LeadStatus[] = [
   "New",
@@ -291,6 +300,11 @@ const LeadDetailPage: React.FC = () => {
   const [hasWhatsapp, setHasWhatsapp] = useState(false);
   const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState(true);
   const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [leadScore, setLeadScore] = useState("");
+  const [reviewsCount, setReviewsCount] = useState("");
+  const [reviewsSourceSelect, setReviewsSourceSelect] = useState("");
+  const [reviewsSourceCustom, setReviewsSourceCustom] = useState("");
+  const [reviewRating, setReviewRating] = useState("");
 
   const [activeTab, setActiveTab] = useState<LeadDetailTab>("details");
   const [convertMode, setConvertMode] = useState<"new" | "existing">("new");
@@ -435,6 +449,22 @@ const LeadDetailPage: React.FC = () => {
           setHasWhatsapp(!!ex.hasWhatsapp);
           setWhatsappSameAsPhone(ex.whatsappSameAsPhone !== false);
           setWhatsappPhone(ex.whatsappPhone || "");
+          const ls =
+            row.leadScore != null && Number.isFinite(Number(row.leadScore)) ? String(row.leadScore) : "";
+          setLeadScore(ls);
+          const rc =
+            row.reviewsCount != null && Number.isFinite(Number(row.reviewsCount))
+              ? String(Math.floor(Number(row.reviewsCount)))
+              : "";
+          setReviewsCount(rc);
+          const rs = splitStoredReviewsSource(row.reviewsSource);
+          setReviewsSourceSelect(rs.select);
+          setReviewsSourceCustom(rs.custom);
+          const rt =
+            row.reviewRating != null && Number.isFinite(Number(row.reviewRating))
+              ? String(row.reviewRating)
+              : "";
+          setReviewRating(rt);
           setLinkCustomerId(row.linkedCustomerId || "");
           setLinkBusinessId(row.linkedBusinessId || "");
           setAssignTo(row.assignedUserId || "");
@@ -596,6 +626,26 @@ const LeadDetailPage: React.FC = () => {
       alert("Enter the WhatsApp number or choose “Same as phone number”.");
       return;
     }
+    const lsParsed = parseOptionalLeadScoreInput(leadScore);
+    if (!lsParsed.ok) {
+      alert(lsParsed.message);
+      return;
+    }
+    const rcParsed = parseOptionalReviewsCountInput(reviewsCount);
+    if (!rcParsed.ok) {
+      alert(rcParsed.message);
+      return;
+    }
+    const rrParsed = parseOptionalReviewRatingInput(reviewRating);
+    if (!rrParsed.ok) {
+      alert(rrParsed.message);
+      return;
+    }
+    if (reviewsSourceSelect === REVIEWS_SOURCE_CUSTOM_VALUE && !reviewsSourceCustom.trim()) {
+      alert("Enter where the reviews are listed, or pick a platform from the list instead of “Other”.");
+      return;
+    }
+    const resolvedReviews = resolvedReviewsSource(reviewsSourceSelect, reviewsSourceCustom);
     setSaving(true);
     try {
       const extrasPayload: LeadExtras = { ...(lead.extras || {}) };
@@ -663,6 +713,10 @@ const LeadDetailPage: React.FC = () => {
         extras: extrasPayload,
         campaignId: canAssignLeadCampaign() ? (leadCampaignId || null) : undefined,
         campaignTagIds: canAssignLeadCampaign() ? leadCampaignTagIds : undefined,
+        leadScore: lsParsed.value !== undefined ? lsParsed.value : null,
+        reviewsCount: rcParsed.value !== undefined ? rcParsed.value : null,
+        reviewRating: rrParsed.value !== undefined ? rrParsed.value : null,
+        reviewsSource: resolvedReviews ? resolvedReviews : null,
       });
       await ActivityLogger.logActivity(user, userProfile, "lead_updated", `Updated lead: ${name || company}`, {
         entityId: lead.id,
@@ -1077,6 +1131,88 @@ const LeadDetailPage: React.FC = () => {
               customPlaceholder="Custom category"
               disabled={!canEditLead()}
             />
+          </div>
+          <div className="sm:col-span-2 rounded-lg border border-gray-100 bg-gray-50/80 p-3 dark:border-gray-600/80 dark:bg-gray-900/40">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Score &amp; reviews
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-score">
+                  Lead score (0–100)
+                </label>
+                <input
+                  id="lead-detail-score"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  disabled={!canEditLead()}
+                  className="w-full rounded border p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white disabled:opacity-60"
+                  value={leadScore}
+                  onChange={(e) => setLeadScore(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-reviews-count">
+                  Reviews count
+                </label>
+                <input
+                  id="lead-detail-reviews-count"
+                  type="number"
+                  min={0}
+                  step={1}
+                  disabled={!canEditLead()}
+                  className="w-full rounded border p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white disabled:opacity-60"
+                  value={reviewsCount}
+                  onChange={(e) => setReviewsCount(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <div className="mb-1 flex items-center gap-1">
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-reviews-source">
+                    Reviews platform/site
+                  </label>
+                  <FieldInfoTip text="Where public reviews appear (Google, Trustpilot, etc.). If you choose Other, type the site name." />
+                </div>
+                <SearchableLeadOptionSelect
+                  id="lead-detail-reviews-source"
+                  ariaLabel="Reviews platform"
+                  options={LEAD_REVIEWS_SOURCE_PRESETS}
+                  selectValue={reviewsSourceSelect}
+                  customValue={reviewsSourceCustom}
+                  onSelectChange={(v) => {
+                    setReviewsSourceSelect(v);
+                    if (v !== REVIEWS_SOURCE_CUSTOM_VALUE) setReviewsSourceCustom("");
+                  }}
+                  onCustomChange={setReviewsSourceCustom}
+                  customSentinel={REVIEWS_SOURCE_CUSTOM_VALUE}
+                  placeholder="Optional"
+                  otherLabel="Other (type site name)"
+                  customPlaceholder="e.g. niche directory"
+                  disabled={!canEditLead()}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600 dark:text-gray-300" htmlFor="lead-detail-review-rating">
+                  Review rating (0–5)
+                </label>
+                <input
+                  id="lead-detail-review-rating"
+                  type="number"
+                  min={0}
+                  max={5}
+                  step={0.1}
+                  disabled={!canEditLead()}
+                  className="w-full rounded border p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white disabled:opacity-60"
+                  value={reviewRating}
+                  onChange={(e) => setReviewRating(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
           </div>
           <div className="space-y-1">
             <div className="mb-1 flex items-center gap-1">

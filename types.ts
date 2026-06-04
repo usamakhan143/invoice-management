@@ -373,6 +373,14 @@ export interface Lead {
   extras?: LeadExtras;
   phoneNormalized?: string;
   emailNormalized?: string;
+  /** Qualitative fit score 0–100 */
+  leadScore?: number | null;
+  /** Number of public reviews (e.g. on Google, Trustpilot) */
+  reviewsCount?: number | null;
+  /** Where reviews are hosted */
+  reviewsSource?: string | null;
+  /** Typical 0–5 star (or aggregate) rating */
+  reviewRating?: number | null;
   /** Campaign this lead belongs to (optional — existing leads unaffected) */
   campaignId?: string | null;
   /** Tag IDs within the campaign for segmentation */

@@ -6,15 +6,19 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { ActivityLogger } from "../../services/activityLogger";
 import { CustomerService } from "../../services/customerService";
 import { LeadService } from "../../services/leadService";
+import { OutreachService } from "../../services/outreachService";
 import { CampaignService } from "../../services/campaignService";
 import type { Campaign, CampaignTag, Customer, Lead, LeadExtras, LeadStatus } from "../../types";
 import {
   COUNTRY_CUSTOM_VALUE,
   CATEGORY_CUSTOM_VALUE,
   SOURCE_CUSTOM_VALUE,
+  REVIEWS_SOURCE_CUSTOM_VALUE,
   LEAD_COUNTRY_OPTIONS,
   LEAD_CATEGORY_PRESETS,
   LEAD_SOURCE_PRESETS,
+  LEAD_REVIEWS_SOURCE_PRESETS,
+  resolvedReviewsSource,
 } from "../../config/leadFormOptions";
 import Spinner from "../../components/Spinner";
 import LeadPitchReadyIcon, { leadHasPitchNotes } from "../../components/LeadPitchReadyIcon";
@@ -24,6 +28,11 @@ import { SearchableLeadOptionSelect } from "../../components/SearchableLeadOptio
 import { InternationalPhoneInput } from "../../components/InternationalPhoneInput";
 import { getIsoFromLeadCountryName } from "../../utils/internationalPhone";
 import { isValidEmailAddress } from "../../utils/emailValidation";
+import {
+  parseOptionalLeadScoreInput,
+  parseOptionalReviewRatingInput,
+  parseOptionalReviewsCountInput,
+} from "../../utils/leadScoringFields";
 import {
   LEAD_TARGET_SALES_GENDER_OPTIONS,
   TARGET_SALES_GENDER,
@@ -151,6 +160,11 @@ function createEmptyLeadForm() {
     hasWhatsapp: false,
     whatsappSameAsPhone: true,
     whatsappPhone: "",
+    leadScore: "",
+    reviewsCount: "",
+    reviewsSourceSelect: "",
+    reviewsSourceCustom: "",
+    reviewRating: "",
   };
 }
 
@@ -193,45 +207,87 @@ function isValidHttpOrHttpsUrl(value: string): boolean {
   }
 }
 
+/** Compact page list: always fits on small screens (ellipsis instead of N buttons). */
+function getPaginationItems(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const nums = new Set<number>();
+  nums.add(1);
+  nums.add(total);
+  for (let p = current - 1; p <= current + 1; p++) {
+    if (p >= 1 && p <= total) nums.add(p);
+  }
+  const sorted = [...nums].sort((a, b) => a - b);
+  const out: (number | "ellipsis")[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const n = sorted[i];
+    if (i > 0 && sorted[i - 1] < n - 1) {
+      out.push("ellipsis");
+    }
+    out.push(n);
+  }
+  return out;
+}
+
 const PaginationControls: React.FC<{
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
 }> = ({ currentPage, totalPages, onPageChange }) => {
   if (totalPages <= 1) return null;
-  const pages: number[] = [];
-  for (let i = 1; i <= totalPages; i++) pages.push(i);
+  const items = getPaginationItems(currentPage, totalPages);
   return (
-    <div className="flex justify-center items-center space-x-2 mt-4">
-      <button
-        type="button"
-        onClick={() => onPageChange(Math.max(currentPage - 1, 1))}
-        disabled={currentPage === 1}
-        className="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50"
-      >
-        Previous
-      </button>
-      {pages.map((page) => (
+    <nav
+      className="mt-4 flex w-full min-w-0 max-w-full flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-4"
+      aria-label="Leads list pagination"
+    >
+      <p className="order-2 shrink-0 text-center text-sm tabular-nums text-gray-600 dark:text-gray-400 sm:order-1">
+        Page {currentPage} of {totalPages}
+      </p>
+      <div className="order-1 flex min-w-0 max-w-full flex-wrap items-center justify-center gap-1 sm:order-2">
         <button
           type="button"
-          key={page}
-          onClick={() => onPageChange(page)}
-          className={`px-3 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 ${
-            currentPage === page ? "font-bold underline" : ""
-          }`}
+          onClick={() => onPageChange(Math.max(currentPage - 1, 1))}
+          disabled={currentPage === 1}
+          className="shrink-0 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
         >
-          {page}
+          Previous
         </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => onPageChange(Math.min(currentPage + 1, totalPages))}
-        disabled={currentPage === totalPages}
-        className="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50"
-      >
-        Next
-      </button>
-    </div>
+        {items.map((item, idx) =>
+          item === "ellipsis" ? (
+            <span
+              key={`e-${idx}`}
+              className="shrink-0 px-0.5 text-sm text-gray-400 dark:text-gray-500"
+              aria-hidden
+            >
+              …
+            </span>
+          ) : (
+            <button
+              type="button"
+              key={item}
+              onClick={() => onPageChange(item)}
+              className={`min-h-9 min-w-9 shrink-0 rounded border px-2 py-1.5 text-sm tabular-nums dark:border-gray-600 ${
+                currentPage === item
+                  ? "border-primary-500 bg-primary-50 font-semibold text-primary-800 dark:border-primary-400 dark:bg-primary-950/40 dark:text-primary-200"
+                  : "border-gray-300 bg-white text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+              }`}
+            >
+              {item}
+            </button>
+          ),
+        )}
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.min(currentPage + 1, totalPages))}
+          disabled={currentPage === totalPages}
+          className="shrink-0 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+        >
+          Next
+        </button>
+      </div>
+    </nav>
   );
 };
 
@@ -249,11 +305,18 @@ type FormErrors = {
   twitterUrl?: string;
   tiktokUrl?: string;
   whatsappPhone?: string;
+  leadScore?: string;
+  reviewsCount?: string;
+  reviewsSource?: string;
+  reviewRating?: string;
 };
 
 type SubmitFeedback =
   | { type: "success"; message: string; leadId: string }
   | { type: "error"; message: string };
+
+/** Filter: assigned leads with zero workspace (outreach) call events logged */
+type CallProgressFilter = "" | "assigned_no_outreach_call";
 
 const LeadsPage: React.FC = () => {
   const { user, userProfile } = useAuth();
@@ -286,6 +349,9 @@ const LeadsPage: React.FC = () => {
   const [filterTargetGender, setFilterTargetGender] = useState<FilterTargetSalesGender>("");
   const [filterCampaignId, setFilterCampaignId] = useState("");
   const [filterCampaignTagId, setFilterCampaignTagId] = useState("");
+  const [filterCallProgress, setFilterCallProgress] = useState<CallProgressFilter>("");
+  const [outreachCallCounts, setOutreachCallCounts] = useState<Map<string, number>>(() => new Map());
+  const [outreachCallCountsLoading, setOutreachCallCountsLoading] = useState(false);
   const [campaignsForFilter, setCampaignsForFilter] = useState<Campaign[]>([]);
   const [tagsForCampaignFilter, setTagsForCampaignFilter] = useState<CampaignTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -421,6 +487,40 @@ const LeadsPage: React.FC = () => {
     );
     return () => unsub();
   }, [leadsCompanyId, filterCampaignId]);
+
+  const leadsIdsSortedKey = useMemo(
+    () =>
+      leads
+        .map((l) => l.id)
+        .sort()
+        .join("\u0001"),
+    [leads],
+  );
+
+  useEffect(() => {
+    if (filterCallProgress !== "assigned_no_outreach_call" || !leadsCompanyId || leads.length === 0) {
+      setOutreachCallCounts(new Map());
+      setOutreachCallCountsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setOutreachCallCountsLoading(true);
+    const ids = leads.map((l) => l.id);
+    void (async () => {
+      try {
+        const m = await OutreachService.fetchCallChannelCountsForLeads(leadsCompanyId, ids);
+        if (!cancelled) setOutreachCallCounts(m);
+      } catch (e) {
+        console.error("[LeadsPage] outreach call counts", e);
+        if (!cancelled) setOutreachCallCounts(new Map());
+      } finally {
+        if (!cancelled) setOutreachCallCountsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filterCallProgress, leadsCompanyId, leadsIdsSortedKey]);
 
   useEffect(() => {
     if (bulkLeadAction !== "campaign") {
@@ -605,6 +705,12 @@ const LeadsPage: React.FC = () => {
     if (filterCampaignTagId) {
       rows = rows.filter((l) => (l.campaignTagIds || []).includes(filterCampaignTagId));
     }
+    if (filterCallProgress === "assigned_no_outreach_call") {
+      rows = rows.filter((l) => (l.assignedUserId || "").trim().length > 0);
+      if (!outreachCallCountsLoading) {
+        rows = rows.filter((l) => (outreachCallCounts.get(l.id) ?? 0) === 0);
+      }
+    }
     return rows;
   }, [
     leads,
@@ -621,6 +727,9 @@ const LeadsPage: React.FC = () => {
     filterTargetGender,
     filterCampaignId,
     filterCampaignTagId,
+    filterCallProgress,
+    outreachCallCounts,
+    outreachCallCountsLoading,
     assigneeLabel,
     isLeadsAdmin,
     showAssigneeColumn,
@@ -642,6 +751,7 @@ const LeadsPage: React.FC = () => {
     filterTargetGender,
     filterCampaignId,
     filterCampaignTagId,
+    filterCallProgress,
   ]);
 
   /** Primary line + subtitle for name/company column (consistent layout). */
@@ -710,6 +820,17 @@ const LeadsPage: React.FC = () => {
           : "Select a lead source.";
     }
 
+    const lsParsed = parseOptionalLeadScoreInput(form.leadScore);
+    if (!lsParsed.ok) errors.leadScore = lsParsed.message;
+    const rcParsed = parseOptionalReviewsCountInput(form.reviewsCount);
+    if (!rcParsed.ok) errors.reviewsCount = rcParsed.message;
+    const rrParsed = parseOptionalReviewRatingInput(form.reviewRating);
+    if (!rrParsed.ok) errors.reviewRating = rrParsed.message;
+    if (form.reviewsSourceSelect === REVIEWS_SOURCE_CUSTOM_VALUE && !form.reviewsSourceCustom.trim()) {
+      errors.reviewsSource =
+        "Enter where the reviews are listed, or choose a platform from the list instead of “Other”.";
+    }
+
     const web = form.website.trim();
     if (web && !isValidHttpOrHttpsUrl(web)) {
       errors.website = "Enter a valid URL starting with http:// or https://.";
@@ -765,6 +886,7 @@ const LeadsPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       const extras: LeadExtras = {};
+      const resolvedReviews = resolvedReviewsSource(form.reviewsSourceSelect, form.reviewsSourceCustom);
       if (web) extras.website = web;
       const addr = form.address.trim();
       const extra = form.extraNotes.trim();
@@ -797,6 +919,10 @@ const LeadsPage: React.FC = () => {
           notes: form.notes,
           assignedUserId: "",
           extras: Object.keys(extras).length ? extras : {},
+          ...(lsParsed.value !== undefined ? { leadScore: lsParsed.value } : {}),
+          ...(rcParsed.value !== undefined ? { reviewsCount: rcParsed.value } : {}),
+          ...(rrParsed.value !== undefined ? { reviewRating: rrParsed.value } : {}),
+          ...(resolvedReviews ? { reviewsSource: resolvedReviews } : {}),
         },
         user,
         userProfile,
@@ -1346,6 +1472,17 @@ const LeadsPage: React.FC = () => {
               </option>
             ))}
           </select>
+          <select
+            value={filterCallProgress}
+            onChange={(e) => setFilterCallProgress((e.target.value || "") as CallProgressFilter)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white min-w-[14rem]"
+            aria-label="Filter by assignment and logged calls"
+          >
+            <option value="">All leads (call activity)</option>
+            <option value="assigned_no_outreach_call">
+              Assigned — no workspace call yet
+            </option>
+          </select>
           {(filterStatus ||
             filterSource ||
             filterCountry ||
@@ -1357,7 +1494,8 @@ const LeadsPage: React.FC = () => {
             filterContact ||
             filterPitchReady ||
             filterWebsite ||
-            filterTargetGender) && (
+            filterTargetGender ||
+            filterCallProgress) && (
             <button
               type="button"
               className="text-sm text-primary-600 hover:underline dark:text-primary-400"
@@ -1374,13 +1512,23 @@ const LeadsPage: React.FC = () => {
                 setFilterPitchReady("");
                 setFilterWebsite("");
                 setFilterTargetGender("");
+                setFilterCallProgress("");
               }}
             >
               Clear filters
             </button>
           )}
         </div>
-        <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+          {filterCallProgress === "assigned_no_outreach_call" && outreachCallCountsLoading ? (
+            <span className="text-amber-700 dark:text-amber-300">Loading call activity…</span>
+          ) : null}
+          {filterCallProgress === "assigned_no_outreach_call" && !outreachCallCountsLoading ? (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Uses workspace call logs only (outreach), not old call-log imports.
+            </span>
+          ) : null}
+          <span>
           {searchTerm ||
           filterStatus ||
           filterSource ||
@@ -1393,9 +1541,11 @@ const LeadsPage: React.FC = () => {
           filterContact ||
           filterPitchReady ||
           filterWebsite ||
-          filterTargetGender
+          filterTargetGender ||
+          filterCallProgress
             ? `Showing ${filteredRows.length} of ${leads.length} lead(s)`
             : `Total ${leads.length} lead(s)`}
+          </span>
         </div>
       </div>
 
@@ -1974,6 +2124,111 @@ const LeadsPage: React.FC = () => {
                         {formErrors.category}
                       </p>
                     )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1 rounded-lg border border-gray-100 bg-gray-50/50 p-3 dark:border-gray-700/80 dark:bg-gray-800/30">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Score &amp; reviews
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label htmlFor="lead-score" className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      Lead score (0–100)
+                    </label>
+                    <input
+                      id="lead-score"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      className={`w-full rounded-md border p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white ${
+                        formErrors.leadScore ? "border-red-500 ring-1 ring-red-500" : "border-gray-300"
+                      }`}
+                      value={form.leadScore}
+                      onChange={(e) => setForm((f) => ({ ...f, leadScore: e.target.value }))}
+                      disabled={formLocked}
+                      placeholder="Optional"
+                    />
+                    {formErrors.leadScore ? (
+                      <p className="text-xs text-red-600 dark:text-red-400">{formErrors.leadScore}</p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="lead-reviews-count" className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      Reviews count
+                    </label>
+                    <input
+                      id="lead-reviews-count"
+                      type="number"
+                      min={0}
+                      step={1}
+                      className={`w-full rounded-md border p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white ${
+                        formErrors.reviewsCount ? "border-red-500 ring-1 ring-red-500" : "border-gray-300"
+                      }`}
+                      value={form.reviewsCount}
+                      onChange={(e) => setForm((f) => ({ ...f, reviewsCount: e.target.value }))}
+                      disabled={formLocked}
+                      placeholder="Optional"
+                    />
+                    {formErrors.reviewsCount ? (
+                      <p className="text-xs text-red-600 dark:text-red-400">{formErrors.reviewsCount}</p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <div className="mb-1 flex items-center gap-1">
+                      <label htmlFor="lead-reviews-source" className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                        Reviews platform/site
+                      </label>
+                      <FieldInfoTip text="Where public reviews appear (Google, Trustpilot, etc.). Optional unless you use “Other” — then type the site name." />
+                    </div>
+                    <SearchableLeadOptionSelect
+                      id="lead-reviews-source"
+                      ariaLabel="Reviews platform"
+                      options={LEAD_REVIEWS_SOURCE_PRESETS}
+                      selectValue={form.reviewsSourceSelect}
+                      customValue={form.reviewsSourceCustom}
+                      onSelectChange={(v) =>
+                        setForm((f) => ({
+                          ...f,
+                          reviewsSourceSelect: v,
+                          reviewsSourceCustom: v === REVIEWS_SOURCE_CUSTOM_VALUE ? f.reviewsSourceCustom : "",
+                        }))
+                      }
+                      onCustomChange={(v) => setForm((f) => ({ ...f, reviewsSourceCustom: v }))}
+                      customSentinel={REVIEWS_SOURCE_CUSTOM_VALUE}
+                      placeholder="Optional — select platform…"
+                      otherLabel="Other (type site name)"
+                      customPlaceholder="e.g. niche directory"
+                      disabled={formLocked}
+                      error={!!formErrors.reviewsSource}
+                    />
+                    {formErrors.reviewsSource ? (
+                      <p className="text-xs text-red-600 dark:text-red-400">{formErrors.reviewsSource}</p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="lead-review-rating" className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      Review rating (0–5)
+                    </label>
+                    <input
+                      id="lead-review-rating"
+                      type="number"
+                      min={0}
+                      max={5}
+                      step={0.1}
+                      className={`w-full rounded-md border p-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white ${
+                        formErrors.reviewRating ? "border-red-500 ring-1 ring-red-500" : "border-gray-300"
+                      }`}
+                      value={form.reviewRating}
+                      onChange={(e) => setForm((f) => ({ ...f, reviewRating: e.target.value }))}
+                      disabled={formLocked}
+                      placeholder="e.g. 4.5 stars"
+                    />
+                    {formErrors.reviewRating ? (
+                      <p className="text-xs text-red-600 dark:text-red-400">{formErrors.reviewRating}</p>
+                    ) : null}
                   </div>
                 </div>
               </div>

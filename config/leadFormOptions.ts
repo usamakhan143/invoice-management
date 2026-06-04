@@ -6,6 +6,40 @@ export const COUNTRY_CUSTOM_VALUE = "__country_custom__";
 export const CATEGORY_CUSTOM_VALUE = "__category_custom__";
 /** Sentinel for lead source searchable select → custom text field */
 export const SOURCE_CUSTOM_VALUE = "__source_custom__";
+/** Sentinel for reviews platform dropdown → custom text field */
+export const REVIEWS_SOURCE_CUSTOM_VALUE = "__reviews_source_custom__";
+
+/** Where public reviews are listed (lead form + import normalization) */
+export const LEAD_REVIEWS_SOURCE_PRESETS = [
+  "Google",
+  "Google Business Profile",
+  "Trustpilot",
+  "Facebook",
+  "Yelp",
+  "G2",
+  "Capterra",
+  "App Store",
+  "Play Store",
+  "Better Business Bureau",
+  "TripAdvisor",
+  "Amazon",
+  "Other",
+] as const;
+
+export function splitStoredReviewsSource(raw?: string | null): { select: string; custom: string } {
+  const t = (raw || "").trim();
+  if (!t) return { select: "", custom: "" };
+  const preset = (LEAD_REVIEWS_SOURCE_PRESETS as readonly string[]).find(
+    (p) => p.toLowerCase() === t.toLowerCase(),
+  );
+  if (preset) return { select: preset, custom: "" };
+  return { select: REVIEWS_SOURCE_CUSTOM_VALUE, custom: t };
+}
+
+export function resolvedReviewsSource(select: string, custom: string): string {
+  if (select === REVIEWS_SOURCE_CUSTOM_VALUE) return custom.trim();
+  return select.trim();
+}
 
 /**
  * Simple industry / business types — good for selling digital services or products online.
