@@ -278,6 +278,19 @@ service cloud.firestore {
       allow delete: if expenseDataReadOk(resource.data);
     }
 
+    // Expense returns/refunds/cashbacks — company-scoped; append-only (no update).
+    // Read/delete mirror the same access pattern as expenses; app enforces granular permissions.
+    match /expenseReturns/{returnId} {
+      allow get, list: if expenseDataReadOk(resource.data);
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId);
+      allow update: if false;
+      allow delete: if expenseDataReadOk(resource.data);
+    }
+
     // Payee directory (`vendors` collection) — company-scoped; app enforces expense permissions
     match /vendors/{vendorId} {
       allow get, list: if isAuthenticated() &&

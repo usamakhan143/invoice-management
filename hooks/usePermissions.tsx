@@ -198,6 +198,17 @@ export const usePermissions = () => {
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
     canDeleteExpense();
 
+  /** View returns/refunds against expenses (legacy expense viewers keep visibility). */
+  const canViewExpenseReturns = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE) ||
+    canViewExpenses();
+
+  /** Record a received return/refund/cashback (new perm or anyone who can create expenses). */
+  const canReceiveExpenseReturns = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE) ||
+    canCreateExpense();
+
   // Company activity permissions
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
   const canBulkDeleteCompanyActivity = (): boolean =>
@@ -505,6 +516,8 @@ export const usePermissions = () => {
     canCreateExpenseCategory,
     canEditExpenseCategory,
     canDeleteExpenseCategory,
+    canViewExpenseReturns,
+    canReceiveExpenseReturns,
 
     // Company activity permissions
     canViewCompanyActivity,

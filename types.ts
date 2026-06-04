@@ -246,6 +246,54 @@ export interface Expense {
   vendorName?: string;
   /** One-time payee only; not linked to vendors collection */
   oneTimeVendor?: boolean;
+  // --- Returns / refunds / cashbacks (all optional; legacy expenses omit these) ---
+  /** Planning flag: user expects part/all of this expense to be returned later. */
+  expectedReturnAvailable?: boolean;
+  /** Expected return amount (planning only; no balance effect until received). */
+  expectedReturnAmount?: number | null;
+  /** Expected return date (optional planning hint). */
+  expectedReturnDate?: firebase.firestore.Timestamp | null;
+  /** Free-text note about the expected return. */
+  expectedReturnNotes?: string | null;
+  /** Cached sum of received returns (recomputable from `expenseReturns`). Absent = 0. */
+  totalReturnedAmount?: number;
+  /** Cached return state. Absent/"none" = nothing returned yet. */
+  returnStatus?: "none" | "partial" | "full";
+}
+
+/** Why money came back against an expense. */
+export type ExpenseReturnType =
+  | "cashback"
+  | "vendor_refund"
+  | "partial_refund"
+  | "full_refund"
+  | "other";
+
+/**
+ * A received return/refund/cashback against an expense (`expenseReturns` collection).
+ * Append-only money-in event; the original expense document is never reduced.
+ */
+export interface ExpenseReturn {
+  id: string;
+  companyId: string;
+  /** Creator uid (who recorded the receipt). */
+  userId: string;
+  /** Linked expense document id. */
+  expenseId: string;
+  /** Denormalized for lists without an extra read. */
+  expenseTitle?: string;
+  amount: number;
+  returnType: ExpenseReturnType;
+  /** When the money was actually received. */
+  receivedDate: firebase.firestore.Timestamp;
+  /** Bank account credited (existing `bankAccounts` id). */
+  destinationBankAccountId: string;
+  destinationBankAccountName: string;
+  currency: string;
+  currencySymbol: string;
+  notes?: string;
+  createdAt: firebase.firestore.Timestamp;
+  createdByDisplayName?: string;
 }
 
 export type ActivityType =
@@ -268,6 +316,8 @@ export type ActivityType =
   | "expense_created"
   | "expense_updated"
   | "expense_deleted"
+  | "expense_return_received"
+  | "expense_return_deleted"
   | "vendor_created"
   | "vendor_updated"
   | "vendor_deleted"

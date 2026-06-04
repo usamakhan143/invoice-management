@@ -7,12 +7,20 @@ import firebase from "firebase/compat/app";
 import { db, Timestamp } from "../../services/firebase";
 import { ActivityLogger } from "../../services/activityLogger";
 import { BankAccountService } from "../../services/bankAccountService";
+import { ExpenseReturnService } from "../../services/expenseReturnService";
 import { subscribeCompanyVendors } from "../../services/vendorService";
 import {
   renameCategoryOnExpenses,
   subscribeCompanyExpenseCategories,
 } from "../../services/expenseCategoryService";
-import type { Expense, BankAccount, Vendor, ExpenseCategory } from "../../types";
+import type {
+  Expense,
+  BankAccount,
+  Vendor,
+  ExpenseCategory,
+  ExpenseReturn,
+  ExpenseReturnType,
+} from "../../types";
 import Spinner from "../../components/Spinner";
 import { GRANULAR_PERMISSIONS } from "../../config/permissions";
 import {
@@ -23,6 +31,21 @@ import { formatBankAccountListLabel } from "../../utils/bankAccountDisplay";
 
 /** Expense form: directory payee or one-time payee (this sentinel value). */
 const OTHER_PAYEE_VALUE = "__other__";
+
+/** Return/refund/cashback types shown in the Receive Return modal. */
+const EXPENSE_RETURN_TYPE_OPTIONS: { value: ExpenseReturnType; label: string }[] = [
+  { value: "cashback", label: "Cashback" },
+  { value: "vendor_refund", label: "Vendor refund" },
+  { value: "partial_refund", label: "Partial refund" },
+  { value: "full_refund", label: "Full refund" },
+  { value: "other", label: "Other" },
+];
+
+function expenseReturnTypeLabel(type: string): string {
+  return (
+    EXPENSE_RETURN_TYPE_OPTIONS.find((o) => o.value === type)?.label || "Return"
+  );
+}
 
 /** Snapshot when editing — used to credit back the prior deduction during validation. */
 type ExpenseEditSnapshot = { amount: number; bankAccountId: string };
@@ -87,6 +110,8 @@ const ExpensesPage: React.FC = () => {
     canCreateExpenseCategory,
     canEditExpenseCategory,
     canDeleteExpenseCategory,
+    canViewExpenseReturns,
+    canReceiveExpenseReturns,
     isOwner,
   } = usePermissions();
   const navigate = useNavigate();
@@ -137,6 +162,24 @@ const ExpensesPage: React.FC = () => {
   const [bulkDeletingExpenses, setBulkDeletingExpenses] = useState(false);
   const selectAllExpensesRef = useRef<HTMLInputElement>(null);
   const expenseEditSnapshotRef = useRef<ExpenseEditSnapshot | null>(null);
+
+  const [expenseReturns, setExpenseReturns] = useState<ExpenseReturn[]>([]);
+  const [returnModalExpense, setReturnModalExpense] = useState<Expense | null>(null);
+  const [returnForm, setReturnForm] = useState<{
+    amount: string;
+    returnType: ExpenseReturnType;
+    receivedDate: string;
+    destinationBankAccountId: string;
+    notes: string;
+  }>({
+    amount: "",
+    returnType: "vendor_refund",
+    receivedDate: "",
+    destinationBankAccountId: "",
+    notes: "",
+  });
+  const [returnError, setReturnError] = useState("");
+  const [returnSubmitting, setReturnSubmitting] = useState(false);
 
   const loadExchangeRates = async () => {
     try {
@@ -236,13 +279,47 @@ const ExpensesPage: React.FC = () => {
       },
     );
 
+    const returnsUnsubscribe = ExpenseReturnService.subscribeForScope(
+      {
+        companyWide: companyWideExpenseQuery && !!expenseCompanyId,
+        companyId: expenseCompanyId,
+        userId: user.uid,
+      },
+      (rows) => setExpenseReturns(rows),
+      () => setExpenseReturns([]),
+    );
+
     loadExchangeRates();
 
     return () => {
       expensesUnsubscribe();
       bankAccountsUnsubscribe();
+      returnsUnsubscribe();
     };
   }, [user, userProfile, companyWideExpenseQuery, expenseCompanyId]);
+
+  /** Returns grouped by expense id (for per-row badges and net calculations). */
+  const returnsByExpenseId = useMemo(() => {
+    const map = new Map<string, ExpenseReturn[]>();
+    for (const r of expenseReturns) {
+      const arr = map.get(r.expenseId) ?? [];
+      arr.push(r);
+      map.set(r.expenseId, arr);
+    }
+    return map;
+  }, [expenseReturns]);
+
+  /** Sum of returns received against a single expense (cached field preferred, falls back to live docs). */
+  const returnedAmountForExpense = useCallback(
+    (expense: Expense): number => {
+      const cached = expense.totalReturnedAmount;
+      if (typeof cached === "number" && cached > 0) return cached;
+      const rows = returnsByExpenseId.get(expense.id);
+      if (!rows || rows.length === 0) return 0;
+      return rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    },
+    [returnsByExpenseId],
+  );
 
   const canEditExpenseRow = (e: Expense): boolean =>
     canEditExpense() &&
@@ -578,6 +655,15 @@ const ExpensesPage: React.FC = () => {
       return sum + convertedAmount;
     }, 0);
 
+    const returnsAmount = filteredExpenses.reduce((sum, expense) => {
+      const returned = returnedAmountForExpense(expense);
+      if (returned <= 0) return sum;
+      const rate = exchangeRates[expense.currency || "USD"] || 1;
+      return sum + returned / rate;
+    }, 0);
+
+    const netAmount = totalAmount - returnsAmount;
+
     const categoryTotals = filteredExpenses.reduce(
       (acc, expense) => {
         const rate = exchangeRates[expense.currency || "USD"] || 1;
@@ -602,6 +688,8 @@ const ExpensesPage: React.FC = () => {
 
     return {
       totalAmount,
+      returnsAmount,
+      netAmount,
       totalCount: filteredExpenses.length,
       categoryTotals,
       bankTotals,
@@ -782,11 +870,23 @@ const ExpensesPage: React.FC = () => {
       };
 
       if (isUpdate) {
+        const alreadyReturned = returnedAmountForExpense(existing);
+        if (alreadyReturned > 0 && (currentExpense.amount || 0) + 0.0001 < alreadyReturned) {
+          alert(
+            `Amount can't be less than returns already received (${selectedBank.currencySymbol}${alreadyReturned.toFixed(2)}). Remove returns first.`,
+          );
+          setIsSubmitting(false);
+          return;
+        }
         const expenseId = currentExpense.id!;
-        const { id: _omitId, ...updatePayload } = expenseData as Expense & {
+        const { id: _omitId, ...updatePayloadRaw } = expenseData as Expense & {
           id?: string;
         };
         void _omitId;
+        // Return aggregates are owned by ExpenseReturnService; never overwrite them from the edit form.
+        const updatePayload = { ...updatePayloadRaw } as Record<string, unknown>;
+        delete updatePayload.totalReturnedAmount;
+        delete updatePayload.returnStatus;
         const newAmount = currentExpense.amount || 0;
         const newBankId = currentExpense.bankAccountId || "";
 
@@ -899,6 +999,12 @@ const ExpensesPage: React.FC = () => {
 
   const handleDelete = async (expenseId: string, expense: Expense) => {
     if (!user || !userProfile) return;
+    if (returnedAmountForExpense(expense) > 0) {
+      alert(
+        "This expense has returns recorded against it. Remove the returns first before deleting.",
+      );
+      return;
+    }
     if (window.confirm("Are you sure you want to delete this expense?")) {
       try {
         await deleteExpenseRecord(expenseId, expense);
@@ -971,17 +1077,156 @@ const ExpensesPage: React.FC = () => {
     }
     setBulkDeletingExpenses(true);
     try {
+      let skippedWithReturns = 0;
       for (const expenseId of selectedExpenseIds) {
         const expense = expenses.find((e) => e.id === expenseId);
         if (!expense || !canDeleteExpenseRow(expense)) continue;
+        if (returnedAmountForExpense(expense) > 0) {
+          skippedWithReturns += 1;
+          continue;
+        }
         await deleteExpenseRecord(expenseId, expense);
       }
       clearExpenseSelection();
+      if (skippedWithReturns > 0) {
+        alert(
+          `${skippedWithReturns} expense(s) were skipped because they have returns recorded. Remove the returns first.`,
+        );
+      }
     } catch (error) {
       console.error(error);
       alert("Some expenses could not be deleted.");
     } finally {
       setBulkDeletingExpenses(false);
+    }
+  };
+
+  const openReturnModal = (expense: Expense) => {
+    setReturnError("");
+    setReturnForm({
+      amount: "",
+      returnType: "vendor_refund",
+      receivedDate: new Date().toISOString().split("T")[0],
+      destinationBankAccountId: expense.bankAccountId || "",
+      notes: "",
+    });
+    setReturnModalExpense(expense);
+  };
+
+  const closeReturnModal = () => {
+    setReturnModalExpense(null);
+    setReturnError("");
+    setReturnSubmitting(false);
+  };
+
+  const handleReceiveReturn = async () => {
+    if (!user || !userProfile || !returnModalExpense) return;
+    const expense = returnModalExpense;
+    const amount = parseFloat(returnForm.amount) || 0;
+    if (amount <= 0) {
+      setReturnError("Enter a valid amount greater than 0");
+      return;
+    }
+    if (!returnForm.destinationBankAccountId) {
+      setReturnError("Select a destination account");
+      return;
+    }
+    if (!returnForm.receivedDate) {
+      setReturnError("Select the received date");
+      return;
+    }
+    const alreadyReturned = returnedAmountForExpense(expense);
+    const remaining = Math.round(((expense.amount || 0) - alreadyReturned) * 100) / 100;
+    if (amount > remaining + 0.0001) {
+      setReturnError(
+        `Return exceeds remaining amount (${expense.currencySymbol}${remaining.toFixed(2)}).`,
+      );
+      return;
+    }
+    const destBank = bankAccounts.find(
+      (b) => b.id === returnForm.destinationBankAccountId,
+    );
+    if (!destBank) {
+      setReturnError("Destination account not found");
+      return;
+    }
+
+    setReturnSubmitting(true);
+    setReturnError("");
+    try {
+      const companyId = getExpenseCompanyId(user, userProfile);
+      const { totalReturnedAmount, returnStatus } =
+        await ExpenseReturnService.receiveReturn({
+          companyId: expense.companyId || companyId,
+          userId: user.uid,
+          createdByDisplayName:
+            userProfile?.displayName || userProfile?.companyName || user.email || "",
+          expenseId: expense.id,
+          expenseTitle: expense.title,
+          expenseAmount: expense.amount || 0,
+          amount,
+          returnType: returnForm.returnType,
+          receivedDate: Timestamp.fromDate(new Date(returnForm.receivedDate)),
+          destinationBankAccountId: destBank.id,
+          destinationBankAccountName: formatBankAccountListLabel(destBank),
+          currency: destBank.currency,
+          currencySymbol: destBank.currencySymbol,
+          notes: returnForm.notes,
+        });
+
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "expense_return_received",
+        `Received ${expenseReturnTypeLabel(returnForm.returnType)} ${destBank.currencySymbol}${amount.toFixed(2)} for expense: ${expense.title}`,
+        {
+          entityId: expense.id,
+          entityType: "expense",
+          newValue: {
+            amount,
+            returnType: returnForm.returnType,
+            destinationBankAccountId: destBank.id,
+            totalReturnedAmount,
+            returnStatus,
+          },
+        },
+      );
+
+      closeReturnModal();
+    } catch (error) {
+      console.error("Error receiving return:", error);
+      setReturnError(
+        error instanceof Error ? error.message : "Failed to record return",
+      );
+      setReturnSubmitting(false);
+    }
+  };
+
+  const handleDeleteReturn = async (returnRecord: ExpenseReturn) => {
+    if (!user || !userProfile) return;
+    if (
+      !window.confirm(
+        `Remove this return of ${returnRecord.currencySymbol}${(returnRecord.amount || 0).toFixed(2)}? The destination account balance will be reduced back.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await ExpenseReturnService.deleteReturn(returnRecord);
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "expense_return_deleted",
+        `Removed return ${returnRecord.currencySymbol}${(returnRecord.amount || 0).toFixed(2)} for expense: ${returnRecord.expenseTitle || returnRecord.expenseId}`,
+        {
+          entityId: returnRecord.expenseId,
+          entityType: "expense",
+          oldValue: returnRecord,
+        },
+      );
+    } catch (error) {
+      console.error("Error removing return:", error);
+      alert("Failed to remove return");
     }
   };
 
@@ -1176,15 +1421,39 @@ const ExpensesPage: React.FC = () => {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div
+        className={`grid grid-cols-1 gap-4 mb-6 ${
+          canViewExpenseReturns() && stats.returnsAmount > 0
+            ? "md:grid-cols-3 lg:grid-cols-6"
+            : "md:grid-cols-4"
+        }`}
+      >
         <div className="bg-gradient-to-r from-red-500 to-red-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Total Expenses</h3>
           <p className="text-2xl font-bold">{stats.totalCount}</p>
         </div>
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-lg text-white">
-          <h3 className="text-sm font-medium">Total Amount (USD)</h3>
+          <h3 className="text-sm font-medium">
+            {canViewExpenseReturns() && stats.returnsAmount > 0
+              ? "Gross (USD)"
+              : "Total Amount (USD)"}
+          </h3>
           <p className="text-2xl font-bold">${stats.totalAmount.toFixed(2)}</p>
         </div>
+        {canViewExpenseReturns() && stats.returnsAmount > 0 ? (
+          <>
+            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 rounded-lg text-white">
+              <h3 className="text-sm font-medium">Returns (USD)</h3>
+              <p className="text-2xl font-bold">
+                -${stats.returnsAmount.toFixed(2)}
+              </p>
+            </div>
+            <div className="bg-gradient-to-r from-teal-500 to-teal-600 p-6 rounded-lg text-white">
+              <h3 className="text-sm font-medium">Net Expense (USD)</h3>
+              <p className="text-2xl font-bold">${stats.netAmount.toFixed(2)}</p>
+            </div>
+          </>
+        ) : null}
         <div className="bg-gradient-to-r from-purple-500 to-purple-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Top Category</h3>
           <p className="text-lg font-bold">
@@ -1329,10 +1598,63 @@ const ExpensesPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">{expense.bankAccountName}</td>
                     <td className="px-6 py-4 font-semibold text-red-600 dark:text-red-400">
-                      {expense.currencySymbol}
-                      {expense.amount.toFixed(2)}
+                      {(() => {
+                        const returned = returnedAmountForExpense(expense);
+                        const net = Math.max(0, (expense.amount || 0) - returned);
+                        return (
+                          <div>
+                            <div>
+                              {expense.currencySymbol}
+                              {expense.amount.toFixed(2)}
+                            </div>
+                            {returned > 0 ? (
+                              <div className="mt-1 space-y-0.5">
+                                <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                  − {expense.currencySymbol}
+                                  {returned.toFixed(2)} returned
+                                </div>
+                                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                  Net: {expense.currencySymbol}
+                                  {net.toFixed(2)}
+                                </div>
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    expense.returnStatus === "full" || net <= 0
+                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                                  }`}
+                                >
+                                  {expense.returnStatus === "full" || net <= 0
+                                    ? "Fully returned"
+                                    : "Partially returned"}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 flex space-x-2">
+                      {canReceiveExpenseReturns() &&
+                      (expense.amount || 0) - returnedAmountForExpense(expense) > 0.0001 ? (
+                        <button
+                          onClick={() => openReturnModal(expense)}
+                          className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400"
+                          title="Record a return / refund / cashback"
+                        >
+                          Return
+                        </button>
+                      ) : null}
+                      {canViewExpenseReturns() &&
+                      returnedAmountForExpense(expense) > 0 ? (
+                        <button
+                          onClick={() => openReturnModal(expense)}
+                          className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400"
+                          title="View returns"
+                        >
+                          Returns
+                        </button>
+                      ) : null}
                       {canEditExpenseRow(expense) && (
                         <button
                           onClick={() => openModal(expense)}
@@ -1829,6 +2151,95 @@ const ExpensesPage: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Expected return (optional) — planning only; no balance effect until received */}
+              <div className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={!!currentExpense.expectedReturnAvailable}
+                    onChange={(e) =>
+                      setCurrentExpense({
+                        ...currentExpense,
+                        expectedReturnAvailable: e.target.checked,
+                      })
+                    }
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                  />
+                  Expected return available (refund / cashback)
+                </label>
+                {currentExpense.expectedReturnAvailable ? (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Expected return amount
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={currentExpense.expectedReturnAmount ?? ""}
+                        onChange={(e) =>
+                          setCurrentExpense({
+                            ...currentExpense,
+                            expectedReturnAmount:
+                              e.target.value === ""
+                                ? null
+                                : parseFloat(e.target.value) || 0,
+                          })
+                        }
+                        className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Expected return date
+                      </label>
+                      <input
+                        type="date"
+                        value={
+                          currentExpense.expectedReturnDate
+                            ? currentExpense.expectedReturnDate
+                                .toDate()
+                                .toISOString()
+                                .split("T")[0]
+                            : ""
+                        }
+                        onChange={(e) =>
+                          setCurrentExpense({
+                            ...currentExpense,
+                            expectedReturnDate: e.target.value
+                              ? Timestamp.fromDate(new Date(e.target.value))
+                              : null,
+                          })
+                        }
+                        className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Notes
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 20k cashback expected from vendor"
+                        value={currentExpense.expectedReturnNotes ?? ""}
+                        onChange={(e) =>
+                          setCurrentExpense({
+                            ...currentExpense,
+                            expectedReturnNotes: e.target.value,
+                          })
+                        }
+                        className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                    </div>
+                    <p className="col-span-2 text-xs text-gray-500 dark:text-gray-400">
+                      Planning only — the bank balance changes when you record the
+                      actual return via the “Return” action.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="mt-6 flex justify-end space-x-3">
               <button
@@ -1870,6 +2281,206 @@ const ExpensesPage: React.FC = () => {
                   "Save"
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receive Return / Refund / Cashback modal */}
+      {returnModalExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
+              Returns — {returnModalExpense.title}
+            </h3>
+            {(() => {
+              const returned = returnedAmountForExpense(returnModalExpense);
+              const remaining = Math.max(
+                0,
+                (returnModalExpense.amount || 0) - returned,
+              );
+              return (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Gross {returnModalExpense.currencySymbol}
+                  {(returnModalExpense.amount || 0).toFixed(2)} · Returned{" "}
+                  {returnModalExpense.currencySymbol}
+                  {returned.toFixed(2)} · Remaining{" "}
+                  {returnModalExpense.currencySymbol}
+                  {remaining.toFixed(2)}
+                </p>
+              );
+            })()}
+
+            {/* Existing returns list */}
+            {(returnsByExpenseId.get(returnModalExpense.id) ?? []).length > 0 ? (
+              <div className="mb-4 rounded-md border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+                {(returnsByExpenseId.get(returnModalExpense.id) ?? [])
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      (b.receivedDate?.toMillis?.() ?? 0) -
+                      (a.receivedDate?.toMillis?.() ?? 0),
+                  )
+                  .map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <div className="font-medium text-gray-800 dark:text-gray-100">
+                          {r.currencySymbol}
+                          {(r.amount || 0).toFixed(2)} ·{" "}
+                          {expenseReturnTypeLabel(r.returnType)}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {r.receivedDate?.toDate?.().toLocaleDateString()} →{" "}
+                          {r.destinationBankAccountName}
+                          {r.notes ? ` · ${r.notes}` : ""}
+                        </div>
+                      </div>
+                      {canReceiveExpenseReturns() ? (
+                        <button
+                          onClick={() => void handleDeleteReturn(r)}
+                          className="text-red-500 hover:text-red-700 text-xs"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+
+            {/* New return form */}
+            {canReceiveExpenseReturns() &&
+            (returnModalExpense.amount || 0) -
+              returnedAmountForExpense(returnModalExpense) >
+              0.0001 ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Amount *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={returnForm.amount}
+                      onChange={(e) =>
+                        setReturnForm({ ...returnForm, amount: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Type *
+                    </label>
+                    <select
+                      value={returnForm.returnType}
+                      onChange={(e) =>
+                        setReturnForm({
+                          ...returnForm,
+                          returnType: e.target.value as ExpenseReturnType,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    >
+                      {EXPENSE_RETURN_TYPE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Received date *
+                    </label>
+                    <input
+                      type="date"
+                      value={returnForm.receivedDate}
+                      onChange={(e) =>
+                        setReturnForm({
+                          ...returnForm,
+                          receivedDate: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Destination account *
+                    </label>
+                    <select
+                      value={returnForm.destinationBankAccountId}
+                      onChange={(e) =>
+                        setReturnForm({
+                          ...returnForm,
+                          destinationBankAccountId: e.target.value,
+                        })
+                      }
+                      className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    >
+                      <option value="">Select account</option>
+                      {bankAccounts.map((bank) => (
+                        <option key={bank.id} value={bank.id}>
+                          {formatBankAccountListLabel(bank)} ({bank.currencySymbol})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={returnForm.notes}
+                      onChange={(e) =>
+                        setReturnForm({ ...returnForm, notes: e.target.value })
+                      }
+                      className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                </div>
+                {returnError ? (
+                  <p className="text-red-500 dark:text-red-400 text-xs">
+                    {returnError}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {returnedAmountForExpense(returnModalExpense) > 0 &&
+                (returnModalExpense.amount || 0) -
+                  returnedAmountForExpense(returnModalExpense) <=
+                  0.0001
+                  ? "This expense has been fully returned."
+                  : "No remaining amount to return."}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={closeReturnModal}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+              >
+                Close
+              </button>
+              {canReceiveExpenseReturns() &&
+              (returnModalExpense.amount || 0) -
+                returnedAmountForExpense(returnModalExpense) >
+                0.0001 ? (
+                <button
+                  onClick={handleReceiveReturn}
+                  disabled={returnSubmitting}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px]"
+                >
+                  {returnSubmitting ? "Saving…" : "Receive Return"}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

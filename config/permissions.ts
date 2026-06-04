@@ -111,6 +111,10 @@ export const GRANULAR_PERMISSIONS = {
   EXPENSES_CATEGORIES_VIEW: "expenses_categories_view",
   /** Add, edit, and delete expense categories (including rename on existing expenses). Legacy: also allowed with expense create/edit/delete. */
   EXPENSES_CATEGORIES_MANAGE: "expenses_categories_manage",
+  /** View returns/refunds/cashbacks recorded against expenses */
+  EXPENSES_RETURNS_VIEW: "expenses_returns_view",
+  /** Record a received return/refund/cashback (credits a bank account) */
+  EXPENSES_RETURNS_RECEIVE: "expenses_returns_receive",
 
   // Company Activity Section (Admin only)
   COMPANY_ACTIVITY_VIEW: "company_activity_view",
@@ -294,6 +298,10 @@ export const PERMISSION_DESCRIPTIONS = {
     "Access the Categories tab and view expense categories",
   [GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE]:
     "Add, edit, and delete expense categories, including renaming a category on existing expenses (also covered by expense create/edit/delete if those are enabled)",
+  [GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW]:
+    "View returns/refunds/cashbacks received against expenses (Gross, Returns, Net)",
+  [GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE]:
+    "Record a received return/refund/cashback against an expense (credits the selected bank account)",
 
   // Company Activity
   [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
@@ -446,6 +454,8 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE,
     GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_VIEW,
     GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE,
+    GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW,
+    GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE,
   ],
   [PERMISSION_CATEGORIES.COMPANY_ACTIVITY]: [
     GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,
