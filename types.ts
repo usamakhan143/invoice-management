@@ -168,6 +168,49 @@ export interface BankAccount {
    * Undefined defaults to true (show) for legacy documents.
    */
   includeInInvoicePicker?: boolean;
+  /** Cached: last time this account was reconciled to a stated bank balance. */
+  lastReconciledAt?: firebase.firestore.Timestamp;
+  /** Cached: stated actual balance from the most recent reconciliation. */
+  lastReconciledStatedBalance?: number;
+}
+
+/** Why a book-to-bank balance difference was posted (`bankReconciliations`). */
+export type BankReconciliationReason =
+  | "missing_expense"
+  | "missing_income"
+  | "bank_charges"
+  | "interest_credit"
+  | "opening_balance_correction"
+  | "manual_adjustment"
+  | "confirmed_match"
+  | "other";
+
+/** Append-only bank reconciliation / balance adjustment session. */
+export interface BankReconciliation {
+  id: string;
+  companyId: string;
+  userId: string;
+  bankAccountId: string;
+  bankAccountName: string;
+  currency: string;
+  currencySymbol: string;
+  /** Date the user checked the balance in the bank app. */
+  asOfDate: firebase.firestore.Timestamp;
+  /** System ledger balance immediately before this reconciliation. */
+  ledgerBalanceBefore: number;
+  /** Actual balance entered by the user from the bank statement/app. */
+  statedActualBalance: number;
+  /** statedActualBalance − ledgerBalanceBefore (signed adjustment posted). */
+  adjustmentAmount: number;
+  /** ledgerBalanceBefore + adjustmentAmount */
+  ledgerBalanceAfter: number;
+  reasonCode: BankReconciliationReason;
+  notes?: string;
+  status: "posted" | "reversed";
+  /** When this row reverses a prior reconciliation. */
+  reversalOfId?: string;
+  createdAt: firebase.firestore.Timestamp;
+  createdByDisplayName?: string;
 }
 
 /** Internal transfer between company bank accounts (`bankTransfers` collection). */
@@ -246,6 +289,8 @@ export interface Expense {
   vendorName?: string;
   /** One-time payee only; not linked to vendors collection */
   oneTimeVendor?: boolean;
+  /** When true, this expense is tagged as a recurring monthly charge (filter/track only). */
+  isMonthlyExpense?: boolean;
   // --- Returns / refunds / cashbacks (all optional; legacy expenses omit these) ---
   /** Planning flag: user expects part/all of this expense to be returned later. */
   expectedReturnAvailable?: boolean;
@@ -259,6 +304,58 @@ export interface Expense {
   totalReturnedAmount?: number;
   /** Cached return state. Absent/"none" = nothing returned yet. */
   returnStatus?: "none" | "partial" | "full";
+}
+
+/** Lifecycle of a loan / advance given out (recoverable receivable). */
+export type LoanStatus = "outstanding" | "partially_repaid" | "closed" | "written_off";
+
+/**
+ * Money lent out / advance given (`loans` collection). This is a recoverable asset,
+ * NOT an expense — it never appears in expense reports.
+ */
+export interface Loan {
+  id: string;
+  companyId: string;
+  /** Creator uid (who recorded the loan). */
+  userId: string;
+  borrowerName: string;
+  principalAmount: number;
+  disbursedDate: firebase.firestore.Timestamp;
+  /** Bank account the money went out from. */
+  sourceBankAccountId: string;
+  sourceBankAccountName: string;
+  currency: string;
+  currencySymbol: string;
+  dueDate?: firebase.firestore.Timestamp | null;
+  notes?: string;
+  status: LoanStatus;
+  /** Cached sum of received repayments (recomputable from `loanRepayments`). */
+  totalRepaidAmount: number;
+  createdAt: firebase.firestore.Timestamp;
+  updatedAt?: firebase.firestore.Timestamp;
+  createdByDisplayName?: string;
+}
+
+/**
+ * A received repayment against a loan (`loanRepayments` collection).
+ * Append-only money-in event; credits a destination bank account.
+ */
+export interface LoanRepayment {
+  id: string;
+  companyId: string;
+  userId: string;
+  loanId: string;
+  /** Denormalized for lists. */
+  borrowerName?: string;
+  amount: number;
+  receivedDate: firebase.firestore.Timestamp;
+  destinationBankAccountId: string;
+  destinationBankAccountName: string;
+  currency: string;
+  currencySymbol: string;
+  notes?: string;
+  createdAt: firebase.firestore.Timestamp;
+  createdByDisplayName?: string;
 }
 
 /** Why money came back against an expense. */
@@ -318,6 +415,13 @@ export type ActivityType =
   | "expense_deleted"
   | "expense_return_received"
   | "expense_return_deleted"
+  | "loan_created"
+  | "loan_updated"
+  | "loan_deleted"
+  | "loan_repayment_received"
+  | "loan_repayment_deleted"
+  | "bank_reconciliation_posted"
+  | "bank_reconciliation_reversed"
   | "vendor_created"
   | "vendor_updated"
   | "vendor_deleted"

@@ -331,7 +331,8 @@ const DataBackupManager: React.FC = () => {
           <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-600 dark:text-slate-400">
             <li>
               Full company snapshot (flat Firestore): invoices, customers, products, bank accounts, expenses,
-              expense returns, activities, users, team, roles, subscriptions, and company settings where present.
+              expense returns, loans, loan repayments, activities, users, team, roles, subscriptions, and company
+              settings where present.
             </li>
             <li>Format v5 JSON — keep files private; import merges documents by ID into this company only.</li>
             <li>Large datasets use paginated export; imports are written in safe batches.</li>

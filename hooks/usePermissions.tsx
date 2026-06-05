@@ -153,6 +153,14 @@ export const usePermissions = () => {
   const canCreateBankAccount = (): boolean => hasPermission(GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE);
   const canEditBankAccount = (): boolean => hasPermission(GRANULAR_PERMISSIONS.BANK_ACCOUNTS_EDIT);
   const canDeleteBankAccount = (): boolean => hasPermission(GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE);
+  const canViewBankReconciliations = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_RECONCILIATIONS_VIEW);
+  const canPostBankReconciliation = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_RECONCILIATION_POST) ||
+    canEditBankAccount();
+  const canReverseBankReconciliation = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_RECONCILIATION_REVERSE) ||
+    canEditBankAccount();
 
   // Expense permissions
   const canViewExpenses = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_VIEW);
@@ -208,6 +216,17 @@ export const usePermissions = () => {
   const canReceiveExpenseReturns = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE) ||
     canCreateExpense();
+
+  // Loans / advances / receivables permissions
+  const canViewLoans = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LOANS_VIEW);
+  /** View/manage any team member’s loans (owner always true). */
+  const canManageCompanyLoans = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LOANS_COMPANY_MANAGE);
+  const canCreateLoan = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LOANS_CREATE);
+  const canEditLoan = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LOANS_EDIT);
+  const canDeleteLoan = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LOANS_DELETE);
+  const canReceiveLoanRepayment = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.LOANS_RECEIVE_REPAYMENT) || canCreateLoan();
 
   // Company activity permissions
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
@@ -334,6 +353,8 @@ export const usePermissions = () => {
         return canCreateBankAccount() || canEditBankAccount() || canDeleteBankAccount() || canViewDashboardBankAccounts();
       case "expenses":
         return canViewExpenses();
+      case "loans":
+        return canViewLoans() || canManageCompanyLoans() || canCreateLoan();
       case "user-management":
         return canViewUserManagement();
       case "leads":
@@ -364,6 +385,8 @@ export const usePermissions = () => {
         return canCreateBankAccount();
       case "expenses":
         return canCreateExpense();
+      case "loans":
+        return canCreateLoan();
       case "user-management":
         return canCreateUser();
       case "leads":
@@ -385,6 +408,8 @@ export const usePermissions = () => {
         return canEditBankAccount();
       case "expenses":
         return canEditExpense();
+      case "loans":
+        return canEditLoan();
       case "user-management":
         return canEditUser();
       case "leads":
@@ -406,6 +431,8 @@ export const usePermissions = () => {
         return canDeleteBankAccount();
       case "expenses":
         return canDeleteExpense();
+      case "loans":
+        return canDeleteLoan();
       case "user-management":
         return false; // Remove functionality is disabled
       case "leads":
@@ -500,6 +527,9 @@ export const usePermissions = () => {
     canCreateBankAccount,
     canEditBankAccount,
     canDeleteBankAccount,
+    canViewBankReconciliations,
+    canPostBankReconciliation,
+    canReverseBankReconciliation,
 
     // Expense permissions
     canViewExpenses,
@@ -518,6 +548,12 @@ export const usePermissions = () => {
     canDeleteExpenseCategory,
     canViewExpenseReturns,
     canReceiveExpenseReturns,
+    canViewLoans,
+    canManageCompanyLoans,
+    canCreateLoan,
+    canEditLoan,
+    canDeleteLoan,
+    canReceiveLoanRepayment,
 
     // Company activity permissions
     canViewCompanyActivity,

@@ -11,7 +11,7 @@ const BACKUP_PAGE_SIZE = 400;
 const FIRESTORE_BATCH_LIMIT = 450;
 
 /** Major export milestones (company meta → … → finalize). Used for progress UI. */
-export const BACKUP_EXPORT_TOTAL_STAGES = 25;
+export const BACKUP_EXPORT_TOTAL_STAGES = 28;
 
 export interface BackupExportProgress {
   /** Stages fully finished (0 … totalStages). */
@@ -324,6 +324,20 @@ export class DatabaseMigrationService {
       );
       data.expenseReturns = toRows(
         await runQueryStage("Expense returns", "expenseReturns", "companyId", companyId),
+      );
+      data.loans = toRows(
+        await runQueryStage("Loans", "loans", "companyId", companyId),
+      );
+      data.loanRepayments = toRows(
+        await runQueryStage("Loan repayments", "loanRepayments", "companyId", companyId),
+      );
+      data.bankReconciliations = toRows(
+        await runQueryStage(
+          "Bank reconciliations",
+          "bankReconciliations",
+          "companyId",
+          companyId,
+        ),
       );
       data.assigneeAssignmentLog = toRows(
         await runQueryStage(
@@ -646,6 +660,7 @@ export class DatabaseMigrationService {
         ["companyUsers", "companyUsers"],
         ["bankAccounts", "bankAccounts"],
         ["bankTransfers", "bankTransfers"],
+        ["bankReconciliations", "bankReconciliations"],
         ["products", "products"],
         ["customers", "customers"],
         ["businesses", "businesses"],
@@ -654,6 +669,8 @@ export class DatabaseMigrationService {
         ["invoices", "invoices"],
         ["expenses", "expenses"],
         ["expenseReturns", "expenseReturns"],
+        ["loans", "loans"],
+        ["loanRepayments", "loanRepayments"],
         ["activities", "activities"],
         ["activity", "activity"],
         ["subscriptions", "subscriptions"],

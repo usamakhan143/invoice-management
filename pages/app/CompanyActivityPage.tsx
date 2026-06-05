@@ -44,6 +44,7 @@ const CompanyActivityPage: React.FC = () => {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [users, setUsers] = useState<CompanyUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
@@ -52,22 +53,29 @@ const CompanyActivityPage: React.FC = () => {
   const [bulkDeletingActivities, setBulkDeletingActivities] = useState(false);
   const selectAllActivitiesRef = useRef<HTMLInputElement>(null);
 
-  const loadData = async () => {
-    if (!user || !userProfile) return;
+  // Stable scalar identities — userProfile is a new object on every Firestore listener
+  // tick; depending on [user, userProfile] re-fetched data and flashed the full-page spinner.
+  const uid = user?.uid ?? "";
+  const profileCompanyId = userProfile?.companyId ?? "";
+  const profileIsOwner = userProfile?.isOwner === true;
 
-    setLoading(true);
+  const companyId = useMemo(
+    () => (profileIsOwner ? uid : profileCompanyId),
+    [uid, profileCompanyId, profileIsOwner],
+  );
+
+  const loadData = useCallback(async (background = false) => {
+    if (!companyId) return;
+
+    if (background) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const companyId = userProfile.isOwner ? user.uid : userProfile.companyId;
-
-      if (!companyId) {
-        console.error("Company ID not found");
-        return;
-      }
-
       // Load company activities and all users (including newly created)
       const [companyActivities, usersSnapshot] = await Promise.all([
         ActivityLogger.getCompanyActivities(companyId, 200),
-        // Get all users for this company from main users collection
         db.collection("users").where("companyId", "==", companyId).get(),
       ]);
 
@@ -119,12 +127,13 @@ const CompanyActivityPage: React.FC = () => {
       console.error("Error loading company activity data:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [companyId]);
 
   useEffect(() => {
-    loadData();
-  }, [user, userProfile]);
+    void loadData();
+  }, [loadData]);
 
   useEffect(() => {
     let filtered = [...activities];
@@ -281,7 +290,7 @@ const CompanyActivityPage: React.FC = () => {
     try {
       await ActivityLogger.deleteActivitiesByIds(selectedActivityIds);
       clearActivitySelection();
-      await loadData();
+      await loadData(true);
     } catch (e) {
       console.error(e);
       alert("Failed to delete some activities.");
@@ -306,7 +315,7 @@ const CompanyActivityPage: React.FC = () => {
     );
   }
 
-  if (loading) {
+  if (loading && activities.length === 0) {
     return (
       <div className="flex justify-center items-center h-full">
         <Spinner />
@@ -338,10 +347,10 @@ const CompanyActivityPage: React.FC = () => {
         </h1>
         <div className="button-group">
           <button
-            onClick={loadData}
-            disabled={loading}
+            onClick={() => void loadData(true)}
+            disabled={loading || refreshing}
             className="mobile-btn-icon p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={loading ? "Loading..." : "Refresh"}
+            title={loading || refreshing ? "Loading..." : "Refresh"}
           >
             <svg
               className="w-4 h-4"

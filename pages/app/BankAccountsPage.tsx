@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import firebase from "firebase/compat/app";
 import { useAuth } from "../../hooks/useAuth";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -6,9 +6,16 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { PAGES } from "../../config/permissions";
 import { db, Timestamp } from "../../services/firebase";
 import { BankAccountService } from "../../services/bankAccountService";
+import { BankReconciliationService } from "../../services/bankReconciliationService";
 import { ActivityLogger } from "../../services/activityLogger";
 import { subscribeCompanyExpenseCategories } from "../../services/expenseCategoryService";
-import type { BankAccount, BankTransfer, ExpenseCategory } from "../../types";
+import type {
+  BankAccount,
+  BankTransfer,
+  BankReconciliation,
+  BankReconciliationReason,
+  ExpenseCategory,
+} from "../../types";
 import Spinner from "../../components/Spinner";
 import {
   formatBankAccountListLabel,
@@ -19,6 +26,32 @@ import { getExpenseCompanyId } from "../../utils/expenseCompanyScope";
 import ProtectedComponent from "../../components/ProtectedComponent";
 
 const currencies = ["USD", "PKR", "EUR"];
+
+const RECONCILIATION_REASON_OPTIONS: {
+  value: BankReconciliationReason;
+  label: string;
+}[] = [
+  { value: "missing_expense", label: "Missing expense" },
+  { value: "missing_income", label: "Missing income" },
+  { value: "bank_charges", label: "Bank charges / fees" },
+  { value: "interest_credit", label: "Interest credit" },
+  { value: "opening_balance_correction", label: "Opening balance correction" },
+  { value: "manual_adjustment", label: "Manual adjustment" },
+  { value: "confirmed_match", label: "Confirmed match (no adjustment)" },
+  { value: "other", label: "Other" },
+];
+
+function reconciliationReasonLabel(code: string): string {
+  return (
+    RECONCILIATION_REASON_OPTIONS.find((o) => o.value === code)?.label || code
+  );
+}
+
+function accountStoredBalance(account: BankAccount): number {
+  return account.currentBalance ?? account.initialBalance ?? 0;
+}
+
+const todayInput = () => new Date().toISOString().split("T")[0];
 
 type XferAmountBasis = "from" | "to";
 type BankAccountsWorkspaceTab = "account" | "transfer";
@@ -151,10 +184,16 @@ const sectionHead =
 const BankAccountsPage: React.FC = () => {
   usePageTitle("Bank Accounts");
   const { user, userProfile } = useAuth();
-  const { canCreate, canEdit, canDelete, hasPageAccess, canCreateExpense } =
-    usePermissions();
+  const { canCreate, canEdit, canDelete, hasPageAccess, canCreateExpense,
+    canViewBankReconciliations,
+    canPostBankReconciliation,
+    canReverseBankReconciliation,
+  } = usePermissions();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [transferHistory, setTransferHistory] = useState<BankTransfer[]>([]);
+  const [reconciliationHistory, setReconciliationHistory] = useState<
+    BankReconciliation[]
+  >([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(
     [],
   );
@@ -192,7 +231,40 @@ const BankAccountsPage: React.FC = () => {
   const [workspaceTab, setWorkspaceTab] =
     useState<BankAccountsWorkspaceTab>("account");
 
-  const loadBankAccounts = async () => {
+  const [reconcileAccount, setReconcileAccount] = useState<BankAccount | null>(
+    null,
+  );
+  const [reconcileForm, setReconcileForm] = useState({
+    statedActualBalance: "",
+    asOfDate: todayInput(),
+    reasonCode: "manual_adjustment" as BankReconciliationReason,
+    notes: "",
+  });
+  const [reconcileError, setReconcileError] = useState("");
+  const [reconcileSubmitting, setReconcileSubmitting] = useState(false);
+
+  // Stable scalar identities so data effects don't re-run on every `userProfile`
+  // object-reference change (the user doc listener emits a fresh object frequently,
+  // which previously made this whole page flash its loading spinner repeatedly).
+  const uid = user?.uid ?? "";
+  const profileCompanyId = userProfile?.companyId ?? "";
+  const profileIsOwner = userProfile?.isOwner === true;
+
+  const expenseCompanyId = useMemo(
+    () => (user && userProfile ? getExpenseCompanyId(user, userProfile) : ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [uid, profileCompanyId, profileIsOwner],
+  );
+  const bankCompanyId = useMemo(
+    () =>
+      user && userProfile
+        ? BankAccountService.resolveBankCompanyId(user, userProfile)
+        : "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [uid, profileCompanyId, profileIsOwner],
+  );
+
+  const loadBankAccounts = useCallback(async () => {
     if (!user || !userProfile) return;
 
     setLoading(true);
@@ -202,32 +274,32 @@ const BankAccountsPage: React.FC = () => {
         userProfile,
       );
       setBankAccounts(accounts);
-      setLoading(false);
     } catch (error) {
       console.error("Error loading bank accounts:", error);
       setBankAccounts([]);
+    } finally {
       setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, bankCompanyId]);
 
   useEffect(() => {
     loadBankAccounts();
-  }, [user, userProfile]);
+  }, [loadBankAccounts]);
 
   useEffect(() => {
-    if (!user || !userProfile) return;
-    const cid = getExpenseCompanyId(user, userProfile);
-    if (!cid) return;
-    return subscribeCompanyExpenseCategories(cid, setExpenseCategories);
-  }, [user, userProfile]);
+    if (!expenseCompanyId) return;
+    return subscribeCompanyExpenseCategories(
+      expenseCompanyId,
+      setExpenseCategories,
+    );
+  }, [expenseCompanyId]);
 
   useEffect(() => {
-    if (!user || !userProfile) return;
-    const cid = BankAccountService.resolveBankCompanyId(user, userProfile);
-    if (!cid) return;
+    if (!bankCompanyId) return;
     const q = db
       .collection("bankTransfers")
-      .where("companyId", "==", cid)
+      .where("companyId", "==", bankCompanyId)
       .orderBy("createdAt", "desc")
       .limit(40);
     const unsub = q.onSnapshot(
@@ -242,7 +314,19 @@ const BankAccountsPage: React.FC = () => {
       },
     );
     return () => unsub();
-  }, [user, userProfile]);
+  }, [bankCompanyId]);
+
+  useEffect(() => {
+    if (!bankCompanyId || !canViewBankReconciliations()) {
+      setReconciliationHistory([]);
+      return;
+    }
+    return BankReconciliationService.subscribeForCompany(
+      bankCompanyId,
+      setReconciliationHistory,
+      () => setReconciliationHistory([]),
+    );
+  }, [bankCompanyId, canViewBankReconciliations]);
 
   useEffect(() => {
     if (bankAccounts.length < 2) {
@@ -500,6 +584,167 @@ const BankAccountsPage: React.FC = () => {
       setError("Failed to delete bank account.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openReconcileModal = (account: BankAccount) => {
+    setReconcileAccount(account);
+    setReconcileForm({
+      statedActualBalance: "",
+      asOfDate: todayInput(),
+      reasonCode: "manual_adjustment",
+      notes: "",
+    });
+    setReconcileError("");
+  };
+
+  const closeReconcileModal = () => {
+    setReconcileAccount(null);
+    setReconcileError("");
+    setReconcileSubmitting(false);
+  };
+
+  const reconcilePreview = useMemo(() => {
+    if (!reconcileAccount) return null;
+    const ledger = accountStoredBalance(reconcileAccount);
+    const stated = parseFloat(reconcileForm.statedActualBalance);
+    if (!Number.isFinite(stated)) {
+      return { ledger, stated: null as number | null, diff: null as number | null };
+    }
+    const diff = Math.round((stated - ledger) * 100) / 100;
+    return { ledger, stated, diff };
+  }, [reconcileAccount, reconcileForm.statedActualBalance]);
+
+  const handlePostReconciliation = async () => {
+    if (!user || !userProfile || !reconcileAccount) return;
+    const stated = parseFloat(reconcileForm.statedActualBalance);
+    if (!Number.isFinite(stated)) {
+      setReconcileError("Enter the actual balance from your bank app");
+      return;
+    }
+    if (!reconcileForm.asOfDate) {
+      setReconcileError("Select the statement / as-of date");
+      return;
+    }
+    if (
+      reconcileForm.reasonCode === "other" &&
+      !reconcileForm.notes.trim()
+    ) {
+      setReconcileError("Notes are required when reason is Other");
+      return;
+    }
+
+    const ledger = accountStoredBalance(reconcileAccount);
+    const diff = Math.round((stated - ledger) * 100) / 100;
+    if (
+      Math.abs(diff) >= 0.0001 &&
+      !window.confirm(
+        `Post reconciliation adjustment of ${reconcileAccount.currencySymbol}${diff.toFixed(2)}?\n\nSystem: ${reconcileAccount.currencySymbol}${ledger.toFixed(2)}\nActual: ${reconcileAccount.currencySymbol}${stated.toFixed(2)}`,
+      )
+    ) {
+      return;
+    }
+    if (
+      Math.abs(diff) < 0.0001 &&
+      reconcileForm.reasonCode !== "confirmed_match" &&
+      !window.confirm(
+        "Balances already match. Post as confirmed match with no adjustment?",
+      )
+    ) {
+      return;
+    }
+
+    setReconcileSubmitting(true);
+    setReconcileError("");
+    try {
+      const companyId = getExpenseCompanyId(user, userProfile);
+      const reasonCode =
+        Math.abs(diff) < 0.0001 ? "confirmed_match" : reconcileForm.reasonCode;
+      const { reconciliationId, adjustmentAmount, ledgerBalanceAfter } =
+        await BankReconciliationService.postReconciliation({
+          companyId,
+          userId: user.uid,
+          createdByDisplayName:
+            userProfile.displayName ||
+            userProfile.companyName ||
+            user.email ||
+            "",
+          bankAccountId: reconcileAccount.id,
+          bankAccountName: formatBankAccountListLabel(reconcileAccount),
+          currency: reconcileAccount.currency,
+          currencySymbol: reconcileAccount.currencySymbol || "$",
+          asOfDate: Timestamp.fromDate(new Date(reconcileForm.asOfDate)),
+          statedActualBalance: stated,
+          reasonCode,
+          notes: reconcileForm.notes,
+        });
+
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "bank_reconciliation_posted",
+        `Reconciled ${formatBankAccountListLabel(reconcileAccount)}: ${reconcileAccount.currencySymbol}${ledger.toFixed(2)} → ${reconcileAccount.currencySymbol}${stated.toFixed(2)} (${reconciliationReasonLabel(reasonCode)})`,
+        {
+          entityId: reconcileAccount.id,
+          entityType: "bank_account",
+          newValue: {
+            reconciliationId,
+            adjustmentAmount,
+            ledgerBalanceAfter,
+            statedActualBalance: stated,
+            reasonCode,
+          },
+        },
+      );
+
+      closeReconcileModal();
+    } catch (err) {
+      console.error("Reconciliation failed:", err);
+      setReconcileError(
+        err instanceof Error ? err.message : "Failed to post reconciliation",
+      );
+      setReconcileSubmitting(false);
+    }
+  };
+
+  const handleReverseReconciliation = async (record: BankReconciliation) => {
+    if (!user || !userProfile) return;
+    if (
+      !window.confirm(
+        `Reverse this reconciliation (${record.currencySymbol}${(record.adjustmentAmount || 0).toFixed(2)})? The bank balance will be adjusted back.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const companyId = getExpenseCompanyId(user, userProfile);
+      const { reconciliationId } =
+        await BankReconciliationService.reverseReconciliation(record, {
+          companyId,
+          userId: user.uid,
+          createdByDisplayName:
+            userProfile.displayName ||
+            userProfile.companyName ||
+            user.email ||
+            "",
+        });
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "bank_reconciliation_reversed",
+        `Reversed reconciliation for ${record.bankAccountName}`,
+        {
+          entityId: record.bankAccountId,
+          entityType: "bank_account",
+          oldValue: record,
+          newValue: { reversalId: reconciliationId },
+        },
+      );
+    } catch (err) {
+      console.error("Reverse reconciliation failed:", err);
+      alert(
+        err instanceof Error ? err.message : "Failed to reverse reconciliation",
+      );
     }
   };
 
@@ -847,6 +1092,17 @@ const BankAccountsPage: React.FC = () => {
                           </span>
                         </div>
                       </div>
+                      {account.lastReconciledAt ? (
+                        <p className="mt-3 text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+                          Last reconciled{" "}
+                          {account.lastReconciledAt.toDate?.()?.toLocaleDateString?.() ??
+                            "—"}
+                          {typeof account.lastReconciledStatedBalance ===
+                          "number"
+                            ? ` · stated ${account.currencySymbol}${account.lastReconciledStatedBalance.toFixed(2)}`
+                            : ""}
+                        </p>
+                      ) : null}
                       <div className="mt-4 rounded-lg border border-gray-100 bg-slate-50/90 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900/50">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
@@ -890,7 +1146,17 @@ const BankAccountsPage: React.FC = () => {
                           </ProtectedComponent>
                         </div>
                       </div>
-                      <div className="mt-5 flex gap-2">
+                      <div className="mt-3 flex flex-col gap-2">
+                        {canPostBankReconciliation() ? (
+                          <button
+                            type="button"
+                            onClick={() => openReconcileModal(account)}
+                            className="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-900 transition hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/30"
+                          >
+                            Reconcile balance
+                          </button>
+                        ) : null}
+                      <div className="flex gap-2">
                         <ProtectedComponent
                           page={PAGES.BANK_ACCOUNTS}
                           action="edit"
@@ -915,6 +1181,7 @@ const BankAccountsPage: React.FC = () => {
                             Delete
                           </button>
                         </ProtectedComponent>
+                      </div>
                       </div>
                     </article>
                   ))}
@@ -1535,8 +1802,259 @@ const BankAccountsPage: React.FC = () => {
               </div>
             </section>
           ) : null}
+
+          {canViewBankReconciliations() && reconciliationHistory.length > 0 ? (
+            <section className={sectionCard}>
+              <div className={sectionHead}>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Reconciliation history
+                </h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Book vs actual balance adjustments (newest first).
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] text-left text-sm">
+                  <thead className="border-b border-gray-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-400">
+                    <tr>
+                      <th className="whitespace-nowrap px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Account</th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right">
+                        System
+                      </th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right">
+                        Actual
+                      </th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right">
+                        Adjustment
+                      </th>
+                      <th className="px-4 py-3">Reason</th>
+                      <th className="px-4 py-3 w-24">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-gray-800 dark:text-gray-300">
+                    {reconciliationHistory.map((r) => {
+                      const reversed = reconciliationHistory.some(
+                        (x) => x.reversalOfId === r.id,
+                      );
+                      const showReverse =
+                        canReverseBankReconciliation() &&
+                        !r.reversalOfId &&
+                        !reversed &&
+                        Math.abs(r.adjustmentAmount ?? 0) >= 0.0001;
+                      return (
+                        <tr
+                          key={r.id}
+                          className="transition-colors hover:bg-slate-50/80 dark:hover:bg-gray-800/50"
+                        >
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                            {r.asOfDate?.toDate?.()?.toLocaleDateString?.() ??
+                              "—"}
+                          </td>
+                          <td className="min-w-0 px-4 py-3 text-xs sm:text-sm">
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {r.bankAccountName}
+                            </span>
+                            {r.reversalOfId ? (
+                              <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-400">
+                                (reversal)
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                            {r.currencySymbol}
+                            {(r.ledgerBalanceBefore ?? 0).toFixed(2)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                            {r.currencySymbol}
+                            {(r.statedActualBalance ?? 0).toFixed(2)}
+                          </td>
+                          <td
+                            className={`whitespace-nowrap px-4 py-3 text-right tabular-nums font-medium ${
+                              (r.adjustmentAmount ?? 0) >= 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {(r.adjustmentAmount ?? 0) >= 0 ? "+" : ""}
+                            {r.currencySymbol}
+                            {(r.adjustmentAmount ?? 0).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            {reconciliationReasonLabel(r.reasonCode)}
+                            {r.notes ? (
+                              <div className="mt-0.5 max-w-xs truncate text-gray-500 dark:text-gray-400">
+                                {r.notes}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            {showReverse ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleReverseReconciliation(r)
+                                }
+                                className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                              >
+                                Reverse
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
         </div>
       </div>
+
+      {reconcileAccount && reconcilePreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white shadow-xl dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                Reconcile balance
+              </h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {formatBankAccountListLabel(reconcileAccount)}
+              </p>
+            </div>
+            <div className="space-y-4 px-6 py-4">
+              <div className="grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-slate-50/80 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    System balance (book)
+                  </p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-white">
+                    {reconcileAccount.currencySymbol}
+                    {reconcilePreview.ledger.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Difference
+                  </p>
+                  <p
+                    className={`mt-1 text-lg font-bold tabular-nums ${
+                      reconcilePreview.diff == null
+                        ? "text-gray-400"
+                        : reconcilePreview.diff >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {reconcilePreview.diff == null
+                      ? "—"
+                      : `${reconcilePreview.diff >= 0 ? "+" : ""}${reconcileAccount.currencySymbol}${reconcilePreview.diff.toFixed(2)}`}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  Actual balance (from bank app) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={reconcileForm.statedActualBalance}
+                  onChange={(e) =>
+                    setReconcileForm({
+                      ...reconcileForm,
+                      statedActualBalance: e.target.value,
+                    })
+                  }
+                  placeholder="0.00"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>As-of date *</label>
+                <input
+                  type="date"
+                  value={reconcileForm.asOfDate}
+                  onChange={(e) =>
+                    setReconcileForm({
+                      ...reconcileForm,
+                      asOfDate: e.target.value,
+                    })
+                  }
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Reason *</label>
+                <select
+                  value={reconcileForm.reasonCode}
+                  onChange={(e) =>
+                    setReconcileForm({
+                      ...reconcileForm,
+                      reasonCode: e.target.value as BankReconciliationReason,
+                    })
+                  }
+                  className={fieldClass}
+                >
+                  {RECONCILIATION_REASON_OPTIONS.filter(
+                    (o) => o.value !== "confirmed_match",
+                  ).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  If balances already match, no adjustment is posted (confirmed
+                  match).
+                </p>
+              </div>
+
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea
+                  value={reconcileForm.notes}
+                  onChange={(e) =>
+                    setReconcileForm({ ...reconcileForm, notes: e.target.value })
+                  }
+                  rows={2}
+                  placeholder="Optional — required if reason is Other"
+                  className={fieldClass}
+                />
+              </div>
+
+              {reconcileError ? (
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  {reconcileError}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={closeReconcileModal}
+                className="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reconcileSubmitting}
+                onClick={() => void handlePostReconciliation()}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {reconcileSubmitting ? "Posting…" : "Post reconciliation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

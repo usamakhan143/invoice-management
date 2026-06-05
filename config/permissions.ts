@@ -10,6 +10,7 @@ export const PERMISSION_CATEGORIES = {
   PRODUCTS: "products",
   BANK_ACCOUNTS: "bank-accounts",
   EXPENSES: "expenses",
+  LOANS: "loans",
   USER_MANAGEMENT: "user-management",
   CUSTOM_ROLES: "custom-roles",
   COMPANY_ACTIVITY: "company-activity",
@@ -94,6 +95,12 @@ export const GRANULAR_PERMISSIONS = {
   BANK_ACCOUNTS_CREATE: "bank_accounts_create",
   BANK_ACCOUNTS_EDIT: "bank_accounts_edit",
   BANK_ACCOUNTS_DELETE: "bank_accounts_delete",
+  /** View bank reconciliation history */
+  BANK_RECONCILIATIONS_VIEW: "bank_reconciliations_view",
+  /** Post a balance reconciliation / adjustment against a bank account */
+  BANK_RECONCILIATION_POST: "bank_reconciliation_post",
+  /** Reverse a previously posted reconciliation (compensating entry) */
+  BANK_RECONCILIATION_REVERSE: "bank_reconciliation_reverse",
 
   // Expenses Page Permissions
   EXPENSES_VIEW: "expenses_view",
@@ -115,6 +122,20 @@ export const GRANULAR_PERMISSIONS = {
   EXPENSES_RETURNS_VIEW: "expenses_returns_view",
   /** Record a received return/refund/cashback (credits a bank account) */
   EXPENSES_RETURNS_RECEIVE: "expenses_returns_receive",
+
+  // Loans / Advances / Receivables Page Permissions
+  /** Access the Loans page and view loans/receivables list */
+  LOANS_VIEW: "loans_view",
+  /** View/manage all company loans (any team member’s entries), same scope as owner for this module */
+  LOANS_COMPANY_MANAGE: "loans_company_manage",
+  /** Give a new loan/advance (debits the selected source account) */
+  LOANS_CREATE: "loans_create",
+  /** Edit loan metadata (borrower, notes, due date) */
+  LOANS_EDIT: "loans_edit",
+  /** Delete a loan (only when no repayments recorded; reverses the source debit) */
+  LOANS_DELETE: "loans_delete",
+  /** Record a received repayment against a loan (credits the destination account) */
+  LOANS_RECEIVE_REPAYMENT: "loans_receive_repayment",
 
   // Company Activity Section (Admin only)
   COMPANY_ACTIVITY_VIEW: "company_activity_view",
@@ -280,6 +301,12 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE]: "Access form to add bank accounts",
   [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_EDIT]: "Edit bank accounts",
   [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE]: "Delete bank accounts",
+  [GRANULAR_PERMISSIONS.BANK_RECONCILIATIONS_VIEW]:
+    "View bank reconciliation history (book vs actual balance adjustments)",
+  [GRANULAR_PERMISSIONS.BANK_RECONCILIATION_POST]:
+    "Reconcile a bank account balance to the actual statement balance (posts an adjustment)",
+  [GRANULAR_PERMISSIONS.BANK_RECONCILIATION_REVERSE]:
+    "Reverse a previously posted bank reconciliation (compensating adjustment)",
 
   // Expenses
   [GRANULAR_PERMISSIONS.EXPENSES_VIEW]: "Access expenses page and view expense list",
@@ -302,6 +329,19 @@ export const PERMISSION_DESCRIPTIONS = {
     "View returns/refunds/cashbacks received against expenses (Gross, Returns, Net)",
   [GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE]:
     "Record a received return/refund/cashback against an expense (credits the selected bank account)",
+
+  // Loans / Advances / Receivables
+  [GRANULAR_PERMISSIONS.LOANS_VIEW]:
+    "Access the Loans page and view loans/advances given and outstanding receivables",
+  [GRANULAR_PERMISSIONS.LOANS_COMPANY_MANAGE]:
+    "View and manage all company loans (any team member’s entries), same as owner for this module",
+  [GRANULAR_PERMISSIONS.LOANS_CREATE]:
+    "Give a new loan/advance (debits the selected source bank account)",
+  [GRANULAR_PERMISSIONS.LOANS_EDIT]: "Edit loan details (borrower, due date, notes)",
+  [GRANULAR_PERMISSIONS.LOANS_DELETE]:
+    "Delete a loan when it has no repayments (reverses the original source debit)",
+  [GRANULAR_PERMISSIONS.LOANS_RECEIVE_REPAYMENT]:
+    "Record a received repayment against a loan (credits the destination bank account)",
 
   // Company Activity
   [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
@@ -442,6 +482,9 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.BANK_ACCOUNTS_CREATE,
     GRANULAR_PERMISSIONS.BANK_ACCOUNTS_EDIT,
     GRANULAR_PERMISSIONS.BANK_ACCOUNTS_DELETE,
+    GRANULAR_PERMISSIONS.BANK_RECONCILIATIONS_VIEW,
+    GRANULAR_PERMISSIONS.BANK_RECONCILIATION_POST,
+    GRANULAR_PERMISSIONS.BANK_RECONCILIATION_REVERSE,
   ],
   [PERMISSION_CATEGORIES.EXPENSES]: [
     GRANULAR_PERMISSIONS.EXPENSES_VIEW,
@@ -456,6 +499,14 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE,
     GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW,
     GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE,
+  ],
+  [PERMISSION_CATEGORIES.LOANS]: [
+    GRANULAR_PERMISSIONS.LOANS_VIEW,
+    GRANULAR_PERMISSIONS.LOANS_COMPANY_MANAGE,
+    GRANULAR_PERMISSIONS.LOANS_CREATE,
+    GRANULAR_PERMISSIONS.LOANS_EDIT,
+    GRANULAR_PERMISSIONS.LOANS_DELETE,
+    GRANULAR_PERMISSIONS.LOANS_RECEIVE_REPAYMENT,
   ],
   [PERMISSION_CATEGORIES.COMPANY_ACTIVITY]: [
     GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,
@@ -559,6 +610,7 @@ export const PAGES = {
   BANK_ACCOUNTS: "bank-accounts",
   BANK_ACCOUNTS_VIEW: "bank-accounts-view",
   EXPENSES: "expenses",
+  LOANS: "loans",
   USER_MANAGEMENT: "user-management",
   REPORTS: "reports",
   LEADS: "leads",

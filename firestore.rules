@@ -58,6 +58,20 @@ service cloud.firestore {
       return userGranularPermissions().hasAny(['expenses_company_manage']);
     }
 
+    function hasLoanCompanyManagePerm() {
+      return userGranularPermissions().hasAny(['loans_company_manage']);
+    }
+
+    /** Read loan/repayment doc: own row, company scope, or legacy team rows for owner/delegate */
+    function loanDataReadOk(data) {
+      return data.userId == request.auth.uid
+        || (data.companyId != null && data.companyId is string && data.companyId.size() > 0
+            && canAccessCompanyData(data.companyId)
+            && (isOwnerUser() || hasLoanCompanyManagePerm()))
+        || (isOwnerUser() && expenseCreatorCompanyId(data) == request.auth.uid)
+        || (hasLoanCompanyManagePerm() && expenseCreatorCompanyId(data) == currentUserCompanyId());
+    }
+
     /** Data Management backup log: read if export/import/history (export flow refreshes list). */
     function hasDataBackupReadPerm() {
       return userGranularPermissions().hasAny([
@@ -264,6 +278,18 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Bank reconciliations — company-scoped; append-only (no update).
+    match /bankReconciliations/{reconciliationId} {
+      allow get, list: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+      allow create: if isAuthenticated() &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId) &&
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     // Expenses collection — own rows, or company scope (owner / expenses_company_manage)
     match /expenses/{expenseId} {
       allow get, list: if expenseDataReadOk(resource.data);
@@ -289,6 +315,33 @@ service cloud.firestore {
         canAccessCompanyData(request.resource.data.companyId);
       allow update: if false;
       allow delete: if expenseDataReadOk(resource.data);
+    }
+
+    // Loans / advances / receivables — own rows, or company scope (owner / loans_company_manage).
+    // Loan amount cache (totalRepaidAmount/status) is updated by repayment transactions, so update allowed.
+    match /loans/{loanId} {
+      allow get, list: if loanDataReadOk(resource.data);
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.companyId != null &&
+        request.resource.data.companyId is string &&
+        canAccessCompanyData(request.resource.data.companyId);
+      allow update: if isAuthenticated() &&
+        request.resource.data.userId == resource.data.userId &&
+        loanDataReadOk(resource.data);
+      allow delete: if loanDataReadOk(resource.data);
+    }
+
+    // Loan repayments — company-scoped; append-only (no update).
+    match /loanRepayments/{repaymentId} {
+      allow get, list: if loanDataReadOk(resource.data);
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.companyId != null &&
+        request.resource.data.companyId is string &&
+        canAccessCompanyData(request.resource.data.companyId);
+      allow update: if false;
+      allow delete: if loanDataReadOk(resource.data);
     }
 
     // Payee directory (`vendors` collection) — company-scoped; app enforces expense permissions

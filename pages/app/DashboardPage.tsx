@@ -598,25 +598,11 @@ const DashboardPage: React.FC = () => {
     canViewLeadGenAnalytics() ||
     teamLeadsDashboardMode;
 
-  // Calculate real-time bank balances
-  const bankBalances = bankAccounts.map((account) => {
-    const paidInvoicesTotal = invoices
-      .filter(
-        (inv) => inv.status === "paid" && inv.bankAccountId === account.id,
-      )
-      .reduce((sum, inv) => sum + inv.total, 0);
-
-    const expensesTotal = expenses
-      .filter((exp) => exp.bankAccountId === account.id)
-      .reduce((sum, exp) => sum + exp.amount, 0);
-
-    const currentBalance =
-      (account.initialBalance || 0) + paidInvoicesTotal - expensesTotal;
-    return {
-      ...account,
-      currentBalance,
-    };
-  });
+  // Use stored ledger balance (includes transfers, returns, loans, reconciliations)
+  const bankBalances = bankAccounts.map((account) => ({
+    ...account,
+    currentBalance: account.currentBalance ?? account.initialBalance ?? 0,
+  }));
 
   const todayLabel = new Intl.DateTimeFormat("en-US", {
     weekday: "long",

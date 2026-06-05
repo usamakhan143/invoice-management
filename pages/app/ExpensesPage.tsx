@@ -22,6 +22,12 @@ import type {
   ExpenseReturnType,
 } from "../../types";
 import Spinner from "../../components/Spinner";
+import {
+  RowIconButton,
+  IconEdit,
+  IconDelete,
+  IconReturn,
+} from "../../components/RowIconButton";
 import { GRANULAR_PERMISSIONS } from "../../config/permissions";
 import {
   backfillExpenseCompanyIdsIfNeeded,
@@ -45,6 +51,32 @@ function expenseReturnTypeLabel(type: string): string {
   return (
     EXPENSE_RETURN_TYPE_OPTIONS.find((o) => o.value === type)?.label || "Return"
   );
+}
+
+/** Distinct badge colors per category name (stable hash → palette index). */
+const EXPENSE_CATEGORY_BADGE_PALETTE = [
+  "bg-violet-100 text-violet-800 ring-violet-200/80 dark:bg-violet-900/45 dark:text-violet-200 dark:ring-violet-700/60",
+  "bg-sky-100 text-sky-800 ring-sky-200/80 dark:bg-sky-900/45 dark:text-sky-200 dark:ring-sky-700/60",
+  "bg-emerald-100 text-emerald-800 ring-emerald-200/80 dark:bg-emerald-900/45 dark:text-emerald-200 dark:ring-emerald-700/60",
+  "bg-amber-100 text-amber-900 ring-amber-200/80 dark:bg-amber-900/45 dark:text-amber-200 dark:ring-amber-700/60",
+  "bg-rose-100 text-rose-800 ring-rose-200/80 dark:bg-rose-900/45 dark:text-rose-200 dark:ring-rose-700/60",
+  "bg-cyan-100 text-cyan-800 ring-cyan-200/80 dark:bg-cyan-900/45 dark:text-cyan-200 dark:ring-cyan-700/60",
+  "bg-indigo-100 text-indigo-800 ring-indigo-200/80 dark:bg-indigo-900/45 dark:text-indigo-200 dark:ring-indigo-700/60",
+  "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200/80 dark:bg-fuchsia-900/45 dark:text-fuchsia-200 dark:ring-fuchsia-700/60",
+  "bg-teal-100 text-teal-800 ring-teal-200/80 dark:bg-teal-900/45 dark:text-teal-200 dark:ring-teal-700/60",
+  "bg-orange-100 text-orange-900 ring-orange-200/80 dark:bg-orange-900/45 dark:text-orange-200 dark:ring-orange-700/60",
+] as const;
+
+function expenseCategoryBadgeClass(category?: string | null): string {
+  const label = (category || "").trim();
+  if (!label || label === "—") {
+    return "bg-gray-100 text-gray-600 ring-gray-200/80 dark:bg-gray-700/60 dark:text-gray-300 dark:ring-gray-600/60";
+  }
+  let hash = 0;
+  for (let i = 0; i < label.length; i += 1) {
+    hash = (hash * 31 + label.charCodeAt(i)) >>> 0;
+  }
+  return EXPENSE_CATEGORY_BADGE_PALETTE[hash % EXPENSE_CATEGORY_BADGE_PALETTE.length];
 }
 
 /** Snapshot when editing — used to credit back the prior deduction during validation. */
@@ -156,6 +188,7 @@ const ExpensesPage: React.FC = () => {
     bankAccountId: "",
     category: "",
     search: "",
+    monthly: "all" as "all" | "monthly" | "non-monthly",
   });
   const allowBulkRowSelect = canBulkDeleteExpenses();
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
@@ -180,6 +213,13 @@ const ExpensesPage: React.FC = () => {
   });
   const [returnError, setReturnError] = useState("");
   const [returnSubmitting, setReturnSubmitting] = useState(false);
+
+  const [detailExpenseId, setDetailExpenseId] = useState<string | null>(null);
+
+  const detailExpense = useMemo(() => {
+    if (!detailExpenseId) return null;
+    return expenses.find((e) => e.id === detailExpenseId) ?? null;
+  }, [detailExpenseId, expenses]);
 
   const loadExchangeRates = async () => {
     try {
@@ -629,6 +669,13 @@ const ExpensesPage: React.FC = () => {
       );
     }
 
+    // Monthly expense tag filter
+    if (filter.monthly === "monthly") {
+      filtered = filtered.filter((expense) => expense.isMonthlyExpense === true);
+    } else if (filter.monthly === "non-monthly") {
+      filtered = filtered.filter((expense) => !expense.isMonthlyExpense);
+    }
+
     // Search filter
     if (filter.search) {
       const searchLower = filter.search.toLowerCase();
@@ -697,6 +744,7 @@ const ExpensesPage: React.FC = () => {
   };
 
   const openModal = (expense?: Expense) => {
+    setDetailExpenseId(null);
     setVendorFormChoice("");
     setOneTimeVendorName("");
     if (expense) {
@@ -723,6 +771,7 @@ const ExpensesPage: React.FC = () => {
         category: "",
         bankAccountId: "",
         date: Timestamp.now(),
+        isMonthlyExpense: false,
       });
     }
     setAmountError("");
@@ -1008,6 +1057,7 @@ const ExpensesPage: React.FC = () => {
     if (window.confirm("Are you sure you want to delete this expense?")) {
       try {
         await deleteExpenseRecord(expenseId, expense);
+        if (detailExpenseId === expenseId) closeExpenseDetail();
       } catch (error) {
         console.error("Error deleting expense:", error);
         alert("Failed to delete expense");
@@ -1101,7 +1151,20 @@ const ExpensesPage: React.FC = () => {
     }
   };
 
+  const openExpenseDetail = (expense: Expense) => {
+    setDetailExpenseId(expense.id);
+  };
+
+  const closeExpenseDetail = () => {
+    setDetailExpenseId(null);
+  };
+
+  const stopExpenseRowClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
   const openReturnModal = (expense: Expense) => {
+    setDetailExpenseId(null);
     setReturnError("");
     setReturnForm({
       amount: "",
@@ -1348,7 +1411,7 @@ const ExpensesPage: React.FC = () => {
         <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
           Filters
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Period
@@ -1406,6 +1469,26 @@ const ExpensesPage: React.FC = () => {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Monthly tag
+            </label>
+            <select
+              value={filter.monthly}
+              onChange={(e) =>
+                setFilter({
+                  ...filter,
+                  monthly: e.target.value as "all" | "monthly" | "non-monthly",
+                })
+              }
+              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            >
+              <option value="all">All expenses</option>
+              <option value="monthly">Monthly only</option>
+              <option value="non-monthly">Non-monthly only</option>
+            </select>
+          </div>
+
+          <div className="lg:col-span-1 md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Search
             </label>
@@ -1524,6 +1607,10 @@ const ExpensesPage: React.FC = () => {
             )}
           </div>
         ) : (
+          <>
+            <p className="px-6 pt-3 text-xs text-gray-500 dark:text-gray-400">
+              Click a row to view full expense details.
+            </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
               <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
@@ -1545,20 +1632,33 @@ const ExpensesPage: React.FC = () => {
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Title</th>
                   <th className="px-6 py-3">Category</th>
-                  <th className="px-6 py-3">Payee</th>
-                  <th className="px-6 py-3">Bank Account</th>
-                  <th className="px-6 py-3">Amount</th>
-                  <th className="px-6 py-3">Actions</th>
+                  <th className="px-6 py-3 text-right">Amount</th>
+                  <th className="px-6 py-3 w-36 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredExpenses.map((expense) => (
+                {filteredExpenses.map((expense) => {
+                  const returned = returnedAmountForExpense(expense);
+                  const net = Math.max(0, (expense.amount || 0) - returned);
+                  const hasReturns = returned > 0;
+                  const canRecordReturn =
+                    canReceiveExpenseReturns() &&
+                    (expense.amount || 0) - returned > 0.0001;
+                  const canOpenReturnHistory =
+                    !canRecordReturn &&
+                    canViewExpenseReturns() &&
+                    hasReturns;
+                  return (
                   <tr
                     key={expense.id}
-                    className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={() => openExpenseDetail(expense)}
+                    className="cursor-pointer bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                   >
                     {allowBulkRowSelect ? (
-                      <td className="w-10 px-2 py-4 align-top">
+                      <td
+                        className="w-10 px-2 py-4 align-middle"
+                        onClick={stopExpenseRowClick}
+                      >
                         <input
                           type="checkbox"
                           checked={selectedExpenseSet.has(expense.id)}
@@ -1568,118 +1668,95 @@ const ExpensesPage: React.FC = () => {
                         />
                       </td>
                     ) : null}
-                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">
                       {expense.date.toDate().toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      <div>
-                        <div className="font-medium">{expense.title}</div>
-                        {expense.description && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {expense.description}
-                          </div>
-                        )}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="font-medium text-gray-900 dark:text-white">
+                          {expense.title}
+                        </div>
+                        {expense.isMonthlyExpense ? (
+                          <span className="inline-flex min-h-[18px] items-center justify-center rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800 ring-1 ring-inset ring-indigo-200/80 dark:bg-indigo-900/45 dark:text-indigo-200 dark:ring-indigo-700/60">
+                            Monthly
+                          </span>
+                        ) : null}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                    <td className="px-6 py-4 align-middle">
+                      <span
+                        className={`inline-flex min-h-[22px] max-w-[9rem] items-center justify-center rounded-full px-2.5 py-0.5 text-center text-[10px] font-semibold leading-tight ring-1 ring-inset ${expenseCategoryBadgeClass(expense.category)}`}
+                      >
                         {expense.category || "—"}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-900 dark:text-white">
-                      <span className="font-medium">
-                        {expense.vendorName || "—"}
-                      </span>
-                      {expense.oneTimeVendor ? (
-                        <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
-                          (one-time)
+                    <td className="px-6 py-4 text-right font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">
+                      <div>{expense.currencySymbol}{expense.amount.toFixed(2)}</div>
+                      {hasReturns ? (
+                        <span
+                          className={`mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            expense.returnStatus === "full" || net <= 0
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                              : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                          }`}
+                        >
+                          {expense.returnStatus === "full" || net <= 0
+                            ? "Fully returned"
+                            : "Partially returned"}
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-6 py-4">{expense.bankAccountName}</td>
-                    <td className="px-6 py-4 font-semibold text-red-600 dark:text-red-400">
-                      {(() => {
-                        const returned = returnedAmountForExpense(expense);
-                        const net = Math.max(0, (expense.amount || 0) - returned);
-                        return (
-                          <div>
-                            <div>
-                              {expense.currencySymbol}
-                              {expense.amount.toFixed(2)}
-                            </div>
-                            {returned > 0 ? (
-                              <div className="mt-1 space-y-0.5">
-                                <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                                  − {expense.currencySymbol}
-                                  {returned.toFixed(2)} returned
-                                </div>
-                                <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                                  Net: {expense.currencySymbol}
-                                  {net.toFixed(2)}
-                                </div>
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    expense.returnStatus === "full" || net <= 0
-                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                                  }`}
-                                >
-                                  {expense.returnStatus === "full" || net <= 0
-                                    ? "Fully returned"
-                                    : "Partially returned"}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-6 py-4 flex space-x-2">
-                      {canReceiveExpenseReturns() &&
-                      (expense.amount || 0) - returnedAmountForExpense(expense) > 0.0001 ? (
-                        <button
-                          onClick={() => openReturnModal(expense)}
-                          className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400"
-                          title="Record a return / refund / cashback"
-                        >
-                          Return
-                        </button>
-                      ) : null}
-                      {canViewExpenseReturns() &&
-                      returnedAmountForExpense(expense) > 0 ? (
-                        <button
-                          onClick={() => openReturnModal(expense)}
-                          className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400"
-                          title="View returns"
-                        >
-                          Returns
-                        </button>
-                      ) : null}
-                      {canEditExpenseRow(expense) && (
-                        <button
-                          onClick={() => openModal(expense)}
-                          className="text-yellow-500 hover:text-yellow-700"
-                        >
-                          Edit
-                        </button>
-                      )}
-                      {canDeleteExpenseRow(expense) && (
-                        <button
-                          onClick={() => handleDelete(expense.id, expense)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          Delete
-                        </button>
-                      )}
-                      {!canEditExpenseRow(expense) && !canDeleteExpenseRow(expense) && (
-                        <span className="text-gray-400">No actions available</span>
-                      )}
+                    <td
+                      className="px-6 py-4"
+                      onClick={stopExpenseRowClick}
+                    >
+                      <div className="flex items-center justify-end gap-0.5">
+                        {canRecordReturn || canOpenReturnHistory ? (
+                          <RowIconButton
+                            onClick={() => openReturnModal(expense)}
+                            title={
+                              canRecordReturn
+                                ? "Record return / refund / cashback"
+                                : "View returns"
+                            }
+                            variant="emerald"
+                          >
+                            <IconReturn />
+                          </RowIconButton>
+                        ) : null}
+                        {canEditExpenseRow(expense) ? (
+                          <RowIconButton
+                            onClick={() => openModal(expense)}
+                            title="Edit expense"
+                            variant="yellow"
+                          >
+                            <IconEdit />
+                          </RowIconButton>
+                        ) : null}
+                        {canDeleteExpenseRow(expense) ? (
+                          <RowIconButton
+                            onClick={() => handleDelete(expense.id, expense)}
+                            title="Delete expense"
+                            variant="red"
+                          >
+                            <IconDelete />
+                          </RowIconButton>
+                        ) : null}
+                        {!canEditExpenseRow(expense) &&
+                          !canDeleteExpenseRow(expense) &&
+                          !canRecordReturn &&
+                          !canOpenReturnHistory && (
+                            <span className="px-2 text-xs text-gray-400">—</span>
+                          )}
+                      </div>
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
       </>
@@ -1962,13 +2039,280 @@ const ExpensesPage: React.FC = () => {
         </div>
       ) : null}
 
+      {/* Expense detail modal */}
+      {detailExpense && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+          onClick={closeExpenseDetail}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            onClick={stopExpenseRowClick}
+          >
+            {(() => {
+              const expense = detailExpense;
+              const returned = returnedAmountForExpense(expense);
+              const net = Math.max(0, (expense.amount || 0) - returned);
+              const returnRows = returnsByExpenseId.get(expense.id) ?? [];
+
+              return (
+                <>
+                  <div className="border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white break-words">
+                          {expense.title}
+                        </h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          {expense.date.toDate().toLocaleDateString()}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 inline-flex min-h-[22px] items-center justify-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${expenseCategoryBadgeClass(expense.category)}`}
+                      >
+                        {expense.category || "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 space-y-5">
+                    <section>
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                        Amount
+                      </h4>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Gross
+                          </p>
+                          <p className="mt-1 font-semibold text-red-600 dark:text-red-400">
+                            {expense.currencySymbol}
+                            {(expense.amount || 0).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Returned
+                          </p>
+                          <p className="mt-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                            {expense.currencySymbol}
+                            {returned.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Net
+                          </p>
+                          <p className="mt-1 font-semibold text-gray-900 dark:text-white">
+                            {expense.currencySymbol}
+                            {net.toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                        Payment details
+                      </h4>
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div>
+                          <dt className="text-gray-500 dark:text-gray-400">
+                            Payee
+                          </dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">
+                            {expense.vendorName || "—"}
+                            {expense.oneTimeVendor ? (
+                              <span className="ml-1 text-xs font-normal text-amber-600 dark:text-amber-400">
+                                (one-time)
+                              </span>
+                            ) : null}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-gray-500 dark:text-gray-400">
+                            Currency
+                          </dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">
+                            {expense.currency || "USD"}
+                          </dd>
+                        </div>
+                        <div className="col-span-2">
+                          <dt className="text-gray-500 dark:text-gray-400">
+                            Bank account
+                          </dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">
+                            {expense.bankAccountName || "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-gray-500 dark:text-gray-400">
+                            Recorded
+                          </dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">
+                            {expense.createdAt?.toDate?.()?.toLocaleDateString?.() ||
+                              "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-gray-500 dark:text-gray-400">
+                            Monthly tag
+                          </dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">
+                            {expense.isMonthlyExpense ? (
+                              <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800 dark:bg-indigo-900/45 dark:text-indigo-200">
+                                Monthly recurring
+                              </span>
+                            ) : (
+                              "Not tagged"
+                            )}
+                          </dd>
+                        </div>
+                      </dl>
+                    </section>
+
+                    {expense.description?.trim() ? (
+                      <section>
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
+                          Description
+                        </h4>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+                          {expense.description}
+                        </p>
+                      </section>
+                    ) : null}
+
+                    {expense.expectedReturnAvailable ? (
+                      <section>
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                          Expected return (planning)
+                        </h4>
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm rounded-lg border border-dashed border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
+                          <div>
+                            <dt className="text-gray-500 dark:text-gray-400">
+                              Expected amount
+                            </dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {expense.expectedReturnAmount != null
+                                ? `${expense.currencySymbol}${Number(expense.expectedReturnAmount).toFixed(2)}`
+                                : "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-gray-500 dark:text-gray-400">
+                              Expected date
+                            </dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {expense.expectedReturnDate?.toDate?.()?.toLocaleDateString?.() ||
+                                "—"}
+                            </dd>
+                          </div>
+                          {expense.expectedReturnNotes?.trim() ? (
+                            <div className="col-span-2">
+                              <dt className="text-gray-500 dark:text-gray-400">
+                                Notes
+                              </dt>
+                              <dd className="font-medium text-gray-900 dark:text-white whitespace-pre-wrap">
+                                {expense.expectedReturnNotes}
+                              </dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                      </section>
+                    ) : null}
+
+                    {canViewExpenseReturns() && returnRows.length > 0 ? (
+                      <section>
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
+                          Returns recorded ({returnRows.length})
+                        </h4>
+                        <ul className="space-y-2 max-h-40 overflow-y-auto">
+                          {returnRows.map((r) => (
+                            <li
+                              key={r.id}
+                              className="flex items-center justify-between text-sm border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2"
+                            >
+                              <div>
+                                <div className="font-medium text-gray-800 dark:text-gray-200">
+                                  {expenseReturnTypeLabel(r.returnType)} ·{" "}
+                                  {r.currencySymbol}
+                                  {(r.amount || 0).toFixed(2)}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {r.receivedDate?.toDate?.()?.toLocaleDateString?.()}{" "}
+                                  · {r.destinationBankAccountName}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                  </div>
+
+                  <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex flex-wrap justify-end gap-2">
+                    {canReceiveExpenseReturns() &&
+                    (expense.amount || 0) - returned > 0.0001 ? (
+                      <button
+                        type="button"
+                        onClick={() => openReturnModal(expense)}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 text-sm font-medium"
+                      >
+                        Record return
+                      </button>
+                    ) : null}
+                    {canViewExpenseReturns() && returned > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openReturnModal(expense)}
+                        className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 text-sm font-medium"
+                      >
+                        View returns
+                      </button>
+                    ) : null}
+                    {canEditExpenseRow(expense) ? (
+                      <button
+                        type="button"
+                        onClick={() => openModal(expense)}
+                        className="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 text-sm font-medium"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canDeleteExpenseRow(expense) ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(expense.id, expense)}
+                        className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={closeExpenseDetail}
+                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500 text-sm font-medium"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Modal */}
       {isModalOpen && currentExpense && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              {"id" in currentExpense ? "Edit Expense" : "Add Expense"}
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
+            <div className="shrink-0 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                {"id" in currentExpense ? "Edit Expense" : "Add Expense"}
+              </h3>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
             <div className="space-y-4">
               <input
                 type="text"
@@ -2152,6 +2496,32 @@ const ExpensesPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Monthly expense tag — for tracking recurring monthly charges */}
+              <div className="rounded-md border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50/40 dark:bg-indigo-950/20 p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!currentExpense.isMonthlyExpense}
+                    onChange={(e) =>
+                      setCurrentExpense({
+                        ...currentExpense,
+                        isMonthlyExpense: e.target.checked,
+                      })
+                    }
+                    className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Monthly expense
+                    </span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Tag this as a recurring monthly charge so you can filter and
+                      track it easily.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
               {/* Expected return (optional) — planning only; no balance effect until received */}
               <div className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -2241,7 +2611,8 @@ const ExpensesPage: React.FC = () => {
                 ) : null}
               </div>
             </div>
-            <div className="mt-6 flex justify-end space-x-3">
+            </div>
+            <div className="flex shrink-0 justify-end space-x-3 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
               <button
                 onClick={closeModal}
                 className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"

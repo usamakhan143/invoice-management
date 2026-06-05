@@ -28,6 +28,7 @@ const PerformancePage = lazy(() => import("./pages/app/PerformancePage"));
 const ProductsPage = lazy(() => import("./pages/app/ProductsPage"));
 const BankAccountsPage = lazy(() => import("./pages/app/BankAccountsPage"));
 const ExpensesPage = lazy(() => import("./pages/app/ExpensesPage"));
+const LoansPage = lazy(() => import("./pages/app/LoansPage"));
 const UserManagementPage = lazy(() => import("./pages/app/UserManagementPage"));
 const ActivityPage = lazy(() => import("./pages/app/ActivityPage"));
 const CompanyActivityPage = lazy(
@@ -178,6 +179,7 @@ const App: React.FC = () => {
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/bank-accounts" element={<BankAccountsPage />} />
                 <Route path="/expenses" element={<ExpensesPage />} />
+                <Route path="/loans" element={<LoansPage />} />
                 <Route path="/users" element={<UserManagementPage />} />
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route
