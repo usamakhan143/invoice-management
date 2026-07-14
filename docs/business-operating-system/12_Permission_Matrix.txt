@@ -1,0 +1,251 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 12 — Permission Matrix
+================================================================================
+
+Authoring perspective: Principal Enterprise Software Architect
+Status: Architecture phase — access control design
+Version: 1.0
+
+Principle: BOS permissions are a SEPARATE namespace from ERP operational
+permissions. Granting expenses_create does NOT grant bos_attributions_manage.
+
+Existing ERP permissions (expenses_*, leads_*, reports_*, etc.) remain unchanged.
+
+================================================================================
+1. ROLE DEFINITIONS
+================================================================================
+
+ROLE: Founder / Owner
+    Description: Full portfolio access. All ventures, all decisions, all KPIs.
+    Typical user: You (platform owner).
+    Scope: Cross-venture, cross-module.
+
+ROLE: Venture Lead
+    Description: Manages one or more assigned BosVentures. Full BOS access
+                 within assigned ventures only.
+    Typical user: Future GM of a single agency or SaaS product.
+    Scope: Venture-scoped.
+
+ROLE: Finance Operator
+    Description: Attributes expenses/revenue to initiatives. Views KPIs.
+                 Cannot create initiatives or approve strategic decisions.
+    Typical user: Bookkeeper, fractional CFO.
+    Scope: Company-scoped attribution; read initiatives.
+
+ROLE: Growth Operator
+    Description: Manages initiatives, experiments, campaigns links, funnel events.
+                 Cannot void attributions or archive ventures.
+    Typical user: Marketing/sales lead.
+    Scope: Initiative-scoped write; venture read.
+
+ROLE: Analyst (Read-Only)
+    Description: Views all BOS dashboards, exports, decisions, lessons. No writes.
+    Typical user: Advisor, investor, future board member.
+    Scope: Read-only portfolio.
+
+ROLE: Operational Staff
+    Description: ERP daily work only (expenses, leads). Zero BOS access by default.
+    Typical user: VA, junior staff, expense entry clerk.
+    Scope: None in BOS.
+
+ROLE: System Administrator (Technical)
+    Description: User management, role assignment, adapter configuration.
+                 Not a business decision-maker.
+    Scope: Admin + configurable BOS admin flags.
+
+
+================================================================================
+2. BOS PERMISSION KEYS (CANONICAL)
+================================================================================
+
+Namespace prefix: bos_
+
+Portfolio & Ventures:
+    bos_portfolio_view              View venture list and portfolio summary
+    bos_ventures_view               View venture details
+    bos_ventures_manage             Create, edit, pause, archive ventures
+    bos_business_models_view        View business model registry
+    bos_business_models_manage      Edit business model registry
+
+Strategy:
+    bos_initiatives_view            View initiatives
+    bos_initiatives_manage          Create, edit, activate, pause, close initiatives
+    bos_channels_view               View acquisition channels
+    bos_channels_manage             Create, edit, archive channels
+    bos_cost_centers_view           View cost centers
+    bos_cost_centers_manage         Manage cost centers
+    bos_goals_view                  View strategic goals / OKRs
+    bos_goals_manage                Manage strategic goals
+
+Execution:
+    bos_experiments_view            View experiments
+    bos_experiments_manage          Create, run, complete experiments
+    bos_campaign_links_view         View BOS campaign links
+    bos_campaign_links_manage       Link CRM campaigns to initiatives
+    bos_delivery_view               View delivery engagements
+    bos_delivery_manage             Manage delivery engagements
+    bos_assumptions_view            View assumptions
+    bos_assumptions_manage          Manage assumptions
+    bos_risks_view                  View risks
+    bos_risks_manage                Manage risks
+
+Attribution:
+    bos_attributions_view           View attributions on any source record
+    bos_attributions_manage         Create, split, supersede attributions
+    bos_attributions_void           Void/dispute attributions (elevated)
+    bos_funnel_events_view          View funnel stage events
+    bos_funnel_events_manage        Record/correct funnel events
+
+Measurement:
+    bos_kpis_view                   View computed KPIs and dashboards
+    bos_kpis_export                 Export BOS-enriched reports
+    bos_metrics_definitions_view    View KPI formula definitions
+    bos_metrics_definitions_manage  Create/version metric definitions (admin)
+
+Intelligence:
+    bos_decisions_view              View decision log
+    bos_decisions_manage            Create, approve, evaluate decisions
+    bos_decisions_supersede         Supersede/revoke decisions (founder-level)
+    bos_lessons_view                View lessons learned
+    bos_lessons_manage              Publish lessons
+    bos_playbooks_view              View playbooks
+    bos_playbooks_manage            Publish/deprecate playbooks
+
+Integration:
+    bos_adapters_view               View external adapter status
+    bos_adapters_manage             Configure GHL, ads, Stripe adapters
+
+Administration:
+    bos_admin                       Full BOS admin (all above within company)
+    bos_cross_venture_view          See all ventures (not just assigned)
+
+
+================================================================================
+3. PERMISSION MATRIX — BY ROLE (DEFAULT POLICY)
+================================================================================
+
+Legend: V=View  C=Create  U=Update  D=Delete/Void  -=No access
+Note: "Delete" in BOS means void/supersede/archive — never hard delete.
+
+Module / Permission          | Founder | Venture Lead | Finance | Growth | Analyst | Ops Staff
+-----------------------------|---------|--------------|---------|--------|---------|----------
+bos_portfolio_view           | V       | V*           | V       | V*     | V       | -
+bos_ventures_manage          | CUD     | U*           | -       | -      | -       | -
+bos_initiatives_view         | V       | V*           | V       | V*     | V       | -
+bos_initiatives_manage       | CU      | CU*          | -       | CU*    | -       | -
+bos_channels_manage          | CU      | CU*          | -       | U*     | -       | -
+bos_experiments_manage       | CU      | CU*          | -       | CU*    | -       | -
+bos_attributions_view        | V       | V*           | V       | V*     | V       | -
+bos_attributions_manage      | CU      | U*           | CU      | U*     | -       | -
+bos_attributions_void        | D       | -            | -       | -      | -       | -
+bos_funnel_events_manage     | CU      | CU*          | -       | CU*    | -       | -
+bos_kpis_view                | V       | V*           | V       | V*     | V       | -
+bos_kpis_export              | V       | V*           | V       | V*     | V       | -
+bos_decisions_view           | V       | V*           | V       | V*     | V       | -
+bos_decisions_manage         | CU      | CU*          | -       | U*     | -       | -
+bos_decisions_supersede      | D       | -            | -       | -      | -       | -
+bos_lessons_manage           | CU      | CU*          | -       | U*     | -       | -
+bos_playbooks_manage         | CU      | U*           | -       | -      | -       | -
+bos_metrics_definitions_manage| CU     | -            | -       | -      | -       | -
+bos_adapters_manage          | CU      | -            | -       | -      | -       | -
+bos_admin                    | ALL     | -            | -       | -      | -       | -
+
+* = Scoped to assigned venture(s) only
+
+
+================================================================================
+4. ERP MODULE ACCESS (UNCHANGED — REFERENCE ONLY)
+================================================================================
+
+BOS roles do NOT automatically grant ERP permissions.
+
+Example separation:
+    Finance Operator may have:
+        expenses_view, expenses_create (ERP)
+        bos_attributions_manage, bos_kpis_view (BOS)
+        NOT bos_initiatives_manage
+
+    Operational Staff may have:
+        expenses_create (ERP)
+        NO bos_* permissions
+
+Reports export:
+    canExportReports (ERP) + bos_kpis_export (BOS) required for BOS CSV columns.
+
+
+================================================================================
+5. VENTURE-SCOPED ACCESS (MULTI-BUSINESS FUTURE)
+================================================================================
+
+When multiple BosVentures exist:
+
+    User record extension (conceptual):
+        assignedVentureIds: string[] | "ALL"
+
+    Query rule:
+        All BOS reads filter by companyId AND (assignedVentureIds OR bos_cross_venture_view)
+
+    Founder:
+        assignedVentureIds = ALL
+
+    Venture Lead (Agency A only):
+        assignedVentureIds = [agency_a_id]
+        Cannot see Agency B initiatives or KPIs
+
+This prevents cross-venture data leakage when team members join specific ventures.
+
+
+================================================================================
+6. SENSITIVE OPERATIONS — ELEVATED APPROVAL
+================================================================================
+
+Operation                          | Minimum permission
+-----------------------------------|----------------------------------
+Void attribution                   | bos_attributions_void
+Archive venture                    | bos_ventures_manage + BosDecision logged
+Supersede decision                 | bos_decisions_supersede
+Change active metric definition    | bos_metrics_definitions_manage + new version
+Close initiative as KILLED         | bos_initiatives_manage + BosLessonLearned
+Export full decision log           | bos_decisions_view + bos_kpis_export
+
+
+================================================================================
+7. FUTURE ENTERPRISE SCALABILITY
+================================================================================
+
+Phase 1 (founder-only):
+    Single role effectively: Founder with all bos_* permissions.
+
+Phase 2 (first hire):
+    Introduce Finance Operator and Growth Operator split.
+
+Phase 3 (multi-venture team):
+    Venture-scoped roles + bos_cross_venture_view for founder only.
+
+Phase 4 (enterprise):
+    Custom roles via role builder (mirror existing ERP customRoles pattern)
+    Permission inheritance: bos_admin ⊃ all bos_* except cross-tenant
+    Audit log on every permission change (reuse ERP activity logger pattern)
+
+Anti-patterns:
+    ✗ Single bos_full_access boolean (too coarse for enterprise)
+    ✗ BOS permissions embedded in expense permissions
+    ✗ Venture scope enforced only in UI (must enforce in data layer)
+
+
+================================================================================
+8. GAPS ADDRESSED (vs documents 01–09)
+================================================================================
+
+Previously missing:
+    • Canonical bos_* permission key list
+    • Role definitions beyond founder/finance/staff
+    • Venture-scoped access model
+    • Separation from ERP permissions explicit matrix
+    • Elevated operations list
+    • Enterprise evolution path
+
+================================================================================
+END OF DOCUMENT 12 — Permission Matrix
+================================================================================

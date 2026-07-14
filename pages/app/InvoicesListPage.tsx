@@ -50,11 +50,16 @@ const InvoicesListPage: React.FC = () => {
     canViewInvoiceStatus,
     canMarkInvoicePaid,
     isOwner,
-    isAdmin
+    isAdmin,
+    filterBankAccountsForRole,
   } = usePermissions();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  const accessibleBankAccounts = useMemo(
+    () => filterBankAccountsForRole(bankAccounts),
+    [bankAccounts, filterBankAccountsForRole],
+  );
   const [loading, setLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
@@ -477,7 +482,7 @@ const InvoicesListPage: React.FC = () => {
           className="p-2 border rounded-md dark:bg-gray-700 dark:text-white min-w-[180px]"
         >
           <option value="">All Bank Accounts</option>
-          {bankAccounts.map((b) => (
+          {accessibleBankAccounts.map((b) => (
             <option key={b.id} value={b.id}>
               {formatBankAccountListLabel(b)}
             </option>

@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useCallback } from "react";
 import { useAuth } from "./useAuth";
 import { GRANULAR_PERMISSIONS } from "../config/permissions";
+import type { BankAccount } from "../types";
+import { filterBankAccountsForUser } from "../utils/bankAccountAccess";
 
 export const usePermissions = () => {
   const { userProfile } = useAuth();
@@ -161,6 +163,25 @@ export const usePermissions = () => {
   const canReverseBankReconciliation = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.BANK_RECONCILIATION_REVERSE) ||
     canEditBankAccount();
+  const canViewBankDeposits = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_DEPOSITS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.BANK_DEPOSIT_CREATE) ||
+    canEditBankAccount();
+  const canCreateBankDeposit = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_DEPOSIT_CREATE) ||
+    canEditBankAccount();
+  const canReverseBankDeposit = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_DEPOSIT_REVERSE) ||
+    canEditBankAccount();
+  /** Show stored balance in bank account dropdowns on expense/loan/transfer forms */
+  const canViewBankPickerBalance = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BANK_ACCOUNTS_VIEW_PICKER_BALANCE);
+
+  /** Bank accounts this user may pick on expense/invoice/loan/transfer forms */
+  const filterBankAccountsForRole = useCallback(
+    (accounts: BankAccount[]) => filterBankAccountsForUser(accounts, userProfile),
+    [userProfile],
+  );
 
   // Expense permissions
   const canViewExpenses = (): boolean => hasPermission(GRANULAR_PERMISSIONS.EXPENSES_VIEW);
@@ -173,44 +194,38 @@ export const usePermissions = () => {
   const canBulkDeleteExpenses = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE);
 
-  /** Payees tab: new perms or anyone who could mutate expenses (legacy). */
+  /** Payees tab: requires payees view or manage permission. */
   const canViewExpensePayeesTab = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_VIEW) ||
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
-    (canViewExpenses() &&
-      (canCreateExpense() || canEditExpense() || canDeleteExpense()));
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE);
 
   const canCreateExpensePayee = (): boolean =>
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
-    canCreateExpense();
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE);
   const canEditExpensePayee = (): boolean =>
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
-    canEditExpense();
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE);
   const canDeleteExpensePayee = (): boolean =>
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE) ||
-    canDeleteExpense();
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE);
 
+  /** Categories tab: requires categories view or manage permission. */
   const canViewExpenseCategoriesTab = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_VIEW) ||
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
-    (canViewExpenses() &&
-      (canCreateExpense() || canEditExpense() || canDeleteExpense()));
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE);
 
   const canCreateExpenseCategory = (): boolean =>
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
-    canCreateExpense();
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE);
   const canEditExpenseCategory = (): boolean =>
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
-    canEditExpense();
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE);
   const canDeleteExpenseCategory = (): boolean =>
-    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE) ||
-    canDeleteExpense();
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE);
 
   /** View returns/refunds against expenses (legacy expense viewers keep visibility). */
   const canViewExpenseReturns = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW) ||
     hasPermission(GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE) ||
     canViewExpenses();
+
+  const canViewExpenseUsdTotal = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.EXPENSES_VIEW_USD_TOTAL);
 
   /** Record a received return/refund/cashback (new perm or anyone who can create expenses). */
   const canReceiveExpenseReturns = (): boolean =>
@@ -227,6 +242,51 @@ export const usePermissions = () => {
   const canDeleteLoan = (): boolean => hasPermission(GRANULAR_PERMISSIONS.LOANS_DELETE);
   const canReceiveLoanRepayment = (): boolean =>
     hasPermission(GRANULAR_PERMISSIONS.LOANS_RECEIVE_REPAYMENT) || canCreateLoan();
+
+  // Financial reports permissions
+  const canViewReports = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.REPORTS_VIEW);
+  const canExportReports = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.REPORTS_EXPORT) || canViewReports();
+
+  // BOS (Business Operating System) — vertical slice
+  const canViewBosVentures = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_VENTURES_VIEW);
+  const canManageBosVentures = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_VENTURES_MANAGE);
+  const canViewBosInitiatives = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_INITIATIVES_VIEW);
+  const canManageBosInitiatives = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_INITIATIVES_MANAGE);
+  const canViewBosDecisions = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_DECISIONS_VIEW);
+  const canManageBosDecisions = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_DECISIONS_MANAGE);
+  const canViewBosAttributions = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_ATTRIBUTIONS_VIEW);
+  const canManageBosAttributions = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_ATTRIBUTIONS_MANAGE);
+  const canViewBosMilestones = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_MILESTONES_VIEW);
+  const canManageBosMilestones = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_MILESTONES_MANAGE);
+  const canViewBosMilestoneTemplates = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_MILESTONE_TEMPLATES_VIEW);
+  const canManageBosMilestoneTemplates = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.BOS_MILESTONE_TEMPLATES_MANAGE);
+  const canAccessBosModule = (): boolean =>
+    canViewBosVentures() ||
+    canViewBosInitiatives() ||
+    canViewBosDecisions() ||
+    canViewBosAttributions() ||
+    canViewBosMilestones() ||
+    canViewBosMilestoneTemplates() ||
+    canManageBosVentures() ||
+    canManageBosInitiatives() ||
+    canManageBosDecisions() ||
+    canManageBosAttributions() ||
+    canManageBosMilestones() ||
+    canManageBosMilestoneTemplates();
 
   // Company activity permissions
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
@@ -355,6 +415,8 @@ export const usePermissions = () => {
         return canViewExpenses();
       case "loans":
         return canViewLoans() || canManageCompanyLoans() || canCreateLoan();
+      case "reports":
+        return canViewReports();
       case "user-management":
         return canViewUserManagement();
       case "leads":
@@ -367,6 +429,8 @@ export const usePermissions = () => {
         return canViewCampaigns();
       case "performance":
         return canAccessPerformancePage();
+      case "bos":
+        return canAccessBosModule();
       default:
         return false;
     }
@@ -530,6 +594,11 @@ export const usePermissions = () => {
     canViewBankReconciliations,
     canPostBankReconciliation,
     canReverseBankReconciliation,
+    canViewBankDeposits,
+    canCreateBankDeposit,
+    canReverseBankDeposit,
+    canViewBankPickerBalance,
+    filterBankAccountsForRole,
 
     // Expense permissions
     canViewExpenses,
@@ -548,6 +617,7 @@ export const usePermissions = () => {
     canDeleteExpenseCategory,
     canViewExpenseReturns,
     canReceiveExpenseReturns,
+    canViewExpenseUsdTotal,
     canViewLoans,
     canManageCompanyLoans,
     canCreateLoan,
@@ -556,6 +626,8 @@ export const usePermissions = () => {
     canReceiveLoanRepayment,
 
     // Company activity permissions
+    canViewReports,
+    canExportReports,
     canViewCompanyActivity,
     canBulkDeleteCompanyActivity,
 
@@ -616,6 +688,20 @@ export const usePermissions = () => {
     canViewPerformanceAssignmentReportMy,
     canViewPerformanceAssignmentReportTeam,
     canAccessPerformancePage,
+
+    canViewBosVentures,
+    canManageBosVentures,
+    canViewBosInitiatives,
+    canManageBosInitiatives,
+    canViewBosDecisions,
+    canManageBosDecisions,
+    canViewBosAttributions,
+    canManageBosAttributions,
+    canViewBosMilestones,
+    canManageBosMilestones,
+    canViewBosMilestoneTemplates,
+    canManageBosMilestoneTemplates,
+    canAccessBosModule,
 
     // Legacy compatibility
     hasPageAccess,

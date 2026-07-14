@@ -1,0 +1,283 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 04 — Firestore Impact
+================================================================================
+
+Purpose: Collection inventory, new collections, schema constraints, rules impact
+Reference: Doc 10 (naming), Doc 04 architecture (sidecar), firestore.rules audit
+
+================================================================================
+1. EXISTING COLLECTIONS — BOS RELATIONSHIP
+================================================================================
+
+Collection            | BOS role in Phase 1        | Write from BOS?
+----------------------|----------------------------|------------------
+expenses              | Attribution source (read)  | NO — never add BOS fields
+expenseReturns        | Net investment calc (read) | NO
+invoices              | Revenue source (read P2)   | NO
+leads                 | Funnel signal (read)       | NO — use sidecar events
+leads/.../callLogs    | Activity metrics (read P2) | NO
+campaigns             | Link target (read)         | NO
+businesses            | CRM only — NOT venture     | NO — never use for BosVenture
+activities            | Audit log (write new types)| YES — via ActivityLogger
+companyUsers          | Permission carrier         | NO (permission keys in role)
+customRoles           | bos_* permission grants    | EXTEND role permission arrays
+companies             | Tenant root                | NO
+expenseCategories     | Operational                | NO — not BosCostCenter
+vendors               | Operational                | NO
+bankAccounts          | Unrelated P1               | NO
+loans                 | Unrelated P1               | NO
+
+
+================================================================================
+2. NEW COLLECTIONS — PHASE 1 (REQUIRED)
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 bosVentures
+--------------------------------------------------------------------------------
+    Scope:     companyId (required, indexed)
+    Purpose:   Strategic business unit registry (NOT CRM businesses)
+
+    Suggested fields:
+        id                  string (auto)
+        companyId           string
+        name                string
+        description         string?
+        status              "active" | "archived"
+        createdAt           Timestamp
+        updatedAt           Timestamp
+        createdById         string
+
+    Indexes:
+        companyId + status
+        companyId + name
+
+    Rules:
+        read:  canAccessCompanyData(companyId) && bos_venture_view
+        write: bos_venture_manage + company match
+
+--------------------------------------------------------------------------------
+2.2 bosInitiatives
+--------------------------------------------------------------------------------
+    Scope:     companyId
+    Purpose:   Strategic hub — campaigns, spend, decisions orbit this
+
+    Suggested fields:
+        id                  string
+        companyId           string
+        ventureId           string (FK → bosVentures)
+        name                string
+        hypothesis          string?
+        status              "draft" | "active" | "paused" | "closed"
+        startDate           Timestamp?
+        endDate             Timestamp?
+        closedAt            Timestamp?
+        closedReason        string?
+        createdAt           Timestamp
+        updatedAt           Timestamp
+        createdById         string
+
+    Indexes:
+        companyId + ventureId + status
+        companyId + status + updatedAt
+
+    Rules:
+        read:  bos_initiative_view
+        write: bos_initiative_manage
+        close: bos_initiative_close (or manage)
+
+--------------------------------------------------------------------------------
+2.3 bosAttributions
+--------------------------------------------------------------------------------
+    Scope:     companyId
+    Purpose:   Sidecar linking ERP entities to BosInitiative
+
+    Suggested fields:
+        id                  string
+        companyId           string
+        initiativeId        string
+        ventureId           string (denormalized for query)
+        sourceType          "expense" | "invoice" | "lead" | "manual"
+        sourceId            string (expense id, etc.)
+        amount              number? (snapshot at attribution time)
+        currency            string?
+        status              "proposed" | "confirmed" | "locked"
+        notes               string?
+        attributedById      string
+        createdAt           Timestamp
+        updatedAt           Timestamp
+
+    Unique constraint (application-level):
+        One active confirmed attribution per (sourceType, sourceId) per company
+        OR allow split attributions in Phase 2 — Phase 1: one initiative per expense
+
+    Indexes:
+        companyId + initiativeId
+        companyId + sourceType + sourceId
+        companyId + ventureId
+
+    Rules:
+        read:  bos_attribution_view
+        create/update: bos_attribution_manage
+        lock:  bos_attribution_lock (finance)
+
+    CRITICAL: Never write these fields onto expenses collection.
+
+--------------------------------------------------------------------------------
+2.4 bosDecisions
+--------------------------------------------------------------------------------
+    Scope:     companyId
+    Purpose:   Minimal decision log (Doc 13 Phase 1 subset)
+
+    Suggested fields:
+        id                  string
+        companyId           string
+        initiativeId        string?
+        ventureId           string?
+        title               string
+        context             string?
+        decision            string
+        status              "open" | "decided" | "superseded"
+        decidedAt           Timestamp?
+        decidedById         string?
+        createdAt           Timestamp
+        createdById         string
+
+    Indexes:
+        companyId + initiativeId + status
+        companyId + status + createdAt
+
+    Rules:
+        read:  bos_decision_view
+        write: bos_decision_manage
+
+
+================================================================================
+3. NEW COLLECTIONS — PHASE 1 (OPTIONAL / DEFER IF TIME-BOUND)
+================================================================================
+
+Collection              | Defer to   | Notes
+------------------------|------------|----------------------------------
+bosAcquisitionChannels  | P1 opt/P2  | Seed from distinct Lead.source values
+bosCampaignLinks        | P2         | Link ERP campaigns to initiatives
+bosFunnelStageEvents    | P2         | Sidecar on Lead.status changes
+bosDecisionAlternatives | P2         | Full decision engine
+bosLessonsLearned       | P2         | On initiative close workflow
+bosCostCenters          | P2         | Do not merge expenseCategories
+bosExperiments          | P2         | Child of initiative
+bosMetricSnapshots      | P2         | Scheduled KPI materialization
+
+
+================================================================================
+4. COLLECTIONS THAT MUST NOT BE CREATED (ANTI-PATTERNS)
+================================================================================
+
+    • expenses_bos or expenses/{id}/bosMeta — violates sidecar law
+    • Renaming businesses → ventures — breaks CRM
+    • Embedding initiativeId on expense documents
+    • Storing BOS KPIs on company profile document
+
+
+================================================================================
+5. FIRESTORE RULES IMPACT
+================================================================================
+
+    Add match blocks following existing pattern:
+
+        match /bosVentures/{docId} {
+          allow read: if canAccessCompanyData(resource.data.companyId)
+                      && hasBosPermission('bos_venture_view');
+          allow create: if canAccessCompanyData(request.resource.data.companyId)
+                        && hasBosPermission('bos_venture_manage');
+          allow update, delete: if ... same pattern ...
+        }
+
+    Implementation note:
+        firestore.rules has no hasGranularPermission helper today — rules use
+        canAccessCompanyData + role checks. Options:
+        A) Mirror permission keys in custom token claims (heavy)
+        B) Rules: company access only; app enforces bos_* (current ERP pattern)
+        C) Add get(/customRoles/{roleId}) in rules (expensive reads)
+
+    RECOMMENDATION for Phase 1:
+        Match existing ERP approach (B): rules enforce companyId tenancy;
+        React app enforces bos_* via ProtectedComponent + service guards.
+        Document in Risk Register (Doc 07).
+
+
+================================================================================
+6. INDEX REQUIREMENTS (firestore.indexes.json)
+================================================================================
+
+    New composite indexes likely needed:
+        bosInitiatives: companyId ASC, status ASC, updatedAt DESC
+        bosAttributions: companyId ASC, sourceType ASC, sourceId ASC
+        bosAttributions: companyId ASC, initiativeId ASC, createdAt DESC
+        bosDecisions: companyId ASC, initiativeId ASC, status ASC
+
+    Deploy indexes before enabling features in production.
+
+
+================================================================================
+7. BACKUP / RESTORE IMPACT (databaseMigrationService.ts)
+================================================================================
+
+    Current: FLAT_BACKUP_FORMAT_VERSION = 5, 29 export stages
+
+    Phase 1 changes:
+        • Add bosVentures, bosInitiatives, bosAttributions, bosDecisions to export
+        • Bump FLAT_BACKUP_FORMAT_VERSION to 6
+        • Add restore path for new collections
+        • BACKUP_EXPORT_TOTAL_STAGES increment (+4)
+
+    BC-RISK: Restoring v5 backup into v6 app loses BOS data (expected).
+             Forward-compatible restore must ignore unknown collections gracefully.
+
+
+================================================================================
+8. QUERY PATTERNS FOR REPORTS JOIN
+================================================================================
+
+    ReportsPage today:
+        expenses.where("companyId", "==", companyId) → client filter by date
+
+    BOS enrichment (no new expense queries):
+        1. Load expenses (existing)
+        2. Load bosAttributions.where("companyId", "==", companyId)
+           .where("sourceType", "==", "expense")
+        3. Build Map<sourceId, BosAttribution> in bosReportJoin.ts
+        4. Load bosInitiatives for name lookup (single query by companyId)
+
+    Avoid N+1: batch initiative names in one query.
+
+
+================================================================================
+9. DATA MIGRATION / SEEDING
+================================================================================
+
+    No automatic migration of historical expenses to attributions.
+    Finance team attributes post-hoc via UI.
+
+    Optional seed script (dev only):
+        • Create default BosVenture "Main" per company
+        • Create BosAcquisitionChannel from distinct Lead.source (P2)
+
+    databaseMigrationService: no schema migration on ERP collections.
+
+
+================================================================================
+10. STORAGE / COST ESTIMATE (QUALITATIVE)
+================================================================================
+
+    bosAttributions grows with attributed expense count (not all expenses).
+    bosInitiatives / bosVentures: low volume (tens per company).
+    bosDecisions: moderate (hundreds per company over time).
+
+    No Cloud Functions required for Phase 1 (client-side join acceptable at
+    current scale; revisit if expense count > 10k per company).
+
+
+================================================================================
+END OF DOCUMENT 04 — Firestore Impact
+================================================================================

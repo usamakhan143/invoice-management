@@ -1,0 +1,176 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 07 — Risk Register
+================================================================================
+
+Purpose: Identified risks for BOS Phase 1 integration
+Format: ID | Risk | Likelihood | Impact | Mitigation | Owner
+
+================================================================================
+CRITICAL RISKS (P0)
+================================================================================
+
+R-001 | Expense schema pollution
+      | Developer adds initiativeId to expenses document
+      | Likelihood: Medium | Impact: Critical
+      | Mitigation: Code review gate; bosAttributionService only write path;
+        PR template checkbox; Firestore rules cannot block unknown fields on
+        expenses but console audit after deploy
+      | Owner: Reviewer
+
+R-002 | CRM Business vs BosVenture naming collision
+      | Team uses businessService or businesses collection for BOS ventures
+      | Likelihood: Medium | Impact: Critical
+      | Mitigation: bosVentureService mandatory; lint rule or grep in CI for
+        wrong imports; Doc 10 naming in PR description
+      | Owner: Implementer
+
+R-003 | ExpensesPage god component — attribution breaks finance flows
+      | Attribution UI bundled into 3,190-line file causes regressions
+      | Likelihood: High | Impact: High
+      | Mitigation: BLOCKER — split ExpenseDetailModal before Stream D (Doc 05)
+      | Owner: Implementer
+
+R-004 | Staff expense form changed unintentionally
+      | Violates Option C UX; training disruption
+      | Likelihood: Medium | Impact: High
+      | Mitigation: Attribution only in detail modal; separate permission;
+        BC checklist item E-01 through E-05 (Doc 08)
+      | Owner: Product owner
+
+
+================================================================================
+HIGH RISKS (P1)
+================================================================================
+
+R-005 | firestore.rules deploy lag
+      | Client writes to bos* before rules deployed → permission denied errors
+      | Likelihood: Medium | Impact: High
+      | Mitigation: Deploy rules + indexes before app; feature flag by permission
+      | Owner: Firebase admin
+
+R-006 | Permission default allow
+      | Missing bos_* check defaults to visible actions
+      | Likelihood: Medium | Impact: High
+      | Mitigation: Explicit false in canBos*(); ProtectedComponent on all routes
+      | Owner: Implementer
+
+R-007 | Reports performance degradation
+      | Extra queries + in-memory join on large expense sets
+      | Likelihood: Low-Medium | Impact: Medium
+      | Mitigation: Load attributions only when bos_reports_view; useMemo;
+        monitor companies with >5k expenses
+      | Owner: Implementer
+
+R-008 | Backup v5 restore loses BOS data
+      | User restores old backup after attributions created
+      | Likelihood: Low | Impact: High
+      | Mitigation: Bump backup version; UI warning; document in Data Management
+      | Owner: Implementer
+
+R-009 | Duplicate attribution per expense
+      | Two initiatives linked to same expense
+      | Likelihood: Medium | Impact: Medium
+      | Mitigation: Application check in bosAttributionService.create;
+        query existing before insert
+      | Owner: Implementer
+
+R-010 | Initiative vs Campaign confusion
+      | Users create BosInitiative thinking it replaces Campaign
+      | Likelihood: Medium | Impact: Medium
+      | Mitigation: UI labels "Strategic initiative" not "Campaign"; help text
+      | Owner: Product owner
+
+
+================================================================================
+MEDIUM RISKS (P2)
+================================================================================
+
+R-011 | usePermissions.tsx growth
+      | 700+ lines becomes unmaintainable
+      | Likelihood: High | Impact: Low-Medium
+      | Mitigation: Extract useBosPermissions in Stream B
+      | Owner: Implementer
+
+R-012 | Firestore index missing in production
+      | Composite query fails at runtime
+      | Likelihood: Medium | Impact: Medium
+      | Mitigation: firestore.indexes.json in repo; deploy checklist
+      | Owner: Firebase admin
+
+R-013 | ActivityType enum incomplete
+      | BOS events show raw type strings in ActivityPage
+      | Likelihood: Medium | Impact: Low
+      | Mitigation: Add all bos_* types with labels in ActivityPage map
+      | Owner: Implementer
+
+R-014 | Cross-company data leak via wrong companyId
+      | Bug in service passes wrong companyId
+      | Likelihood: Low | Impact: Critical
+      | Mitigation: Always resolve via resolveCompanyIdForUser; never trust client
+        companyId from form without profile check
+      | Owner: Implementer
+
+R-015 | Net investment calculation inconsistency
+      | Initiative spend report uses gross expense vs net after returns
+      | Likelihood: Medium | Impact: Medium
+      | Mitigation: Document P1 as gross; Phase 2 align with Reports net column
+      | Owner: Product owner
+
+R-016 | HashRouter deep links to BOS pages
+      | Bookmark /bos/initiatives/:id fails if permission revoked
+      | Likelihood: Low | Impact: Low
+      | Mitigation: ProtectedComponent redirect to dashboard
+      | Owner: Implementer
+
+
+================================================================================
+LOW RISKS (P3)
+================================================================================
+
+R-017 | Sidebar clutter
+      | Too many nav groups on mobile
+      | Likelihood: Medium | Impact: Low
+      | Mitigation: Collapsible Strategy group; hide if no permissions
+      | Owner: Implementer
+
+R-018 | Dark mode styling inconsistency on new BOS pages
+      | Likelihood: Low | Impact: Low
+      | Mitigation: Reuse cardClass patterns from ReportsPage
+      | Owner: Implementer
+
+R-019 | Lazy route chunk load failure
+      | Likelihood: Low | Impact: Low
+      | Mitigation: Same error boundary pattern as existing routes
+      | Owner: Implementer
+
+
+================================================================================
+ARCHITECTURAL DEBT (ACCEPTED FOR P1)
+================================================================================
+
+D-001 | Client-side report join vs Cloud Functions
+      | Accepted: matches current ReportsPage architecture
+      | Revisit: when expense count > 10k per company
+
+D-002 | Rules enforce tenancy only, not bos_* granular
+      | Accepted: matches current ERP permission model
+      | Revisit: if compliance requires server-side permission enforcement
+
+D-003 | No automated funnel events
+      | Accepted: Phase 2 BosFunnelStageEvent
+      | Manual initiative attribution sufficient for P1 ROI view
+
+
+================================================================================
+RISK REVIEW CADENCE
+================================================================================
+
+    • Before Stream D (expense integration): review R-001, R-003, R-004
+    • Before production deploy: review R-005, R-006, R-008
+    • Post-deploy week 1: monitor R-007, R-009
+
+
+================================================================================
+END OF DOCUMENT 07 — Risk Register
+================================================================================

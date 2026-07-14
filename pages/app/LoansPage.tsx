@@ -7,7 +7,11 @@ import { ActivityLogger } from "../../services/activityLogger";
 import { BankAccountService } from "../../services/bankAccountService";
 import { LoanService } from "../../services/loanService";
 import type { Loan, LoanRepayment, LoanStatus, BankAccount } from "../../types";
-import Spinner from "../../components/Spinner";
+import {
+  aggregateAmountsByCurrency,
+  buildFinanceStatDisplay,
+  financeStatHint,
+} from "../../utils/financeCurrencyDisplay";
 import {
   RowIconButton,
   IconEdit,
@@ -15,8 +19,12 @@ import {
   IconReceive,
   IconHistory,
 } from "../../components/RowIconButton";
+import Spinner from "../../components/Spinner";
 import { getExpenseCompanyId } from "../../utils/expenseCompanyScope";
-import { formatBankAccountListLabel } from "../../utils/bankAccountDisplay";
+import {
+  formatBankAccountListLabel,
+  formatBankAccountSelectLabel,
+} from "../../utils/bankAccountDisplay";
 
 const STATUS_META: Record<LoanStatus, { label: string; className: string }> = {
   outstanding: {
@@ -87,12 +95,21 @@ const LoansPage: React.FC = () => {
     canEditLoan,
     canDeleteLoan,
     canReceiveLoanRepayment,
+    canViewBankPickerBalance,
+    filterBankAccountsForRole,
+    canViewExpenseUsdTotal,
     isOwner,
   } = usePermissions();
+  const showPickerBalance = canViewBankPickerBalance();
+  const showFinanceUsdTotal = canViewExpenseUsdTotal();
 
   const [loans, setLoans] = useState<Loan[]>([]);
   const [repayments, setRepayments] = useState<LoanRepayment[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const accessibleBankAccounts = useMemo(
+    () => filterBankAccountsForRole(bankAccounts),
+    [bankAccounts, filterBankAccountsForRole],
+  );
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -248,8 +265,79 @@ const LoansPage: React.FC = () => {
     return { lent, repaid, outstanding };
   }, [filteredLoans, exchangeRates, repaidForLoan, outstandingForLoan]);
 
-  const formatUsd = (n: number) =>
-    `$${n.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  const lentByCurrency = useMemo(
+    () =>
+      aggregateAmountsByCurrency(
+        filteredLoans,
+        (l) => Number(l.principalAmount) || 0,
+        (l) => l.currency,
+        (l) => l.currencySymbol,
+      ),
+    [filteredLoans],
+  );
+
+  const repaidByCurrency = useMemo(
+    () =>
+      aggregateAmountsByCurrency(
+        filteredLoans,
+        (l) => repaidForLoan(l),
+        (l) => l.currency,
+        (l) => l.currencySymbol,
+      ),
+    [filteredLoans, repaidForLoan],
+  );
+
+  const outstandingByCurrency = useMemo(
+    () =>
+      aggregateAmountsByCurrency(
+        filteredLoans,
+        (l) => outstandingForLoan(l),
+        (l) => l.currency,
+        (l) => l.currencySymbol,
+      ),
+    [filteredLoans, outstandingForLoan],
+  );
+
+  const lentDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        lentByCurrency,
+        stats.lent,
+        showFinanceUsdTotal,
+        "gross",
+        exchangeRates,
+      ),
+    [lentByCurrency, stats.lent, showFinanceUsdTotal, exchangeRates],
+  );
+
+  const repaidDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        repaidByCurrency,
+        stats.repaid,
+        showFinanceUsdTotal,
+        "gross",
+        exchangeRates,
+      ),
+    [repaidByCurrency, stats.repaid, showFinanceUsdTotal, exchangeRates],
+  );
+
+  const outstandingDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        outstandingByCurrency,
+        stats.outstanding,
+        showFinanceUsdTotal,
+        "gross",
+        exchangeRates,
+      ),
+    [
+      outstandingByCurrency,
+      stats.outstanding,
+      showFinanceUsdTotal,
+      exchangeRates,
+    ],
+  );
 
   const displayName =
     userProfile?.displayName ||
@@ -262,7 +350,7 @@ const LoansPage: React.FC = () => {
     setGiveForm({
       borrowerName: "",
       amount: "",
-      sourceBankAccountId: bankAccounts[0]?.id || "",
+      sourceBankAccountId: accessibleBankAccounts[0]?.id || "",
       disbursedDate: todayInput(),
       dueDate: "",
       notes: "",
@@ -363,7 +451,10 @@ const LoansPage: React.FC = () => {
     setRepayModalLoan(loan);
     setRepayForm({
       amount: "",
-      destinationBankAccountId: loan.sourceBankAccountId || bankAccounts[0]?.id || "",
+      destinationBankAccountId:
+        accessibleBankAccounts.find((b) => b.id === loan.sourceBankAccountId)?.id ||
+        accessibleBankAccounts[0]?.id ||
+        "",
       receivedDate: todayInput(),
       notes: "",
     });
@@ -567,6 +658,34 @@ const LoansPage: React.FC = () => {
     }
   };
 
+  const handleToggleWriteOff = async (loan: Loan) => {
+    if (!user || !userProfile) return;
+    const writeOff = loan.status !== "written_off";
+    if (
+      writeOff &&
+      !window.confirm(
+        `Write off the loan of ${loan.currencySymbol}${(loan.principalAmount || 0).toFixed(2)} to ${loan.borrowerName}? This marks it unrecoverable. No money moves; the original disbursement stays recorded.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await LoanService.setWriteOff(loan.id, writeOff);
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "loan_updated",
+        `${writeOff ? "Wrote off" : "Reopened"} loan ${loan.currencySymbol}${(loan.principalAmount || 0).toFixed(2)} to ${loan.borrowerName}`,
+        { entityId: loan.id, entityType: "loan", oldValue: loan },
+      );
+    } catch (error) {
+      console.error("Error updating loan write-off:", error);
+      alert(
+        error instanceof Error ? error.message : "Failed to update loan status",
+      );
+    }
+  };
+
   if (!canViewLoans() && !canManageCompanyLoans() && !canCreateLoan()) {
     return (
       <div className="p-6">
@@ -616,28 +735,49 @@ const LoansPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Total lent</p>
-          <p className="mt-1 text-2xl font-bold text-gray-800 dark:text-white">
-            {formatUsd(stats.lent)}
+          <p className="mt-1 text-2xl font-bold text-gray-800 dark:text-white tabular-nums">
+            {lentDisplay.primary}
           </p>
-          <p className="text-xs text-gray-400">≈ USD equivalent</p>
+          {lentDisplay.secondary ? (
+            <div className="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+              {lentDisplay.secondary}
+            </div>
+          ) : null}
+          <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+            {financeStatHint(showFinanceUsdTotal, "Lent by currency")}
+          </p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Recovered
           </p>
-          <p className="mt-1 text-2xl font-bold text-green-600 dark:text-green-400">
-            {formatUsd(stats.repaid)}
+          <p className="mt-1 text-2xl font-bold text-green-600 dark:text-green-400 tabular-nums">
+            {repaidDisplay.primary}
           </p>
-          <p className="text-xs text-gray-400">≈ USD equivalent</p>
+          {repaidDisplay.secondary ? (
+            <div className="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+              {repaidDisplay.secondary}
+            </div>
+          ) : null}
+          <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+            {financeStatHint(showFinanceUsdTotal, "Recovered by currency")}
+          </p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Outstanding receivable
           </p>
-          <p className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400">
-            {formatUsd(stats.outstanding)}
+          <p className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+            {outstandingDisplay.primary}
           </p>
-          <p className="text-xs text-gray-400">≈ USD equivalent</p>
+          {outstandingDisplay.secondary ? (
+            <div className="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+              {outstandingDisplay.secondary}
+            </div>
+          ) : null}
+          <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+            {financeStatHint(showFinanceUsdTotal, "Outstanding by currency")}
+          </p>
         </div>
       </div>
 
@@ -992,6 +1132,21 @@ const LoansPage: React.FC = () => {
                         Edit
                       </button>
                     ) : null}
+                    {canEditLoan() && outstanding > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleWriteOff(loan)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium ${
+                          loan.status === "written_off"
+                            ? "bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/30"
+                            : "bg-amber-600 text-white hover:bg-amber-700"
+                        }`}
+                      >
+                        {loan.status === "written_off"
+                          ? "Reopen loan"
+                          : "Write off"}
+                      </button>
+                    ) : null}
                     {canDeleteLoan() && repaid <= 0 ? (
                       <button
                         type="button"
@@ -1083,10 +1238,9 @@ const LoansPage: React.FC = () => {
                   className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   <option value="">Select account…</option>
-                  {bankAccounts.map((b) => (
+                  {accessibleBankAccounts.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {formatBankAccountListLabel(b)} ({b.currencySymbol}
-                      {(b.currentBalance ?? b.initialBalance ?? 0).toFixed(2)})
+                      {formatBankAccountSelectLabel(b, showPickerBalance)}
                     </option>
                   ))}
                 </select>
@@ -1215,9 +1369,9 @@ const LoansPage: React.FC = () => {
                     className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="">Select account…</option>
-                    {bankAccounts.map((b) => (
+                    {accessibleBankAccounts.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {formatBankAccountListLabel(b)}
+                        {formatBankAccountSelectLabel(b, showPickerBalance)}
                       </option>
                     ))}
                   </select>

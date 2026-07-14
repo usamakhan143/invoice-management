@@ -1,0 +1,315 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 06 — Integration Blueprint
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+This document explains how the BOS integrates with every existing and future
+system — without tightly coupling anything together.
+
+Integration philosophy: READ + ATTRIBUTE + ENRICH. Never MUTATE.
+
+================================================================================
+1. INTEGRATION PRINCIPLES
+================================================================================
+
+    1. Sidecar, not embedded     — BOS data lives in BOS collections, not inside
+                                  expense/lead/invoice documents
+    2. Optional always           — Every integration can be disabled without
+                                  breaking anything
+    3. Unidirectional by default — External → BOS (read). BOS never writes back
+                                  to source modules unless explicitly designed
+    4. Adapter pattern           — Each external system gets its own adapter
+    5. Attribution is the link   — All integrations connect through the
+                                  Attribution Engine, not direct field mapping
+    6. Additive enrichment       — Reports and dashboards gain new columns/widgets;
+                                  existing output is never modified
+
+
+================================================================================
+2. EXPENSE MODULE INTEGRATION
+================================================================================
+
+Current state:
+    Expenses record money out. Fields: amount, category, payee, bank account,
+    date, optional return planning, optional monthly tag.
+
+Integration approach:
+
+    ┌──────────────┐                      ┌──────────────────┐
+    │   EXPENSE    │                      │  BOS ATTRIBUTION │
+    │   (unchanged)│───read amount, date──►│                  │
+    │              │                      │  Links expense to:│
+    │              │                      │  • Initiative     │
+    │              │                      │  • Channel        │
+    │              │                      │  • Experiment     │
+    │              │                      │  • Cost Center    │
+    └──────────────┘                      └──────────────────┘
+
+What BOS reads from Expenses:
+    • amount, currency, date, category, payee, bank account
+    • totalReturnedAmount (for net investment calculation)
+    • isMonthlyExpense (for recurring cost analysis)
+
+What BOS NEVER does to Expenses:
+    • Add fields to expense documents
+    • Modify expense amounts, categories, or payees
+    • Change expense creation/edit/delete workflows
+    • Require BOS data to save an expense
+
+How attribution works:
+    • Finance user opens expense detail → "Assign to Initiative" button
+    • Selects initiative, channel, optional experiment
+    • BOS creates an attribution record (sidecar)
+    • Investment Tracker computes totals from attributions
+    • Expense form for daily staff: ZERO changes
+
+Split attribution example:
+    $1,000 expense → 60% Initiative A + 40% Initiative B
+    BOS creates two attribution records. Expense document untouched.
+
+
+================================================================================
+3. REPORTING ENGINE INTEGRATION
+================================================================================
+
+Current state:
+    Reports page loads all company data, filters by date range in memory,
+    displays tabular summaries, exports CSV.
+
+Integration approach:
+
+    ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
+    │   EXPENSES   │────►│              │     │  REPORTS OUTPUT  │
+    │   INVOICES   │────►│  BOS JOIN    │────►│  (enriched)      │
+    │   LEADS      │────►│  LAYER       │     │                  │
+    │   RETURNS    │────►│              │     │  + Initiative col│
+    └──────────────┘     └──────────────┘     │  + Channel col   │
+                                              │  + ROI col       │
+                                              │  + BI tab (new)  │
+                                              └──────────────────┘
+
+What changes in Reports:
+    • Existing tabs: unchanged, optionally show BI columns
+    • New tab: "Business Intelligence" — initiative summaries, channel comparison
+    • CSV export: existing columns preserved, BI columns appended at end
+    • Cashflow tab: optional filter by initiative
+
+What does NOT change:
+    • Report loading mechanism
+    • Date range filtering
+    • CSV export engine (same utility, more columns)
+    • Existing tab structure and calculations
+
+
+================================================================================
+4. CRM / LEADS MODULE INTEGRATION
+================================================================================
+
+Current state:
+    Leads module manages contacts, assignment, call activity, campaigns,
+    outreach events, conversion tracking.
+
+Integration approach:
+
+    ┌──────────────┐                      ┌──────────────────┐
+    │   CRM LEAD   │                      │  BOS ATTRIBUTION │
+    │   (unchanged)│───read lead data─────►│                  │
+    │              │                      │  Links lead to:  │
+    │              │                      │  • Initiative     │
+    │              │                      │  • Channel        │
+    │              │                      │  • Experiment     │
+    └──────────────┘                      └──────────────────┘
+
+What BOS reads from CRM:
+    • Lead contact info, status, assigned agent
+    • Campaign association (existing CRM campaign link)
+    • Call activity, outreach events
+    • Conversion status (converted to customer/business)
+    • Funnel stage progression
+
+What BOS adds to CRM context:
+    • Initiative attribution (which business effort generated this lead)
+    • Channel attribution (which acquisition method)
+    • Funnel stage tracking for BOS analytics (meeting, proposal, close)
+
+What BOS NEVER does to CRM:
+    • Modify lead records
+    • Change lead assignment workflows
+    • Alter campaign or outreach logic
+    • Require BOS data to create/manage leads
+
+Funnel stage mapping:
+    CRM Status          →  BOS Funnel Stage
+    New Lead            →  Lead Generated
+    Contacted           →  Lead Generated
+    Meeting Scheduled   →  Meeting Held
+    Proposal Sent       →  Proposal Sent
+    Converted           →  Client Closed
+    Lost                →  Funnel Exit (tracked for conversion analysis)
+
+
+================================================================================
+5. GOHIGHLEVEL INTEGRATION
+================================================================================
+
+GoHighLevel is an external platform for funnels, CRM, automation, and
+marketing. Integration is via an optional adapter.
+
+Integration approach:
+
+    ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
+    │ GoHighLevel  │────►│  GHL ADAPTER │────►│  BOS ATTRIBUTION │
+    │              │     │  (optional)  │     │  ENGINE          │
+    │ • Contacts   │     │              │     │                  │
+    │ • Opps       │     │  Maps GHL    │     │  Same attribution│
+    │ • Campaigns  │     │  data to BOS │     │  model as internal│
+    │ • Funnels    │     │  entities    │     │  CRM             │
+    │ • Spend      │     │              │     │                  │
+    └──────────────┘     └──────────────┘     └──────────────────┘
+
+What the adapter reads from GoHighLevel:
+    • Contacts/leads (name, email, phone, source, tags)
+    • Opportunities (stage, value, pipeline)
+    • Campaign performance (sent, opened, clicked, replied)
+    • Funnel analytics (visitors, conversions)
+    • Ad spend (if connected within GHL)
+
+What the adapter creates in BOS:
+    • Lead attributions (linking GHL contacts to initiatives/channels)
+    • Funnel stage events (for conversion tracking)
+    • Optional: expense attributions for GHL-reported ad spend
+
+What the adapter NEVER does:
+    • Replace internal CRM
+    • Write back to GoHighLevel
+    • Modify GHL workflows or automations
+    • Require GHL to be connected for BOS to function
+
+Sync strategy:
+    • Phase 1: Manual import (CSV/API pull on demand)
+    • Phase 2: Scheduled sync (daily/hourly pull)
+    • Phase 3: Webhook-based real-time sync (if GHL supports it)
+
+
+================================================================================
+6. REVENUE / INVOICE MODULE INTEGRATION
+================================================================================
+
+Current state:
+    Invoices record money in. Fields: customer, items, amounts, status, dates.
+
+Integration approach:
+
+    ┌──────────────┐                      ┌──────────────────┐
+    │   INVOICE    │                      │  BOS REVENUE     │
+    │   (unchanged)│───read amount, date──►│  ATTRIBUTION     │
+    │              │                      │                  │
+    │              │                      │  Links revenue to:│
+    │              │                      │  • Initiative     │
+    │              │                      │  • Channel        │
+    │              │                      │  • Client/Project │
+    └──────────────┘                      └──────────────────┘
+
+Revenue attribution chain:
+    Lead (attributed to Initiative X)
+        → Client conversion
+            → Invoice (attributed to Initiative X via client link)
+                → Revenue counted toward Initiative X ROI
+
+What BOS reads from Invoices:
+    • amount, currency, date, customer, status (paid/unpaid)
+    • line items (for service-level revenue analysis)
+
+What BOS computes:
+    • Total revenue per initiative
+    • Revenue per channel
+    • Average deal size
+    • Time from lead to first invoice
+
+
+================================================================================
+7. OTHER MODULE INTEGRATIONS (FUTURE)
+================================================================================
+
+Module          | Integration Type | What BOS Reads           | Purpose
+----------------|------------------|--------------------------|------------------
+Payroll         | Read + Attribute | Salary, contractor costs | Investment tracking
+Assets          | Read + Attribute | Asset value, depreciation| Investment tracking
+Subscriptions     | Read + Attribute | Recurring costs/revenue| SaaS economics
+Loans           | Read only        | Capital deployment       | Cash flow context
+Bank Accounts   | Read only        | Balances                 | Cash position
+Products        | Read only        | Service catalog          | Revenue analysis
+Bank Deposits   | Read only        | Income events            | Cash flow context
+Reconciliations | Read only        | Adjustments              | Data integrity
+
+All follow the same pattern: read source data, attribute to BOS context,
+never modify source.
+
+
+================================================================================
+8. FUTURE SAAS PRODUCTS
+================================================================================
+
+When you build SaaS products on this platform, they integrate through the
+same Attribution Engine:
+
+    ┌──────────────┐
+    │  SaaS App A  │──adapter──► BOS Attribution Engine
+    │  (future)    │             (users, MRR, churn → initiative ROI)
+    ├──────────────┤
+    │  SaaS App B  │──adapter──► BOS Attribution Engine
+    │  (future)    │             (signups, conversions → initiative ROI)
+    └──────────────┘
+
+Each SaaS product:
+    • Has its own operational data store
+    • Feeds metrics into BOS via adapter
+    • Benefits from BOS initiative/ROI framework
+    • Does not depend on BOS to function
+
+
+================================================================================
+9. INTEGRATION MATURITY LEVELS
+================================================================================
+
+Each integration can exist at one of four maturity levels:
+
+    Level 0 — NONE
+        BOS functions without this integration. No data flows.
+
+    Level 1 — MANUAL
+        User manually creates attributions. Copy/paste from external system.
+        Example: Manually attribute expenses to initiatives.
+
+    Level 2 — SEMI-AUTOMATED
+        Scheduled import/sync. User reviews and confirms attributions.
+        Example: Daily GHL contact import, user assigns to initiatives.
+
+    Level 3 — AUTOMATED
+        Real-time sync with auto-attribution rules.
+        Example: GHL lead with tag "agency-q1" auto-attributed to initiative.
+
+Start every integration at Level 1. Move to Level 2/3 only when volume
+demands it and rules are proven.
+
+
+================================================================================
+10. ANTI-PATTERNS (WHAT NOT TO DO)
+================================================================================
+
+    ✗  Adding initiativeId field to expense documents
+    ✗  Requiring BOS data to save an expense or lead
+    ✗  Embedding CRM logic inside BOS modules
+    ✗  Building a second expense system inside BOS
+    ✗  Replacing Reports with BOS dashboards
+    ✗  Hardcoding GoHighLevel API calls in BOS core
+    ✗  Storing expense amounts in BOS (always read from source)
+    ✗  Making BOS attribution mandatory for any workflow
+
+================================================================================
+END OF DOCUMENT 06 — Integration Blueprint
+================================================================================

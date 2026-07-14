@@ -232,10 +232,12 @@ const UserManagementPage: React.FC = () => {
 
       // Get permissions from selected custom role
       let granularPermissions: string[] = [];
+      let restrictedBankAccountIds: string[] = [];
 
       const customRole = customRoles.find(role => role.name === createForm.role);
       if (customRole) {
         granularPermissions = ensurePerformanceHubWithContent(customRole.granularPermissions || []);
+        restrictedBankAccountIds = customRole.restrictedBankAccountIds || [];
       }
 
 
@@ -306,6 +308,7 @@ const UserManagementPage: React.FC = () => {
             isOwner: false,
             companyId: companyId,
             granularPermissions: granularPermissions,
+            restrictedBankAccountIds,
             isActive: true,
             // Store encrypted password for Login As functionality
             tempPassword: encryptedPassword,
@@ -323,6 +326,7 @@ const UserManagementPage: React.FC = () => {
             displayName: createForm.displayName,
             role: createForm.role,
             granularPermissions: granularPermissions,
+            restrictedBankAccountIds,
             isActive: true,
             companyId,
             invitedBy: user.uid,
@@ -609,22 +613,26 @@ const UserManagementPage: React.FC = () => {
     try {
       // Get permissions from selected custom role
       let granularPermissions: string[] = [];
+      let restrictedBankAccountIds: string[] = [];
 
       const customRole = customRoles.find(role => role.name === editForm.role);
       if (customRole) {
         granularPermissions = ensurePerformanceHubWithContent(customRole.granularPermissions || []);
+        restrictedBankAccountIds = customRole.restrictedBankAccountIds || [];
       }
 
       // Update company user record
       await db.collection("companyUsers").doc(editingUser.id).update({
         role: editForm.role,
         granularPermissions: granularPermissions,
+        restrictedBankAccountIds,
       });
 
       // Update user profile in users collection
       await db.collection("users").doc(editingUser.uid).update({
         role: editForm.role,
         granularPermissions: granularPermissions,
+        restrictedBankAccountIds,
       });
 
       // Log user update activity
@@ -639,6 +647,7 @@ const UserManagementPage: React.FC = () => {
           newValue: {
             role: editForm.role,
             granularPermissions: granularPermissions,
+            restrictedBankAccountIds,
           },
         },
       );

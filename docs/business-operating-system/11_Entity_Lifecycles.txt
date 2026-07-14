@@ -1,0 +1,360 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 11 — Entity Lifecycles
+================================================================================
+
+Authoring perspective: Principal Enterprise Software Architect
+Status: Architecture phase — state machine definitions
+Version: 1.0
+
+Every BOS entity with mutable state is defined here: states, allowed transitions,
+invalid transitions, entry/exit conditions, and business rules.
+
+Notation:
+    STATE ──event──► STATE
+    [GUARD: condition]
+    {ACTION: side effect on entry/exit}
+
+================================================================================
+1. BosVenture (Founder Venture / Business Unit)
+================================================================================
+
+States:
+    PLANNED | ACTIVE | PAUSED | WINDING_DOWN | ARCHIVED
+
+    PLANNED ──activate──► ACTIVE
+        [GUARD: name, business model, owner assigned]
+        {ACTION: create default channels optional}
+
+    ACTIVE ──pause──► PAUSED
+        [GUARD: no mandatory active initiatives OR founder confirms]
+
+    PAUSED ──resume──► ACTIVE
+
+    ACTIVE ──wind_down──► WINDING_DOWN
+        [GUARD: founder decision recorded as BosDecision]
+
+    WINDING_DOWN ──archive──► ARCHIVED
+        [GUARD: all initiatives CLOSED; all attributions locked read-only]
+        {ACTION: final portfolio snapshot metrics frozen}
+
+    INVALID:
+        ARCHIVED ──► ACTIVE (requires new venture record, not resurrection)
+        PLANNED ──► ARCHIVED (must pass through ACTIVE or cancel via ARCHIVED
+                   with "CANCELLED" closure reason on zero activity)
+
+Exit conditions (ARCHIVED):
+    • All BosInitiatives in terminal states
+    • Final BosLessonLearned optional but recommended
+    • ERP operational data remains untouched
+
+
+================================================================================
+2. BosInitiative (Growth Initiative)
+================================================================================
+
+States:
+    DRAFT | ACTIVE | PAUSED | CLOSED
+
+Closed sub-outcomes (stored on closure, not separate states):
+    SUCCESS | PARTIAL | FAILED | KILLED | PIVOTED
+
+    DRAFT ──activate──► ACTIVE
+        [GUARD: hypothesis, success criteria, budget, venture assigned]
+        {ACTION: start date recorded}
+
+    ACTIVE ──pause──► PAUSED
+        [GUARD: none; BosDecision recommended]
+
+    PAUSED ──resume──► ACTIVE
+
+    ACTIVE ──close──► CLOSED
+        [GUARD: BosLessonLearned required; all BosExperiments terminal;
+                open BosDecisions marked resolved or carried forward]
+        {ACTION: compute final BosMetricSnapshot; lock attributions read-only
+                 for this initiative except corrections via superseding attribution}
+
+    DRAFT ──cancel──► CLOSED (outcome: KILLED)
+        [GUARD: zero investment attributed OR founder confirms discard]
+
+    ACTIVE ──pivot──► CLOSED (outcome: PIVOTED) + new BosInitiative (DRAFT)
+        [GUARD: BosDecision with type PIVOT; link predecessor/successor IDs]
+        {ACTION: successor initiative inherits selected lessons, not budget automatically}
+
+    INVALID:
+        CLOSED ──► ACTIVE (create new initiative instead)
+        PAUSED ──► CLOSED without lesson if investment > 0 (lesson required)
+
+Business rules:
+    • Attribution to ACTIVE or PAUSED initiatives only (not DRAFT, not CLOSED)
+    • CLOSED initiatives: historical attributions preserved; new attributions blocked
+    • Budget overrun allowed but triggers BosDecision recommendation (see Doc 13)
+
+
+================================================================================
+3. BosExperiment
+================================================================================
+
+States:
+    PLANNED | ACTIVE | COMPLETED | CANCELLED
+
+Outcomes (on COMPLETED):
+    SUCCESS | FAILURE | INCONCLUSIVE
+
+    PLANNED ──start──► ACTIVE
+        [GUARD: parent initiative ACTIVE or PAUSED; budget slice defined]
+
+    ACTIVE ──complete──► COMPLETED
+        [GUARD: outcome recorded; optional mini-lesson]
+        {ACTION: feed result into initiative KPIs}
+
+    PLANNED ──cancel──► CANCELLED
+    ACTIVE ──cancel──► CANCELLED
+        [GUARD: reason captured]
+
+    INVALID:
+        COMPLETED ──► ACTIVE
+        CANCELLED ──► ACTIVE
+
+Business rules:
+    • Experiments cannot outlive parent initiative closure
+    • Parent initiative CLOSED → auto-CANCELLED or force-COMPLETE open experiments
+
+
+================================================================================
+4. BosAcquisitionChannel
+================================================================================
+
+States:
+    ACTIVE | INACTIVE | ARCHIVED
+
+    ACTIVE ──deactivate──► INACTIVE
+    INACTIVE ──reactivate──► ACTIVE
+    INACTIVE ──archive──► ARCHIVED
+
+    INVALID:
+        ARCHIVED ──► ACTIVE (create new channel record)
+
+Business rules:
+    • ARCHIVED channels cannot receive new attributions
+    • Historical attributions to archived channels remain valid for reporting
+
+
+================================================================================
+5. BosAttribution
+================================================================================
+
+States:
+    ACTIVE | SUPERSEDED | DISPUTED | VOID
+
+    (create) ──► ACTIVE
+        [GUARD: source record exists; target initiative not CLOSED;
+                allocation 0–100%; sum of splits per source ≤ 100%]
+
+    ACTIVE ──supersede──► SUPERSEDED
+        [GUARD: new ACTIVE attribution replaces old; old retained for audit]
+        {ACTION: recompute affected BosMetricSnapshots}
+
+    ACTIVE ──dispute──► DISPUTED
+        [GUARD: finance/admin flags incorrect attribution]
+        {ACTION: excluded from KPI until resolved}
+
+    DISPUTED ──resolve──► ACTIVE or SUPERSEDED or VOID
+
+    ACTIVE ──void──► VOID
+        [GUARD: BosDecision or admin correction; reason required]
+        {ACTION: never delete; void for audit trail}
+
+    INVALID:
+        Physical delete of any attribution (forbidden — audit requirement)
+        VOID ──► ACTIVE (create new attribution instead)
+
+Business rules:
+    • One source may have multiple ACTIVE attributions only if split % sums ≤ 100%
+    • Revenue attribution may use different model (last-touch) — document per venture
+    • Attribution changes never modify ERP source documents
+
+
+================================================================================
+6. BosFunnelStageEvent
+================================================================================
+
+States:
+    RECORDED | CORRECTED | VOID
+
+    (create) ──► RECORDED
+        [GUARD: lead/source exists; stage enum valid; timestamp valid]
+
+    RECORDED ──correct──► CORRECTED
+        [GUARD: correction reason; original preserved in audit chain]
+
+    RECORDED | CORRECTED ──void──► VOID
+        [GUARD: duplicate or error]
+
+    INVALID:
+        Skip stages without RECORDED event (allowed — funnel is not strict FSM)
+        Meeting before Lead (allowed if CRM imports historical data — flag data quality)
+
+Business rules:
+    • Funnel analytics use first RECORDED event per stage unless CORRECTED supersedes
+    • Stages are NOT a strict sequential FSM — leads can jump (referral → client)
+
+
+================================================================================
+7. BosDecision
+================================================================================
+
+States:
+    PROPOSED | APPROVED | ACTIVE | SUPERSEDED | REVOKED | EVALUATED
+
+    PROPOSED ──approve──► APPROVED
+        [GUARD: approver role if not founder-only tenant]
+
+    APPROVED ──activate──► ACTIVE
+        {ACTION: decision takes effect; may trigger initiative state change}
+
+    PROPOSED ──activate──► ACTIVE (founder fast-path)
+
+    ACTIVE ──supersede──► SUPERSEDED
+        [GUARD: newer BosDecision references prior decision ID]
+        {ACTION: prior decision marked historical; outcomes still visible}
+
+    ACTIVE ──revoke──► REVOKED
+        [GUARD: BosDecision with rationale; rare]
+
+    ACTIVE ──evaluate──► EVALUATED
+        [GUARD: actual outcome recorded; linked to KPIs and lessons]
+        {ACTION: feed institutional memory}
+
+    INVALID:
+        REVOKED ──► ACTIVE
+        Delete any decision record (forbidden)
+
+See Document 13 for full decision model.
+
+
+================================================================================
+8. BosLessonLearned
+================================================================================
+
+States:
+    DRAFT | PUBLISHED | DEPRECATED
+
+    DRAFT ──publish──► PUBLISHED
+        [GUARD: required fields complete; tags assigned]
+
+    PUBLISHED ──deprecate──► DEPRECATED
+        [GUARD: superseded by newer lesson or no longer applicable]
+
+    INVALID:
+        DEPRECATED ──► PUBLISHED (create new lesson instead)
+
+
+================================================================================
+9. BosPlaybook
+================================================================================
+
+States:
+    DRAFT | PUBLISHED | DEPRECATED
+
+    DRAFT ──publish──► PUBLISHED
+        [GUARD: linked to at least one PUBLISHED lesson or closed initiative]
+
+    PUBLISHED ──deprecate──► DEPRECATED
+
+Business rules:
+    • New initiatives may optionally instantiate from PUBLISHED playbook
+    • Playbook version number increments on publish (semver recommended)
+
+
+================================================================================
+10. BosAssumption
+================================================================================
+
+States:
+    OPEN | VALIDATED | INVALIDATED | OBSOLETE
+
+    OPEN ──validate──► VALIDATED
+        [GUARD: evidence linked (KPI, event, decision)]
+
+    OPEN ──invalidate──► INVALIDATED
+        [GUARD: triggers BosDecision recommendation]
+        {ACTION: notify initiative owner}
+
+    VALIDATED | INVALIDATED ──obsolete──► OBSOLETE
+        [GUARD: initiative closed or assumption no longer relevant]
+
+
+================================================================================
+11. BosRisk
+================================================================================
+
+States:
+    OPEN | MITIGATED | REALIZED | CLOSED
+
+    OPEN ──mitigate──► MITIGATED
+        [GUARD: mitigation plan documented]
+
+    OPEN ──realize──► REALIZED
+        {ACTION: trigger BosDecision; link to lesson}
+
+    MITIGATED | REALIZED ──close──► CLOSED
+
+
+================================================================================
+12. BosMetricDefinition
+================================================================================
+
+States:
+    DRAFT | ACTIVE | DEPRECATED
+
+    DRAFT ──activate──► ACTIVE
+        [GUARD: formula documented; inputs identified; version = 1]
+
+    ACTIVE ──new_version──► DEPRECATED (old) + ACTIVE (new)
+        {ACTION: old snapshots retained; new calculations use new version}
+
+
+================================================================================
+13. CROSS-ENTITY LIFECYCLE RULES
+================================================================================
+
+Rule L1: Parent constrains child
+    BosVenture ARCHIVED → all initiatives must be CLOSED first
+    BosInitiative CLOSED → no new attributions; experiments terminal
+
+Rule L2: Closure cascades
+    Initiative CLOSED requires LessonLearned (if investment > 0 or leads > 0)
+    Venture ARCHIVED requires all initiatives CLOSED
+
+Rule L3: Audit immutability
+    No hard delete for: BosAttribution, BosDecision, BosFunnelStageEvent,
+    BosMetricSnapshot, BosLessonLearned (deprecate/void/supersede only)
+
+Rule L4: Pivot continuity
+    PIVOTED initiative must link successor_initiative_id and predecessor_initiative_id
+
+Rule L5: Permission gates on transitions
+    See Document 12 — e.g., only bos_initiatives_manage may activate initiatives
+
+
+================================================================================
+14. LIFECYCLE GAPS IDENTIFIED (vs documents 01–09)
+================================================================================
+
+Previously undefined — now defined in this document:
+    • BosVenture lifecycle
+    • BosAcquisitionChannel lifecycle
+    • BosAttribution lifecycle (supersede/dispute/void)
+    • BosFunnelStageEvent lifecycle
+    • BosDecision lifecycle (expanded in Doc 13)
+    • BosPlaybook, BosAssumption, BosRisk lifecycles
+    • BosMetricDefinition versioning lifecycle
+
+Still requires future document (implementation phase):
+    • BosAttributionRule lifecycle
+    • ExternalAdapter sync job lifecycle
+
+================================================================================
+END OF DOCUMENT 11 — Entity Lifecycles
+================================================================================

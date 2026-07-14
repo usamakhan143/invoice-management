@@ -32,6 +32,8 @@ export interface UserProfile {
   companyId?: string;
   // New granular permissions system
   granularPermissions?: string[]; // Array of permission strings
+  /** Bank account ids hidden from form dropdowns (from role). Owner ignores this. */
+  restrictedBankAccountIds?: string[];
   // Keep old permissions for backward compatibility during migration
   permissions?: Permission[];
   isActive?: boolean;
@@ -53,6 +55,7 @@ export interface CompanyUser {
   role: string; // Custom role name
   // New granular permissions
   granularPermissions: string[];
+  restrictedBankAccountIds?: string[];
   // Keep old permissions for backward compatibility
   permissions: Permission[];
   isActive: boolean;
@@ -208,6 +211,42 @@ export interface BankReconciliation {
   notes?: string;
   status: "posted" | "reversed";
   /** When this row reverses a prior reconciliation. */
+  reversalOfId?: string;
+  createdAt: firebase.firestore.Timestamp;
+  createdByDisplayName?: string;
+}
+
+/** Source/category of a manual deposit (money in not tied to an invoice). */
+export type BankDepositType =
+  | "owner_contribution"
+  | "cash_deposit"
+  | "external_transfer"
+  | "refund_non_expense"
+  | "other";
+
+/**
+ * A manual deposit of funds into a bank account (`bankDeposits` collection).
+ * Append-only money-in event for funds NOT tied to an invoice (owner contributions,
+ * cash deposits, external transfers, etc.). Credits the chosen bank account.
+ */
+export interface BankDeposit {
+  id: string;
+  companyId: string;
+  /** Creator uid (who recorded the deposit). */
+  userId: string;
+  bankAccountId: string;
+  bankAccountName: string;
+  currency: string;
+  currencySymbol: string;
+  amount: number;
+  /** When the money was actually deposited. */
+  depositDate: firebase.firestore.Timestamp;
+  depositType: BankDepositType;
+  /** Optional external reference (slip no., transaction id, cheque no.). */
+  referenceNumber?: string;
+  notes?: string;
+  status: "posted" | "reversed";
+  /** When this row reverses a prior deposit. */
   reversalOfId?: string;
   createdAt: firebase.firestore.Timestamp;
   createdByDisplayName?: string;
@@ -422,6 +461,8 @@ export type ActivityType =
   | "loan_repayment_deleted"
   | "bank_reconciliation_posted"
   | "bank_reconciliation_reversed"
+  | "bank_deposit_recorded"
+  | "bank_deposit_reversed"
   | "vendor_created"
   | "vendor_updated"
   | "vendor_deleted"

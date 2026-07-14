@@ -328,6 +328,42 @@ export class LoanService {
   }
 
   /**
+   * Mark a loan as written off (deemed unrecoverable) or reopen it.
+   * Status-only — never moves money. Disbursement already left the account when the loan
+   * was created; a write-off is an accounting acknowledgement that it won't be repaid.
+   * Reopening recomputes the proper status from cached repayments.
+   */
+  static async setWriteOff(
+    loanId: string,
+    writeOff: boolean,
+  ): Promise<{ status: LoanStatus }> {
+    const lid = (loanId || "").trim();
+    if (!lid) throw new Error("Missing loan id");
+    const loanRef = db.collection("loans").doc(lid);
+    let status: LoanStatus = "outstanding";
+
+    await db.runTransaction(async (transaction) => {
+      const snap = await transaction.get(loanRef);
+      if (!snap.exists) throw new Error("Loan not found");
+      const data = snap.data() as {
+        principalAmount?: number;
+        totalRepaidAmount?: number;
+        status?: LoanStatus;
+      };
+      if (writeOff) {
+        status = "written_off";
+      } else {
+        const principal = Number(data.principalAmount ?? 0);
+        const repaid = Number(data.totalRepaidAmount ?? 0);
+        status = computeStatus(principal, repaid);
+      }
+      transaction.update(loanRef, { status, updatedAt: Timestamp.now() });
+    });
+
+    return { status };
+  }
+
+  /**
    * Delete a loan. Only allowed when it has no repayments. Reverses the original source debit
    * by crediting the source bank account back.
    */

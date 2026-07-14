@@ -11,6 +11,8 @@ export const PERMISSION_CATEGORIES = {
   BANK_ACCOUNTS: "bank-accounts",
   EXPENSES: "expenses",
   LOANS: "loans",
+  REPORTS: "reports",
+  BOS: "bos",
   USER_MANAGEMENT: "user-management",
   CUSTOM_ROLES: "custom-roles",
   COMPANY_ACTIVITY: "company-activity",
@@ -101,6 +103,14 @@ export const GRANULAR_PERMISSIONS = {
   BANK_RECONCILIATION_POST: "bank_reconciliation_post",
   /** Reverse a previously posted reconciliation (compensating entry) */
   BANK_RECONCILIATION_REVERSE: "bank_reconciliation_reverse",
+  /** View manual deposit history */
+  BANK_DEPOSITS_VIEW: "bank_deposits_view",
+  /** Record a manual deposit (money in not tied to an invoice) */
+  BANK_DEPOSIT_CREATE: "bank_deposit_create",
+  /** Reverse a previously recorded manual deposit (compensating entry) */
+  BANK_DEPOSIT_REVERSE: "bank_deposit_reverse",
+  /** See current balance in bank account dropdowns on forms (expenses, loans, transfers, etc.) */
+  BANK_ACCOUNTS_VIEW_PICKER_BALANCE: "bank_accounts_view_picker_balance",
 
   // Expenses Page Permissions
   EXPENSES_VIEW: "expenses_view",
@@ -122,6 +132,8 @@ export const GRANULAR_PERMISSIONS = {
   EXPENSES_RETURNS_VIEW: "expenses_returns_view",
   /** Record a received return/refund/cashback (credits a bank account) */
   EXPENSES_RETURNS_RECEIVE: "expenses_returns_receive",
+  /** See filtered expense totals converted to USD on the expenses page (owner always) */
+  EXPENSES_VIEW_USD_TOTAL: "expenses_view_usd_total",
 
   // Loans / Advances / Receivables Page Permissions
   /** Access the Loans page and view loans/receivables list */
@@ -136,6 +148,26 @@ export const GRANULAR_PERMISSIONS = {
   LOANS_DELETE: "loans_delete",
   /** Record a received repayment against a loan (credits the destination account) */
   LOANS_RECEIVE_REPAYMENT: "loans_receive_repayment",
+
+  // Financial Reports Page Permissions
+  /** Access the Reports page (financial reports + CSV export) */
+  REPORTS_VIEW: "reports_view",
+  /** Export reports to CSV */
+  REPORTS_EXPORT: "reports_export",
+
+  // Business Operating System (vertical slice)
+  BOS_VENTURES_VIEW: "bos_ventures_view",
+  BOS_VENTURES_MANAGE: "bos_ventures_manage",
+  BOS_INITIATIVES_VIEW: "bos_initiatives_view",
+  BOS_INITIATIVES_MANAGE: "bos_initiatives_manage",
+  BOS_DECISIONS_VIEW: "bos_decisions_view",
+  BOS_DECISIONS_MANAGE: "bos_decisions_manage",
+  BOS_ATTRIBUTIONS_VIEW: "bos_attributions_view",
+  BOS_ATTRIBUTIONS_MANAGE: "bos_attributions_manage",
+  BOS_MILESTONES_VIEW: "bos_milestones_view",
+  BOS_MILESTONES_MANAGE: "bos_milestones_manage",
+  BOS_MILESTONE_TEMPLATES_VIEW: "bos_milestone_templates_view",
+  BOS_MILESTONE_TEMPLATES_MANAGE: "bos_milestone_templates_manage",
 
   // Company Activity Section (Admin only)
   COMPANY_ACTIVITY_VIEW: "company_activity_view",
@@ -307,6 +339,14 @@ export const PERMISSION_DESCRIPTIONS = {
     "Reconcile a bank account balance to the actual statement balance (posts an adjustment)",
   [GRANULAR_PERMISSIONS.BANK_RECONCILIATION_REVERSE]:
     "Reverse a previously posted bank reconciliation (compensating adjustment)",
+  [GRANULAR_PERMISSIONS.BANK_DEPOSITS_VIEW]:
+    "View manual deposit history (owner contributions, cash deposits, etc.)",
+  [GRANULAR_PERMISSIONS.BANK_DEPOSIT_CREATE]:
+    "Record a manual deposit into a bank account (money in not tied to an invoice)",
+  [GRANULAR_PERMISSIONS.BANK_DEPOSIT_REVERSE]:
+    "Reverse a previously recorded manual deposit (compensating entry)",
+  [GRANULAR_PERMISSIONS.BANK_ACCOUNTS_VIEW_PICKER_BALANCE]:
+    "See current account balance in bank account dropdowns on forms (expenses, loans, transfers, deposits, etc.)",
 
   // Expenses
   [GRANULAR_PERMISSIONS.EXPENSES_VIEW]: "Access expenses page and view expense list",
@@ -318,17 +358,19 @@ export const PERMISSION_DESCRIPTIONS = {
   [GRANULAR_PERMISSIONS.EXPENSES_BULK_DELETE]:
     "Delete multiple expenses at once from the expenses list",
   [GRANULAR_PERMISSIONS.EXPENSES_PAYEES_VIEW]:
-    "Access the Payees tab and view the saved payee directory",
+    "Access the Payees tab and view the saved payee directory (read-only; no add, edit, or delete)",
   [GRANULAR_PERMISSIONS.EXPENSES_PAYEES_MANAGE]:
-    "Add, edit, and delete saved payees (also covered by expense create/edit/delete if those are enabled)",
+    "Add, edit, and delete saved payees (includes Payees tab access)",
   [GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_VIEW]:
-    "Access the Categories tab and view expense categories",
+    "Access the Categories tab and view expense categories (read-only; no add, edit, or delete)",
   [GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE]:
-    "Add, edit, and delete expense categories, including renaming a category on existing expenses (also covered by expense create/edit/delete if those are enabled)",
+    "Add, edit, and delete expense categories, including renaming a category on existing expenses (includes Categories tab access)",
   [GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW]:
     "View returns/refunds/cashbacks received against expenses (Gross, Returns, Net)",
   [GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE]:
     "Record a received return/refund/cashback against an expense (credits the selected bank account)",
+  [GRANULAR_PERMISSIONS.EXPENSES_VIEW_USD_TOTAL]:
+    "View expense list totals converted to USD (Gross, Returns, Net summary cards)",
 
   // Loans / Advances / Receivables
   [GRANULAR_PERMISSIONS.LOANS_VIEW]:
@@ -342,6 +384,29 @@ export const PERMISSION_DESCRIPTIONS = {
     "Delete a loan when it has no repayments (reverses the original source debit)",
   [GRANULAR_PERMISSIONS.LOANS_RECEIVE_REPAYMENT]:
     "Record a received repayment against a loan (credits the destination bank account)",
+
+  // Financial Reports
+  [GRANULAR_PERMISSIONS.REPORTS_VIEW]:
+    "Access the Reports page (expense, returns, loan, deposit, reconciliation summaries)",
+  [GRANULAR_PERMISSIONS.REPORTS_EXPORT]:
+    "Export financial reports to CSV",
+
+  [GRANULAR_PERMISSIONS.BOS_VENTURES_VIEW]: "View BOS ventures (strategic business units)",
+  [GRANULAR_PERMISSIONS.BOS_VENTURES_MANAGE]: "Create and update BOS ventures",
+  [GRANULAR_PERMISSIONS.BOS_INITIATIVES_VIEW]: "View BOS initiatives",
+  [GRANULAR_PERMISSIONS.BOS_INITIATIVES_MANAGE]:
+    "Create, activate, pause, and close BOS initiatives",
+  [GRANULAR_PERMISSIONS.BOS_DECISIONS_VIEW]: "View BOS decision log",
+  [GRANULAR_PERMISSIONS.BOS_DECISIONS_MANAGE]: "Record and update BOS decisions",
+  [GRANULAR_PERMISSIONS.BOS_ATTRIBUTIONS_VIEW]: "View expense attributions (BOS sidecar)",
+  [GRANULAR_PERMISSIONS.BOS_ATTRIBUTIONS_MANAGE]:
+    "Link ERP expenses to initiatives via BosAttribution sidecar",
+  [GRANULAR_PERMISSIONS.BOS_MILESTONES_VIEW]: "View initiative milestones and progress",
+  [GRANULAR_PERMISSIONS.BOS_MILESTONES_MANAGE]:
+    "Create, edit, complete, block, and skip initiative milestones",
+  [GRANULAR_PERMISSIONS.BOS_MILESTONE_TEMPLATES_VIEW]: "View reusable milestone templates",
+  [GRANULAR_PERMISSIONS.BOS_MILESTONE_TEMPLATES_MANAGE]:
+    "Create and edit milestone templates from initiatives",
 
   // Company Activity
   [GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW]: "View Company Activity section (Admin only)",
@@ -485,6 +550,10 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.BANK_RECONCILIATIONS_VIEW,
     GRANULAR_PERMISSIONS.BANK_RECONCILIATION_POST,
     GRANULAR_PERMISSIONS.BANK_RECONCILIATION_REVERSE,
+    GRANULAR_PERMISSIONS.BANK_DEPOSITS_VIEW,
+    GRANULAR_PERMISSIONS.BANK_DEPOSIT_CREATE,
+    GRANULAR_PERMISSIONS.BANK_DEPOSIT_REVERSE,
+    GRANULAR_PERMISSIONS.BANK_ACCOUNTS_VIEW_PICKER_BALANCE,
   ],
   [PERMISSION_CATEGORIES.EXPENSES]: [
     GRANULAR_PERMISSIONS.EXPENSES_VIEW,
@@ -499,6 +568,7 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.EXPENSES_CATEGORIES_MANAGE,
     GRANULAR_PERMISSIONS.EXPENSES_RETURNS_VIEW,
     GRANULAR_PERMISSIONS.EXPENSES_RETURNS_RECEIVE,
+    GRANULAR_PERMISSIONS.EXPENSES_VIEW_USD_TOTAL,
   ],
   [PERMISSION_CATEGORIES.LOANS]: [
     GRANULAR_PERMISSIONS.LOANS_VIEW,
@@ -507,6 +577,10 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.LOANS_EDIT,
     GRANULAR_PERMISSIONS.LOANS_DELETE,
     GRANULAR_PERMISSIONS.LOANS_RECEIVE_REPAYMENT,
+  ],
+  [PERMISSION_CATEGORIES.REPORTS]: [
+    GRANULAR_PERMISSIONS.REPORTS_VIEW,
+    GRANULAR_PERMISSIONS.REPORTS_EXPORT,
   ],
   [PERMISSION_CATEGORIES.COMPANY_ACTIVITY]: [
     GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW,
@@ -569,6 +643,20 @@ export const PERMISSION_GROUPS = {
     GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_MY,
     GRANULAR_PERMISSIONS.PERFORMANCE_ASSIGNMENT_REPORT_TEAM,
   ],
+  [PERMISSION_CATEGORIES.BOS]: [
+    GRANULAR_PERMISSIONS.BOS_VENTURES_VIEW,
+    GRANULAR_PERMISSIONS.BOS_VENTURES_MANAGE,
+    GRANULAR_PERMISSIONS.BOS_INITIATIVES_VIEW,
+    GRANULAR_PERMISSIONS.BOS_INITIATIVES_MANAGE,
+    GRANULAR_PERMISSIONS.BOS_DECISIONS_VIEW,
+    GRANULAR_PERMISSIONS.BOS_DECISIONS_MANAGE,
+    GRANULAR_PERMISSIONS.BOS_ATTRIBUTIONS_VIEW,
+    GRANULAR_PERMISSIONS.BOS_ATTRIBUTIONS_MANAGE,
+    GRANULAR_PERMISSIONS.BOS_MILESTONES_VIEW,
+    GRANULAR_PERMISSIONS.BOS_MILESTONES_MANAGE,
+    GRANULAR_PERMISSIONS.BOS_MILESTONE_TEMPLATES_VIEW,
+    GRANULAR_PERMISSIONS.BOS_MILESTONE_TEMPLATES_MANAGE,
+  ],
 };
 
 // Helper function to get all permissions as an array
@@ -618,6 +706,7 @@ export const PAGES = {
   LEADS_ASSIGNED_HUB: "leads-assigned-hub",
   MY_ASSIGNED_LEADS: "my-assigned-leads",
   PERFORMANCE: "performance",
+  BOS: "bos",
 } as const;
 
 // Legacy actions for backward compatibility (to be removed)

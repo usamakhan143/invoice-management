@@ -1,0 +1,318 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 10 — Domain Glossary
+================================================================================
+
+Authoring perspective: Principal Enterprise Software Architect
+Status: Architecture phase — canonical terminology
+Version: 1.0
+
+RULE: Every term in this glossary has ONE meaning within the BOS ecosystem.
+      If a term already exists in the ERP with a different meaning, the BOS
+      term uses a distinct canonical name (see "Forbidden Aliases" section).
+
+================================================================================
+1. CANONICAL NAMING STANDARD
+================================================================================
+
+Prefix convention:
+    Bos*     — All first-class BOS entities (e.g., BosVenture, BosInitiative)
+    bos*     — Collection / module namespace (documentation only at this stage)
+    ERP:*    — Existing operational module entities (unchanged names)
+
+Forbidden in BOS domain model:
+    "Business" alone     — Ambiguous (see ERP:Business vs BosVenture)
+    "Campaign" alone     — Ambiguous (see ERP:Campaign vs BosCampaignLink)
+    "Project" alone      — Ambiguous (see BosDeliveryEngagement vs PM tools)
+    "Category" alone     — Ambiguous (see ERP:ExpenseCategory vs BosCostCenter)
+
+Documentation may use plain English in prose; the DOMAIN MODEL must use
+canonical names from this glossary.
+
+
+================================================================================
+2. FOUNDATION TERMS
+================================================================================
+
+TERM: Business Operating System (BOS)
+    Definition: The strategic layer above operational ERP/CRM modules that
+                provides context, attribution, measurement, decisions, and
+                institutional memory across multiple ventures.
+    Not:         An accounting system, CRM, or project management tool.
+
+TERM: BosPortfolio
+    Definition: The complete set of ventures operated by the founder or
+                organization. The highest-level container in BOS.
+    Synonym:     Business Portfolio (prose only)
+    Not:         A single venture; not a financial portfolio in the investment sense.
+
+TERM: BosVenture
+    Definition: A distinct business the founder operates (e.g., Mobile App Agency,
+                AI Automation Agency, SaaS Product X). Owns initiatives, channels,
+                and venture-level KPIs.
+    Canonical:   BosVenture
+    Forbidden:   "Business" in code/schema (conflicts with ERP:Business)
+    ERP conflict: ERP:Business = commercial entity under a Customer in CRM.
+                  Completely unrelated to BosVenture. NEVER merge.
+
+TERM: BosBusinessModel
+    Definition: A reusable classification of venture economics and operating
+                pattern (Agency, SaaS, Product, Marketplace, Info Product).
+    Not:         A specific venture; not a revenue number.
+
+TERM: BosBusinessUnit (future)
+    Definition: A subdivision within a BosVenture (e.g., "Enterprise Division"
+                within an agency). Optional hierarchy level.
+    Not:         A separate venture; not ERP:Business.
+
+
+================================================================================
+3. STRATEGY TERMS
+================================================================================
+
+TERM: BosInitiative (Growth Initiative)
+    Definition: A time-bound strategic bet within a BosVenture with hypothesis,
+                budget, channels, success criteria, and measurable ROI.
+    Canonical:   BosInitiative
+    Synonym:     Growth Initiative (prose)
+    Not:         A marketing campaign, a project, a task, an expense category.
+
+TERM: BosStrategicGoal
+    Definition: A quarterly or annual objective (OKR-style) that one or more
+                initiatives support. Provides strategic alignment above initiatives.
+    Not:         An initiative; not a KPI value.
+
+TERM: BosAcquisitionChannel
+    Definition: A reusable method of acquiring customers/leads (LinkedIn Outreach,
+                Google Ads, Referrals, Content Marketing, GoHighLevel Funnel).
+    Not:         A CRM campaign; not an ad account; not a URL.
+
+TERM: BosCostCenter
+    Definition: An organizational spend classification (Engineering, Marketing,
+                Operations, Tools) independent of acquisition channel.
+    Not:         ERP:ExpenseCategory (operational bookkeeping label).
+                  A single expense has BOTH an ERP category AND optionally a
+                  BosCostCenter via attribution. They serve different purposes.
+
+TERM: BosHypothesis
+    Definition: A testable belief driving an initiative or experiment, structured
+                as: "We believe [action] will produce [outcome] because [reason]."
+    Not:         A success criterion; not a KPI target.
+
+TERM: BosOffer
+    Definition: What is being sold or validated in an initiative (service package,
+                SaaS tier, product SKU). Links initiative to revenue analysis.
+    Missing from prior docs — REQUIRED for multi-revenue-model support.
+    Not:         ERP:Product (catalog item); BosOffer is strategic positioning.
+
+TERM: BosMarketSegment / BosICP
+    Definition: Ideal Customer Profile or target market for an initiative
+                (industry, company size, role, geography).
+    Missing from prior docs — REQUIRED for channel/experiment analysis.
+    Not:         A lead record; not a CRM segment export.
+
+
+================================================================================
+4. EXECUTION TERMS
+================================================================================
+
+TERM: BosExperiment
+    Definition: A structured test within a BosInitiative with hypothesis, budget,
+                duration, success criteria, and outcome (success/failure/inconclusive).
+    Not:         An A/B test tool; not a campaign.
+
+TERM: BosCampaignLink
+    Definition: A BOS strategic wrapper that links an ERP:Campaign (CRM outreach
+                campaign) to a BosInitiative, BosAcquisitionChannel, and optionally
+                BosExperiment. BOS does NOT replace ERP:Campaign.
+    Canonical:   BosCampaignLink
+    Forbidden:   "Campaign" as a standalone BOS entity name.
+
+TERM: ERP:Campaign
+    Definition: Existing CRM module entity for outreach campaigns, tags, and lead
+                assignment. Unchanged. BOS reads and links; never owns.
+
+TERM: BosDeliveryEngagement
+    Definition: Post-sale delivery work for a specific client (project economics,
+                profitability tracking). NOT a task manager.
+    Canonical:   BosDeliveryEngagement
+    Forbidden:   "Project" alone (conflicts with PM tools and vague usage).
+
+TERM: BosAssumption
+    Definition: A explicit belief taken as true for planning (e.g., "CPL will be
+                under $20"). If proven false, triggers decision/review.
+    Missing from prior docs — critical for institutional memory.
+
+TERM: BosRisk
+    Definition: A identified threat to initiative success with likelihood,
+                impact, and mitigation. Distinct from assumptions.
+    Missing from prior docs.
+
+
+================================================================================
+5. ATTRIBUTION & MEASUREMENT TERMS
+================================================================================
+
+TERM: BosAttribution
+    Definition: A sidecar record linking an operational fact (ERP:Expense,
+                ERP:Lead, ERP:Invoice, etc.) to BOS context (initiative,
+                channel, experiment, cost center) with optional allocation %.
+    Rule:        NEVER modifies the source operational record.
+
+TERM: BosAttributionRule (future)
+    Definition: A configurable rule for semi-automatic attribution (e.g.,
+                "Expenses with payee Google → Channel Google Ads").
+    Not:         An attribution instance; not a Firestore security rule.
+
+TERM: BosSourceModule
+    Definition: Enum identifying origin of attributed record: expense, lead,
+                invoice, loan, time_entry, deposit, external_adapter, etc.
+
+TERM: BosFunnelStageEvent
+    Definition: A point-in-time record that a lead/opportunity reached a funnel
+                stage (Lead Generated, Meeting Held, Proposal Sent, Client Closed).
+    Authority:   Stage facts may originate in CRM; BOS owns the attributed
+                interpretation for initiative/channel analytics.
+
+TERM: BosMetricDefinition
+    Definition: A versioned definition of a KPI (name, formula, inputs, scope).
+                Prevents "ROI changed because formula changed" confusion.
+    Missing from prior docs — REQUIRED for 10-year maintainability.
+
+TERM: BosMetricSnapshot
+    Definition: A point-in-time computed KPI value for an initiative/channel/
+                venture at a specific date. Enables historical reporting even
+                when formulas or attributions change later.
+
+TERM: BosInvestment (computed concept)
+    Definition: Sum of attributed operational outflows minus returns. Not a
+                stored authoritative amount — computed from BosAttribution +
+                ERP:Expense + ERP:ExpenseReturn unless cached as BosMetricSnapshot.
+
+TERM: BosRevenue (computed concept)
+    Definition: Sum of attributed invoice/payment inflows. Computed, not stored
+                as authoritative, unless cached.
+
+TERM: ROI (Return on Investment)
+    Definition: (Revenue - Investment) / Investment × 100. Always computed via
+                BosMetricDefinition; never manually entered as source of truth.
+
+
+================================================================================
+6. INTELLIGENCE TERMS
+================================================================================
+
+TERM: BosDecision
+    Definition: A recorded strategic choice with context, rationale, alternatives,
+                expected outcome, and later actual outcome. Core institutional
+                memory asset. See Document 13.
+
+TERM: BosDecisionAlternative
+    Definition: A option considered but not chosen when a BosDecision was made.
+    Not:         A lesson learned; not an experiment.
+
+TERM: BosLessonLearned
+    Definition: Structured insight captured at initiative/experiment closure or
+                after significant events. Searchable, tagged, reusable.
+    Distinct from: BosDecision (a choice) vs BosLesson (an insight).
+
+TERM: BosPlaybook
+    Definition: A reusable template derived from successful initiatives containing
+                recommended channels, budget ranges, steps, and linked lessons.
+    Lifecycle:   Draft → Published → Deprecated (see Document 11).
+
+TERM: BosInstitutionalMemory
+    Definition: The collective set of BosDecision, BosLessonLearned, BosPlaybook,
+                and BosAssumption records across the portfolio. The compounding
+                asset of the BOS.
+
+
+================================================================================
+7. INTEGRATION TERMS
+================================================================================
+
+TERM: ERP:Expense
+    Definition: Existing expense document. Operational source of financial outflow.
+    BOS role:   Read + BosAttribution only.
+
+TERM: ERP:ExpenseReturn
+    Definition: Existing refund/cashback event against an expense.
+    BOS role:   Read; reduces net investment in ROI calculations.
+
+TERM: ERP:Lead
+    Definition: Existing CRM lead record.
+    BOS role:   Read + BosAttribution + BosFunnelStageEvent.
+
+TERM: ERP:Invoice
+    Definition: Existing invoice/revenue record.
+    BOS role:   Read + revenue BosAttribution.
+
+TERM: ERP:Customer / ERP:Business (CRM)
+    Definition: Customer and sub-entity in CRM. ERP:Business = client's business,
+                NOT founder's venture.
+    BOS role:   Read for revenue linkage. NEVER rename or overload.
+
+TERM: ExternalAdapter
+    Definition: Optional connector (GoHighLevel, Google Ads, Stripe) that imports
+                data into BOS attribution layer. Replaceable. Never embedded in core.
+
+TERM: Enrichment
+    Definition: Adding BOS columns/context to Reports/Dashboard without modifying
+                existing calculations or outputs.
+
+
+================================================================================
+8. PERMISSION & ACCESS TERMS
+================================================================================
+
+TERM: Operational Role
+    Definition: ERP permissions (expenses_create, leads_view, etc.). Unchanged.
+
+TERM: BOS Role
+    Definition: Strategic permissions (bos_initiatives_manage, bos_attributions_manage,
+                bos_decisions_manage). Separate namespace from operational roles.
+
+TERM: Attribution Coverage
+    Definition: % of operational records in scope that have active BosAttribution.
+                Data quality KPI, not a permission.
+
+
+================================================================================
+9. FORBIDDEN ALIASES — QUICK REFERENCE
+================================================================================
+
+    Never use in BOS schema     | Use instead              | Why
+    ----------------------------|--------------------------|---------------------------
+    Business                    | BosVenture               | CRM ERP:Business conflict
+    Campaign (BOS entity)       | BosCampaignLink          | ERP:Campaign conflict
+    Project                     | BosDeliveryEngagement    | PM tool confusion
+    Category (strategic)        | BosCostCenter            | ERP:ExpenseCategory
+    Tag (CRM)                   | ERP:CampaignTag          | Different from BosTag
+    Return (generic)            | ERP:ExpenseReturn        | Specific event type
+    BI Layer                    | BOS Layer                | Single canonical name
+    Investment (stored field)   | Computed via attribution | Source of truth rule
+
+
+================================================================================
+10. GLOSSARY COMPLETENESS — TERMS ADDED BY THIS DOCUMENT
+================================================================================
+
+The following terms were MISSING from documents 01–09 and are now canonical:
+
+    • BosVenture (replaces ambiguous "Business" in BOS context)
+    • BosCampaignLink (replaces ambiguous "Campaign" in BOS context)
+    • BosDeliveryEngagement (replaces ambiguous "Project")
+    • BosOffer
+    • BosMarketSegment / BosICP
+    • BosAssumption
+    • BosRisk
+    • BosAttributionRule
+    • BosFunnelStageEvent
+    • BosMetricDefinition
+    • BosMetricSnapshot
+    • BosDecisionAlternative
+    • BosInstitutionalMemory
+
+================================================================================
+END OF DOCUMENT 10 — Domain Glossary
+================================================================================

@@ -113,14 +113,20 @@ export class ExpenseReturnService {
       const expData = expenseSnap.data() as {
         amount?: number;
         totalReturnedAmount?: number;
+        expectedReturnAvailable?: boolean;
       };
+      if (expData.expectedReturnAvailable !== true) {
+        throw new Error(
+          "This expense is not marked for expected return (refund / cashback).",
+        );
+      }
       const grossAmount = Number(expData.amount ?? params.expenseAmount ?? 0);
       const alreadyReturned = Number(expData.totalReturnedAmount ?? 0);
       const remaining = Math.round((grossAmount - alreadyReturned) * 100) / 100;
 
       if (amount > remaining + 0.0001) {
         throw new Error(
-          `Return exceeds remaining returnable amount (${remaining.toFixed(2)}).`,
+          `Return cannot exceed the expense amount (${grossAmount.toFixed(2)}). Remaining: ${remaining.toFixed(2)}.`,
         );
       }
 

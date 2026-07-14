@@ -1,0 +1,267 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 01 — Current System Audit
+================================================================================
+
+Scope: Existing production React + Firebase application (invoice-management)
+Purpose: Baseline inventory before BOS integration
+Date: Architecture validation phase
+
+================================================================================
+1. APPLICATION STACK
+================================================================================
+
+    Layer              | Technology
+    -------------------|--------------------------------------------------
+    Frontend           | React 18, TypeScript, Vite
+    Routing            | react-router-dom (HashRouter)
+    Styling            | Tailwind CSS (CDN) + index.css
+    Backend            | Firebase (compat SDK) — Firestore, Auth
+    State              | React useState/useEffect/useMemo — no global store
+    Permissions        | granularPermissions[] on user + customRoles
+    Lazy loading       | React.lazy() for all page routes (App.tsx)
+    Layout             | AppLayout (Sidebar + scrollable main + footer)
+
+
+================================================================================
+2. ROUTING MAP (App.tsx)
+================================================================================
+
+    Path                    | Page Component          | Lines (approx)
+    ------------------------|-------------------------|---------------
+    /                       | DashboardPage           | 1,513
+    /invoices               | InvoicesListPage        | 852
+    /invoices/new|edit/:id  | InvoiceFormPage         | 1,182
+    /customers              | CustomersPage           | 695
+    /customers/:id          | CustomerDetailPage      | 1,049
+    /leads                  | LeadsPage               | 2,588
+    /leads/import           | LeadImportPage          | 1,397
+    /leads/assigned         | AssignedLeadsHubPage    | 942
+    /leads/my-assigned      | MyAssignedLeadsPage     | 1,820
+    /leads/:id              | LeadDetailPage          | 2,128
+    /performance            | PerformancePage         | 192
+    /campaigns              | CampaignsPage           | 504
+    /products               | ProductsPage            | 559
+    /bank-accounts          | BankAccountsPage        | 2,361
+    /expenses               | ExpensesPage            | 3,190
+    /loans                  | LoansPage               | 1,461
+    /reports                | ReportsPage             | 1,055
+    /users                  | UserManagementPage      | 1,659
+    /activity               | ActivityPage            | 303
+    /company-activity       | CompanyActivityPage     | 580
+    /profile                | ProfilePage             | 970
+    /data-management        | DataManagementPage      | 237
+    /super-admin            | SuperAdminDashboard     | (admin)
+
+    BOS routes: NONE exist today.
+
+
+================================================================================
+3. FIRESTORE COLLECTIONS (FROM firestore.rules + CODEBASE)
+================================================================================
+
+Collection              | Primary scope key    | Used by BOS-relevant modules
+------------------------|----------------------|----------------------------
+users                   | uid                  | Auth, permissions
+companyUsers            | companyId            | Team, roles
+customRoles             | companyId            | Permissions
+impersonationSessions   | —                    | Admin
+userTokens              | —                    | Auth
+activities              | companyId            | Audit (extend for BOS)
+activity (legacy?)      | —                    | Legacy path in rules
+invoices                | companyId            | Revenue attribution (read)
+customers               | companyId            | CRM
+products                | companyId            | Catalog
+bankAccounts            | companyId / userId   | Finance
+bankTransfers           | companyId            | Finance
+bankReconciliations     | companyId            | Reports
+bankDeposits            | companyId            | Reports
+expenses                | companyId / userId   | Investment attribution (read)
+expenseReturns          | companyId            | Net investment calc
+expenseCategories       | companyId            | Operational only
+expenseCategoryInit     | companyId            | Seed marker
+vendors                 | companyId            | Payees (operational)
+loans                   | companyId            | Finance (not expense)
+loanRepayments          | companyId            | Finance
+leads                   | companyId            | Funnel attribution (read)
+leads/{id}/callLogs     | subcollection        | Meeting proxy
+leads/{id}/assignmentEvents | subcollection    | CRM
+businesses              | companyId            | CRM customer sub-entity (NOT BosVenture)
+campaigns               | companyId            | CRM outreach (link via BosCampaignLink)
+campaignTags            | companyId            | CRM
+outreachEvents          | companyId            | CRM outreach
+assigneeAssignmentLog   | companyId            | CRM
+companyAppSettings      | companyId            | Settings
+companies               | companyId            | Company profile
+subscriptions           | —                    | Billing
+companies/{id}/backups  | subcollection        | Backup
+
+BOS collections: NONE exist today.
+
+
+================================================================================
+4. SERVICES INVENTORY (services/*.ts)
+================================================================================
+
+Service                      | Pattern              | BOS relevance
+-----------------------------|----------------------|---------------------------
+firebase.ts                  | SDK init             | Reuse as-is
+companyId.ts                 | resolveCompanyId     | Reuse — same tenancy model
+expenseReturnService.ts      | Class + transactions | Pattern template for BOS writes
+loanService.ts               | Class + transactions | Pattern template
+bankAccountService.ts        | Class + subscribe    | Reuse read-only
+expenseCategoryService.ts    | subscribe + batch    | Do not merge with BOS
+vendorService.ts             | subscribe            | Do not merge with BOS
+invoiceService.ts            | Class + transactions | Revenue read for attribution
+campaignService.ts           | Class + subscribe    | Link target — do not replace
+businessService.ts           | CRUD for CRM Business| Do NOT use for BosVenture
+leadService.ts               | Large CRM service    | Read for funnel events
+activityLogger.ts            | Static log helper    | Extend ActivityType for BOS
+permissionService.ts         | Role sync            | Extend for bos_* keys
+balanceIntegrityService.ts   | Reports integrity    | Unrelated — leave untouched
+databaseMigrationService.ts  | Backup/restore       | Add BOS collections in v6+
+adminAnalyticsService.ts     | Super admin          | Unrelated
+csvExport (utils)            | Pure function        | Reuse for BOS CSV columns
+financeCurrencyDisplay       | React utils          | Reuse for KPI display
+expenseCompanyScope.ts       | companyId helpers    | Reuse pattern for BOS scope
+
+Missing today:
+    • No expenseService.ts (expense CRUD inline in ExpensesPage)
+    • No bos* services (expected — greenfield)
+
+
+================================================================================
+5. PERMISSIONS SYSTEM
+================================================================================
+
+Location:
+    config/permissions.ts     — GRANULAR_PERMISSIONS constants + categories
+    hooks/usePermissions.tsx  — 700+ lines of canXxx() helpers
+    components/RoleManagement.tsx — UI for custom roles
+    firestore.rules           — company access via canAccessCompanyData()
+
+Existing permission categories:
+    Dashboard, Invoices, Customers, Leads, Products, Bank, Expenses,
+    Loans, Reports, Users, Activity, Data Management, Performance, etc.
+
+BOS permissions: NONE (bos_* namespace not present)
+
+Owner bypass: userProfile.isOwner === true → all permissions
+
+Custom roles: stored in customRoles collection, synced to companyUsers
+
+
+================================================================================
+6. COMPANY TENANCY MODEL (CRITICAL FOR BOS)
+================================================================================
+
+    resolveCompanyIdForUser(user, profile):
+        Owner → user.uid
+        Team member → profile.companyId (owner's uid)
+
+    getExpenseCompanyId(user, profile):
+        Same logic (duplicate helper in expenseCompanyScope.ts)
+
+    Expense query scoping:
+        Company-wide: expenses.where("companyId", "==", companyId)
+        Own-only: expenses.where("userId", "==", uid)
+
+    BOS implication:
+        All new collections MUST use companyId field with same resolution.
+        BosVenture is NOT the same as companyId — one company may host
+        multiple BosVentures in future (Doc 10). Today: 1 company ≈ 1 founder
+        tenant; multiple ventures share same companyId.
+
+
+================================================================================
+7. REPORTING ENGINE (ReportsPage.tsx — 1,055 lines)
+================================================================================
+
+    Load pattern: Promise.all companyId queries → useState arrays
+    Filter: inRange() client-side on Timestamp fields
+    Tabs: cashflow, expenses, returns, loans, deposits, reconciliations,
+           accounts, integrity
+    Export: downloadCsv() from utils/csvExport.ts
+    Permissions: REPORTS_VIEW, REPORTS_EXPORT
+
+    No server aggregation. No charts. No BI dimensions.
+
+
+================================================================================
+8. CRM / FUNNEL (RELEVANT TO BOS DATA FLOW)
+================================================================================
+
+    Lead.status values (types.ts):
+        New | Contacted | Qualified | Proposal Sent | Won | Lost
+
+    Lead.campaignId — optional link to ERP:Campaign
+    Lead.source — free-text string (not structured BosAcquisitionChannel)
+    Lead conversion fields: convertedCustomerId, convertedBusinessId
+
+    Campaign.channelsHint — informational string only
+
+    PerformancePage — assignment/call activity reports (192 lines)
+    No formal funnel analytics module
+
+
+================================================================================
+9. ACTIVITY / AUDIT
+================================================================================
+
+    ActivityLogger → activities collection
+    ActivityType enum in types.ts — expense_*, loan_*, vendor_*, etc.
+    BOS activity types: NONE yet
+
+    Metadata shape: { entityId, entityType, oldValue, newValue }
+
+
+================================================================================
+10. UI / COMPONENT PATTERNS
+================================================================================
+
+    ProtectedComponent — permission-gated render
+    Spinner — loading states
+    DashboardCard — stat cards (reusable for BOS KPIs)
+    RowIconButton — table actions
+    Sidebar — Finance group: Bank, Expenses, Loans, Reports (collapsible)
+
+    Contexts:
+        ScreenLockContext — PIN gate (unrelated to BOS)
+        useAuth — user + profile
+        usePermissions — granular checks
+
+    Anti-pattern present:
+        Multiple pages > 2,000 lines with inline Firestore calls
+        ExpensesPage worst offender (3,190 lines)
+
+
+================================================================================
+11. WHAT EXISTS THAT MAPS TO BOS CONCEPTS (SUMMARY)
+================================================================================
+
+    BOS concept (Doc 10)     | Exists today?        | Notes
+    -------------------------|----------------------|---------------------------
+    BosPortfolio             | Implicit (companyId) | No venture list
+    BosVenture               | NO                   | Do not use ERP:businesses
+    BosInitiative            | NO                   | Greenfield
+    BosAcquisitionChannel    | Partial              | Lead.source, channelsHint
+    BosCostCenter            | NO                   | Expense.category ≠ this
+    BosAttribution           | NO                   | Greenfield core
+    BosExperiment            | NO                   | Greenfield
+    BosCampaignLink          | Partial              | Lead.campaignId only
+    ERP:Campaign             | YES                  | campaigns collection
+    ERP:Business             | YES                  | CRM only — name collision
+    BosDecision              | NO                   | Greenfield
+    BosLessonLearned         | NO                   | Greenfield
+    BosFunnelStageEvent      | Partial              | Lead.status changes only
+    BosMetricSnapshot        | NO                   | Greenfield
+    Investment tracking      | Computed manually    | Expenses + returns exist
+    Revenue attribution      | NO                   | Invoices exist, no link
+    KPI engine               | NO                   | Stats in ExpensesPage only
+    Decision engine          | NO                   | Greenfield
+    GoHighLevel adapter      | NO                   | Greenfield
+
+
+================================================================================
+END OF DOCUMENT 01 — Current System Audit
+================================================================================

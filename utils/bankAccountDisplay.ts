@@ -24,3 +24,19 @@ export function formatBankAccountListLabel(account: BankAccount): string {
 export function isBankIncludedInInvoicePicker(account: BankAccount): boolean {
   return account.includeInInvoicePicker !== false;
 }
+
+export function getBankAccountStoredBalance(account: BankAccount): number {
+  return Number(account.currentBalance ?? account.initialBalance ?? 0);
+}
+
+/** Label for bank account `<select>` options; balance suffix is optional. */
+export function formatBankAccountSelectLabel(
+  account: BankAccount,
+  showBalance: boolean,
+): string {
+  const sym = account.currencySymbol || "$";
+  const base = `${formatBankAccountListLabel(account)} (${sym})`;
+  if (!showBalance) return base;
+  const bal = getBankAccountStoredBalance(account);
+  return `${base} — Balance: ${sym}${bal.toFixed(2)}`;
+}

@@ -1,0 +1,171 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 08 — Backward Compatibility Checklist
+================================================================================
+
+Purpose: Pre/post deploy verification — existing production behavior preserved
+Execute: During QA phase of implementation (after Phase 1 build)
+
+================================================================================
+HOW TO USE
+================================================================================
+
+    • Each item: PASS / FAIL / N/A
+    • FAIL blocks production deploy until resolved
+    • Test as: (1) Owner (2) Finance custom role with bos_* (3) Staff without bos_*
+
+================================================================================
+A. EXPENSE MODULE (CRITICAL)
+================================================================================
+
+E-01  Staff user can create expense with all existing fields — no new required fields
+E-02  Staff user can edit own expense — same validation as before
+E-03  Staff user can record expense return — expectedReturnAvailable gating unchanged
+E-04  Expense document in Firestore has NO new fields after BOS deploy (sample audit)
+E-05  Expense list filters, pagination, search behave identically for staff
+E-06  Expense categories dropdown unchanged
+E-07  Vendor picker unchanged
+E-08  Bank account linkage on expense unchanged
+E-09  Company-wide vs own-only expense visibility unchanged
+E-10  Finance user WITHOUT bos_attribution_manage sees no attribute button
+
+
+================================================================================
+B. REPORTS MODULE
+================================================================================
+
+R-01  Cashflow tab totals match pre-deploy for same date range
+R-02  Expenses tab totals match pre-deploy (column add must not change amounts)
+R-03  Returns tab unchanged
+R-04  Loans tab unchanged
+R-05  Deposits tab unchanged
+R-06  Reconciliations tab unchanged
+R-07  Accounts tab unchanged
+R-08  Integrity tab unchanged — balanceIntegrityService untouched
+R-09  User without bos_reports_view sees Reports identical to pre-deploy (no column)
+R-10  CSV export without bos permission — same columns as before
+
+
+================================================================================
+C. BANK / LOANS
+================================================================================
+
+B-01  BankAccountsPage loads and transfers work
+B-02  Bank deposits recording works
+B-03  LoansPage loads — no Spinner or console errors
+B-04  Loan repayment recording works
+B-05  No new fields on bankAccounts, loans, loanRepayments documents
+
+
+================================================================================
+D. CRM (LEADS / CAMPAIGNS)
+================================================================================
+
+C-01  LeadsPage loads and CRUD works
+C-02  Lead.status values unchanged
+C-03  Lead.campaignId assignment unchanged
+C-04  CampaignsPage CRUD unchanged
+C-05  businesses collection (CRM) unchanged — no venture fields added
+C-06  Lead import flow unchanged
+
+
+================================================================================
+E. INVOICES / CUSTOMERS / PRODUCTS
+================================================================================
+
+I-01  Invoice create/edit/send unchanged
+I-02  Customer pages unchanged
+I-03  Products catalog unchanged
+I-04  No initiative fields on invoice documents
+
+
+================================================================================
+F. AUTH / PERMISSIONS / ROLES
+================================================================================
+
+P-01  Owner bypass still grants all ERP permissions
+P-02  Existing custom roles retain same ERP access after deploy
+P-03  New bos_* permissions default OFF for existing custom roles
+P-04  User without any bos_* cannot access /bos/* routes (redirect/blocked)
+P-05  Screen PIN / lock flow unchanged
+P-06  Impersonation flow unchanged (if used)
+
+
+================================================================================
+G. DASHBOARD / NAVIGATION
+================================================================================
+
+D-01  Existing finance snapshot widgets still render
+D-02  Finance sidebar group (Bank, Expenses, Loans, Reports) unchanged
+D-03  Strategy nav hidden for users without bos_* view permissions
+D-04  Mobile sidebar scroll — single scrollbar (no regression from layout fix)
+D-05  Dashboard PIN announcement bar still responsive
+
+
+================================================================================
+H. ACTIVITY / AUDIT
+================================================================================
+
+A-01  Existing activity types still display correctly
+A-02  Expense/loan activity logging still fires on ERP actions
+A-03  New bos_* activity types display human-readable labels
+
+
+================================================================================
+I. DATA MANAGEMENT / BACKUP
+================================================================================
+
+M-01  Backup export completes (v6) including BOS collections when present
+M-02  Restore v6 backup restores BOS collections
+M-03  Restore v5 backup into v6 app — ERP data intact; BOS empty (expected)
+M-04  Export v5 backup still importable (backward compatible import path)
+
+
+================================================================================
+J. FIRESTORE / SECURITY
+================================================================================
+
+F-01  User cannot read another company's bosVentures
+F-02  User cannot write bosAttributions with mismatched companyId
+F-03  Existing firestore.rules for expenses unchanged in behavior
+F-04  Deploy order verified: indexes READY before feature enable
+
+
+================================================================================
+K. BUILD / RUNTIME
+================================================================================
+
+K-01  npm run build passes with zero errors
+K-02  No new console errors on Dashboard, Expenses, Reports for staff user
+K-03  Lazy-loaded BOS routes do not break initial app load for staff
+K-04  Offline indicator behavior unchanged (if applicable)
+
+
+================================================================================
+L. BOS-SPECIFIC POSITIVE CHECKS (NEW BEHAVIOR)
+================================================================================
+
+N-01  Create venture → appears in list; activity logged
+N-02  Create initiative → lifecycle draft to active works
+N-03  Attribute expense → bosAttributions doc created; expense doc unchanged
+N-04  Re-attribute blocked or requires unlock per business rule
+N-05  Reports initiative column populated for attributed expenses only
+N-06  Initiative spend tab total matches sum of attributed expenses (sample)
+N-07  Decision created on initiative detail; visible in list
+N-08  Archive venture — initiatives handled per business rule (block or cascade)
+
+
+================================================================================
+SIGN-OFF
+================================================================================
+
+    Tester: _______________  Date: __________  Environment: staging / prod
+    Reviewer: _____________  Date: __________
+    Product owner: _________  Date: __________
+
+    All E-* and R-01 through R-08 must PASS for production release.
+
+
+================================================================================
+END OF DOCUMENT 08 — Backward Compatibility Checklist
+================================================================================

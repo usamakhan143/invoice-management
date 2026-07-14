@@ -1,30 +1,41 @@
 import { db } from "./firebase";
 import { ensurePerformanceHubWithContent } from "../config/permissions";
+import { normalizeRestrictedBankAccountIds } from "../utils/bankAccountAccess";
+
+export interface UserAccessSettings {
+  granularPermissions: string[];
+  restrictedBankAccountIds: string[];
+}
 
 export class PermissionService {
   /**
-   * Load granular permissions for a user based on their assigned role
+   * Load granular permissions and bank-account restrictions from role (or user profile).
    */
-  static async loadUserPermissions(userProfile: any): Promise<string[]> {
-    if (!userProfile) return [];
-
-    // Owner has all permissions
-    if (userProfile.isOwner) {
-      // Return all possible permissions for owners
-      const { getAllPermissions } = await import("../config/permissions");
-      return getAllPermissions();
+  static async loadUserAccessSettings(
+    userProfile: {
+      isOwner?: boolean;
+      uid?: string;
+      companyId?: string;
+      role?: string;
+      granularPermissions?: string[];
+      restrictedBankAccountIds?: string[];
+    } | null,
+  ): Promise<UserAccessSettings> {
+    if (!userProfile) {
+      return { granularPermissions: [], restrictedBankAccountIds: [] };
     }
 
-    /**
-     * Custom role document is the source of truth when the user has a named role.
-     * If we returned `users.granularPermissions` first, new toggles added in Role Management
-     * would never apply until every user was re-saved manually — `users` kept a stale copy.
-     */
+    if (userProfile.isOwner) {
+      const { getAllPermissions } = await import("../config/permissions");
+      return {
+        granularPermissions: getAllPermissions(),
+        restrictedBankAccountIds: [],
+      };
+    }
+
     if (userProfile.role && userProfile.role !== "custom") {
       try {
-        const companyId = userProfile.isOwner
-          ? (userProfile.uid ?? "").trim()
-          : (userProfile.companyId ?? "").trim();
+        const companyId = (userProfile.companyId ?? "").trim();
         if (companyId) {
           const rolesSnapshot = await db
             .collection("customRoles")
@@ -34,45 +45,112 @@ export class PermissionService {
 
           if (!rolesSnapshot.empty) {
             const roleData = rolesSnapshot.docs[0].data();
-            return ensurePerformanceHubWithContent(roleData.granularPermissions || []);
+            return {
+              granularPermissions: ensurePerformanceHubWithContent(
+                roleData.granularPermissions || [],
+              ),
+              restrictedBankAccountIds: normalizeRestrictedBankAccountIds(
+                roleData.restrictedBankAccountIds,
+              ),
+            };
           }
         }
       } catch (error) {
-        console.error("Error loading role permissions:", error);
+        console.error("Error loading role access settings:", error);
       }
     }
 
-    if (userProfile.granularPermissions && userProfile.granularPermissions.length > 0) {
-      return ensurePerformanceHubWithContent(userProfile.granularPermissions);
-    }
-
-    return [];
+    return {
+      granularPermissions: ensurePerformanceHubWithContent(
+        userProfile.granularPermissions || [],
+      ),
+      restrictedBankAccountIds: normalizeRestrictedBankAccountIds(
+        userProfile.restrictedBankAccountIds,
+      ),
+    };
   }
 
   /**
-   * Sync permissions between user profile and company user record
+   * Load granular permissions for a user based on their assigned role
    */
-  static async syncUserPermissions(userId: string, granularPermissions: string[]): Promise<void> {
+  static async loadUserPermissions(userProfile: unknown): Promise<string[]> {
+    const settings = await this.loadUserAccessSettings(
+      userProfile as Parameters<typeof this.loadUserAccessSettings>[0],
+    );
+    return settings.granularPermissions;
+  }
+
+  /**
+   * Sync permissions and bank restrictions to user + companyUsers records.
+   */
+  static async syncUserAccessSettings(
+    userId: string,
+    settings: UserAccessSettings,
+  ): Promise<void> {
     try {
-      // Update main user record
       await db.collection("users").doc(userId).update({
-        granularPermissions: granularPermissions,
+        granularPermissions: settings.granularPermissions,
+        restrictedBankAccountIds: settings.restrictedBankAccountIds,
       });
 
-      // Find and update company user record
       const companyUsersSnapshot = await db
         .collection("companyUsers")
         .where("uid", "==", userId)
         .get();
 
       if (!companyUsersSnapshot.empty) {
-        const companyUserDoc = companyUsersSnapshot.docs[0];
-        await companyUserDoc.ref.update({
-          granularPermissions: granularPermissions,
+        await companyUsersSnapshot.docs[0].ref.update({
+          granularPermissions: settings.granularPermissions,
+          restrictedBankAccountIds: settings.restrictedBankAccountIds,
         });
+      }
+    } catch (error) {
+      console.error("Error syncing user access settings:", error);
+    }
+  }
+
+  /** Updates granular permissions only (does not change bank account restrictions). */
+  static async syncUserPermissions(
+    userId: string,
+    granularPermissions: string[],
+  ): Promise<void> {
+    try {
+      await db.collection("users").doc(userId).update({ granularPermissions });
+
+      const companyUsersSnapshot = await db
+        .collection("companyUsers")
+        .where("uid", "==", userId)
+        .get();
+
+      if (!companyUsersSnapshot.empty) {
+        await companyUsersSnapshot.docs[0].ref.update({ granularPermissions });
       }
     } catch (error) {
       console.error("Error syncing user permissions:", error);
     }
+  }
+
+  /** Load role settings from Firestore and persist to user if changed. */
+  static async hydrateUserAccess(
+    userData: {
+      uid: string;
+      isOwner?: boolean;
+      companyId?: string;
+      role?: string;
+      granularPermissions?: string[];
+      restrictedBankAccountIds?: string[];
+    },
+  ): Promise<UserAccessSettings> {
+    const access = await this.loadUserAccessSettings(userData);
+    const permsChanged =
+      JSON.stringify(userData.granularPermissions || []) !==
+      JSON.stringify(access.granularPermissions);
+    const banksChanged =
+      JSON.stringify(userData.restrictedBankAccountIds || []) !==
+      JSON.stringify(access.restrictedBankAccountIds);
+    if (permsChanged || banksChanged) {
+      await this.syncUserAccessSettings(userData.uid, access);
+    }
+    return access;
   }
 }

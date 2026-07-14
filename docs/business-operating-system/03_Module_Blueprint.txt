@@ -1,0 +1,440 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 03 — Module Blueprint
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+This document defines every module the BOS should eventually contain.
+Nothing listed here is implemented. Each entry describes PURPOSE only.
+
+Modules are grouped by strategic function, not by technical layer.
+
+================================================================================
+GROUP A — FOUNDATION (Who and What)
+================================================================================
+
+MODULE A1: Business Portfolio
+--------------------------------------------------------------------------------
+Purpose:
+    The top-level container for every venture the founder operates. Each business
+    (Mobile App Agency, AI Automation Agency, SaaS Product X) is a distinct entity
+    within the portfolio, with its own initiatives, channels, and P&L context.
+
+Answers:
+    "What businesses am I running?"
+    "Which business does this initiative belong to?"
+
+Examples:
+    • Mobile App Development Agency
+    • AI Automation Agency
+    • Cold Outreach SaaS Tool
+    • Marketing Agency
+
+Future expansion:
+    Business units within a business, franchise models, joint ventures.
+
+
+MODULE A2: Business Model Registry
+--------------------------------------------------------------------------------
+Purpose:
+    Defines the type and economics of each business — not the business itself,
+    but its structural pattern. Enables cross-business comparison and lesson transfer.
+
+Answers:
+    "What kind of business is this?"
+    "What economics should I expect?"
+
+Examples:
+    • Service Agency (project-based revenue)
+    • SaaS (recurring subscription revenue)
+    • Product Business (one-time sales)
+    • Marketplace (commission-based)
+    • Info Product (course/digital product)
+
+Future expansion:
+    Benchmark data per model type, industry templates.
+
+
+================================================================================
+GROUP B — STRATEGY (Why and Where)
+================================================================================
+
+MODULE B1: Growth Initiatives
+--------------------------------------------------------------------------------
+Purpose:
+    The central strategic unit of the BOS. A Growth Initiative represents a
+    deliberate, time-bound effort to achieve a specific business outcome —
+    launch a new service, enter a new market, test a new channel, build an MVP.
+
+    This is the HEART of the BOS. Most other modules exist to support initiatives.
+
+Answers:
+    "What am I trying to achieve?"
+    "Why am I investing in this?"
+    "Is it working?"
+
+Examples:
+    • "Launch Mobile App Agency — Q1 2026 Client Acquisition"
+    • "Validate AI Automation SaaS MVP"
+    • "Test LinkedIn Cold Outreach for Agency Leads"
+    • "Build Personal Brand via Content Marketing"
+
+See Document 05 for full Growth Initiative Blueprint.
+
+Future expansion:
+    Initiative templates, playbook library, cross-initiative dependencies.
+
+
+MODULE B2: Acquisition Channels
+--------------------------------------------------------------------------------
+Purpose:
+    Defines HOW customers/leads are acquired for each initiative. Channels are
+    reusable across initiatives and businesses.
+
+Answers:
+    "How am I getting customers?"
+    "Which channel is performing best?"
+
+Examples:
+    • Cold Email Outreach
+    • LinkedIn Direct Messages
+    • Google Ads (Search)
+    • Facebook/Instagram Ads
+    • Content Marketing / SEO
+    • Referrals / Word of Mouth
+    • GoHighLevel Funnels
+    • Partnerships / Affiliates
+    • Cold Calling
+    • Trade Shows / Events
+
+Future expansion:
+    Channel cost benchmarks, integration with ad platform APIs.
+
+
+MODULE B3: Cost Centers
+--------------------------------------------------------------------------------
+Purpose:
+    Defines WHERE money is being spent within the organizational structure,
+    independent of which initiative or channel it serves.
+
+Answers:
+    "What function is this spend supporting?"
+    "How much are we spending on operations vs growth?"
+
+Examples:
+    • Engineering / Development
+    • Sales & Business Development
+    • Marketing & Advertising
+    • Operations & Admin
+    • Tools & Software
+    • Legal & Compliance
+    • Founder Time (implicit cost)
+
+Future expansion:
+    Budget allocation per cost center, headcount planning.
+
+
+MODULE B4: Strategic Goals & OKRs
+--------------------------------------------------------------------------------
+Purpose:
+    High-level objectives that initiatives roll up to. Provides the "north star"
+    that justifies why initiatives exist.
+
+Answers:
+    "What are we trying to achieve this quarter/year?"
+    "Are our initiatives aligned with our goals?"
+
+Examples:
+    • "Reach $10K MRR by Q4 2026"
+    • "Acquire 50 agency clients in 2026"
+    • "Launch 2 SaaS products by end of 2027"
+    • "Achieve profitability on Mobile App Agency"
+
+Future expansion:
+    OKR cascading, goal-initiative mapping, progress tracking.
+
+
+================================================================================
+GROUP C — EXECUTION (How and When)
+================================================================================
+
+MODULE C1: Experiments
+--------------------------------------------------------------------------------
+Purpose:
+    Structured tests within an initiative. An experiment has a hypothesis,
+    a budget, a timeframe, and measurable success criteria.
+
+Answers:
+    "What are we testing?"
+    "Did the test work?"
+    "What did we learn?"
+
+Examples:
+    • "Test: LinkedIn outreach with case study vs without — 2 weeks, $200 budget"
+    • "Test: Landing page A vs B for SaaS signup — 1 month, $500 ad spend"
+    • "Test: Cold email subject line variations — 1 week, 500 emails"
+
+Future expansion:
+    A/B test tracking, statistical significance, experiment templates.
+
+
+MODULE C2: Campaigns (BOS Context)
+--------------------------------------------------------------------------------
+Purpose:
+    BOS-level campaign tracking that BRIDGES to (but does not replace) the
+    existing CRM Campaign module. Adds strategic context: which initiative,
+    which channel, which experiment, expected ROI.
+
+Answers:
+    "Which initiative does this CRM campaign serve?"
+    "What is the expected return on this campaign spend?"
+
+Note:
+    Your existing CRM Campaign module (leads, tags, outreach) remains unchanged.
+    BOS Campaign adds the strategic wrapper.
+
+Future expansion:
+    Auto-sync with CRM campaigns, multi-channel campaign orchestration.
+
+
+MODULE C3: Projects (Delivery)
+--------------------------------------------------------------------------------
+Purpose:
+    Tracks delivery work AFTER a client is acquired — not lead generation,
+    but fulfillment. Links revenue back to the initiative that generated the client.
+
+Answers:
+    "What work are we delivering?"
+    "Is this project profitable?"
+
+Examples:
+    • "Build e-commerce app for Client X — $15,000 project"
+    • "Implement AI chatbot for Client Y — $8,000 project"
+
+Note:
+    This is NOT a project management tool (no task boards, no Gantt charts).
+    It tracks project economics and links them to BOS initiatives.
+
+Future expansion:
+    Integration with external PM tools (Asana, Linear), profitability tracking.
+
+
+================================================================================
+GROUP D — MEASUREMENT (How Much and How Well)
+================================================================================
+
+MODULE D1: Investment Tracker
+--------------------------------------------------------------------------------
+Purpose:
+    Aggregates ALL investments (money, time, resources) attributed to an
+    initiative, channel, or experiment. Reads from Expenses and other modules
+    via attribution — does not duplicate financial records.
+
+Answers:
+    "How much have I invested in this initiative?"
+    "Where is the money going?"
+
+Investment types:
+    • Financial (expenses, ad spend, tools, salaries)
+    • Time (founder hours, contractor hours)
+    • Resources (existing assets deployed)
+
+Future expansion:
+    Budget vs actual, investment forecasting, burn rate alerts.
+
+
+MODULE D2: Revenue Attribution
+--------------------------------------------------------------------------------
+Purpose:
+    Links revenue (from invoices, payments, subscriptions) back to the initiative
+    and channel that generated the client/deal.
+
+Answers:
+    "How much revenue did this initiative produce?"
+    "Which channel generates the most revenue?"
+
+Future expansion:
+    Multi-touch attribution, recurring revenue tracking, LTV by channel.
+
+
+MODULE D3: KPI Engine
+--------------------------------------------------------------------------------
+Purpose:
+    Computes, stores, and surfaces all business KPIs automatically from
+    attributed data. See Document 08 for full KPI list.
+
+Answers:
+    "What is the ROI?"
+    "What is the CAC?"
+    "What is the conversion rate at each funnel stage?"
+
+Future expansion:
+    Custom KPI definitions, alerting, benchmarking.
+
+
+MODULE D4: Funnel Analytics
+--------------------------------------------------------------------------------
+Purpose:
+    Tracks conversion through the business funnel stages defined in Document 07:
+    Investment → Lead → Meeting → Proposal → Client → Revenue → ROI
+
+Answers:
+    "Where is the funnel leaking?"
+    "What is the conversion rate at each stage?"
+    "How long does the sales cycle take?"
+
+Future expansion:
+    Funnel visualization, stage-by-stage optimization recommendations.
+
+
+================================================================================
+GROUP E — INTELLIGENCE (What Did We Learn)
+================================================================================
+
+MODULE E1: Lessons Learned
+--------------------------------------------------------------------------------
+Purpose:
+    Structured capture of insights from completed or paused initiatives and
+    experiments. Searchable institutional memory.
+
+Answers:
+    "What did we learn from this initiative?"
+    "What should we avoid next time?"
+    "What worked that we should repeat?"
+
+Structure:
+    • Context (business, initiative, channel, experiment)
+    • Outcome (success, failure, partial, inconclusive)
+    • Key insight (what we learned)
+    • Recommendation (what to do differently)
+    • Tags (searchable: channel, business type, outcome)
+
+Future expansion:
+    AI-powered lesson surfacing, similarity matching across ventures.
+
+
+MODULE E2: Decision Log
+--------------------------------------------------------------------------------
+Purpose:
+    Records strategic decisions made during initiative lifecycle — with context,
+    rationale, and expected outcome. Enables retrospective analysis.
+
+Answers:
+    "Why did we decide to kill this initiative?"
+    "What was the rationale for increasing budget?"
+    "Were our decisions good in hindsight?"
+
+Examples:
+    • "Decision: Increase LinkedIn ad budget from $500 to $1,500/month"
+      Rationale: "Conversion rate 2x industry average after 30 days"
+    • "Decision: Kill Facebook Ads experiment"
+      Rationale: "Zero qualified leads after $800 spend over 6 weeks"
+
+Future expansion:
+    Decision quality scoring, pattern analysis.
+
+
+MODULE E3: Playbooks & Templates
+--------------------------------------------------------------------------------
+Purpose:
+    Reusable strategic templates derived from successful initiatives. When
+    launching Business #5, start from a proven playbook instead of scratch.
+
+Answers:
+    "How did we successfully launch the last agency?"
+    "What steps should I follow for a new SaaS launch?"
+
+Examples:
+    • "Agency Launch Playbook" (derived from Mobile App Agency initiative)
+    • "SaaS MVP Validation Playbook"
+    • "Cold Outreach Channel Playbook"
+
+Future expansion:
+    Community playbooks, industry-specific templates, AI-generated playbooks.
+
+
+================================================================================
+GROUP F — INTEGRATION (Connecting the Ecosystem)
+================================================================================
+
+MODULE F1: Attribution Engine
+--------------------------------------------------------------------------------
+Purpose:
+    The technical-business core that links operational facts (expenses, leads,
+    invoices) to BOS strategic context (initiatives, channels, experiments).
+    Sidecar pattern — never modifies source records.
+
+See Document 06 for integration details.
+
+
+MODULE F2: External System Adapters
+--------------------------------------------------------------------------------
+Purpose:
+    Optional connectors to external platforms that feed data into the BOS.
+
+Planned adapters:
+    • GoHighLevel (leads, contacts, funnel stages, campaigns)
+    • Google Ads / Meta Ads (spend data, campaign performance)
+    • Stripe / payment processors (revenue data)
+    • Future SaaS products built on this platform
+
+Each adapter is independent and optional.
+
+
+MODULE F3: Notification & Alert Engine
+--------------------------------------------------------------------------------
+Purpose:
+    Proactive alerts when KPIs cross thresholds or decisions are needed.
+
+Examples:
+    • "Initiative X has exceeded budget by 20%"
+    • "Channel Y ROI dropped below 0% — consider pausing"
+    • "No leads recorded for Initiative Z in 14 days"
+    • "Experiment A reached statistical significance — review results"
+
+Future expansion:
+    Email/SMS alerts, Slack integration, weekly digest reports.
+
+
+================================================================================
+GROUP G — EXISTING MODULES (UNCHANGED — BOS READS FROM THEM)
+================================================================================
+
+These modules already exist and will NOT be modified. The BOS reads from them.
+
+Module              | Role in BOS
+--------------------|--------------------------------------------------
+Expenses            | Source of financial investment data
+Expense Returns     | Adjusts net investment calculations
+Bank Accounts       | Source of cash position context
+Invoices            | Source of revenue data
+Loans               | Source of capital deployment data (not expense)
+CRM / Leads         | Source of lead and pipeline data
+Campaigns (CRM)     | Source of outreach campaign data
+Products            | Source of product/service catalog
+Reports Engine      | Output layer — BOS enriches, does not replace
+Dashboard           | Output layer — BOS adds widgets, does not replace
+User Management     | Access control for BOS permissions
+
+
+================================================================================
+MODULE COUNT SUMMARY
+================================================================================
+
+Group A — Foundation:        2 modules (Business Portfolio, Business Model Registry)
+Group B — Strategy:          4 modules (Initiatives, Channels, Cost Centers, Goals)
+Group C — Execution:         3 modules (Experiments, Campaigns, Projects)
+Group D — Measurement:       4 modules (Investment, Revenue, KPI Engine, Funnel)
+Group E — Intelligence:      3 modules (Lessons, Decisions, Playbooks)
+Group F — Integration:       3 modules (Attribution, Adapters, Alerts)
+Group G — Existing (read):  11 modules (unchanged)
+
+Total new BOS modules:      19
+Total ecosystem modules:    30
+
+================================================================================
+END OF DOCUMENT 03 — Module Blueprint
+================================================================================

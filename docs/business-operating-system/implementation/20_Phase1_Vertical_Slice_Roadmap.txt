@@ -1,0 +1,483 @@
+================================================================================
+BOS IMPLEMENTATION — REVISED SEQUENCE (VERTICAL SLICE)
+Document 20 — Phase 1 Vertical Slice Roadmap
+================================================================================
+
+Status:     SUPERSEDES Doc 19 Sections 1–3, 4.1, 7, 10 (Phase 1 only) for execution
+Version:    Implementation strategy v2.0 — Vertical Slice (founder-approved)
+Date:       Phase transition — Architecture frozen v1.0; execution replanned
+Architecture: UNCHANGED — docs/business-operating-system/ 01–13, 99 frozen
+Prior plan: Doc 19 Refactor-First sequence retained in git history; do not follow for new work
+
+Founder directive:
+    • Do NOT modify ExpensesPage in early Phase 1
+    • BOS = independent module (routes, components, services, hooks, context, collections)
+    • Validate BOS standalone before ERP integration
+    • Expense attribution via lightweight integration layer later
+    • Expense refactor only if integration actually requires it — deferrable to Phase 2
+
+
+================================================================================
+SECTION A — MASTER ROADMAP REVIEW (DOC 19)
+================================================================================
+
+A.1  Which milestones DEPENDED on Expense refactoring? (Old plan)
+
+    Milestone / Gate          | Expense refactor dependency
+    --------------------------|--------------------------------------------------
+    Phase 0                   | Entire phase was "refactor gate" + Epic 0
+    M1                        | 100% — sole purpose was ExpensesPage split
+    M4                        | Hard dependency on M1 (ExpenseDetailModal)
+    M6 (partial)              | Soft — BC checklist assumed post-split expense flows
+    M7 (partial)              | Attribution steps assumed ExpensesPage integration
+    Gate 1                    | Blocked Sprint 2 until Epic 0 complete
+    Sprint 0                  | ExpensesPage audit for split
+    Sprint 1                  | Full Epic 0 refactor
+    Sprint 5                  | AttributionModal wired into ExpenseDetailModal
+    Doc 19 §4.1 graph         | ExpensesPage split shown as root blocker
+    Doc 10 Condition 1        | "Complete Epic 0 before Stream D" — SUPERSEDED
+
+    Risk R-003 mitigation in old plan: "split before Stream D" — replaced by
+    "integrate via BOS module first; split only if proven necessary."
+
+
+A.2  Which milestones CAN complete WITHOUT touching ExpensesPage?
+
+    Milestone (old ID)        | Without ExpensesPage? | Notes
+    --------------------------|----------------------|-----------------------------
+    M0                        | ✓ Already complete   | Validation only
+    M2                        | ✓ YES                | Types, permissions, rules, indexes
+    M3                        | ✓ YES                | Venture/initiative/decision CRUD + BOS UI
+    M3 + BOS dashboard        | ✓ YES                | New: internal BosDashboardPage (not ERP DashboardPage)
+    M3 + BosLayout/Context    | ✓ YES                | New: independent module shell
+    M6 backup v6              | ✓ YES                | Export bos* collections only
+    M7 (Phase 1A subset)      | ✓ YES                | BOS standalone production sign-off
+    Decisions on initiative   | ✓ YES                | Fully inside BOS module
+    RoleManagement bos_*      | ✓ YES                | Permission extension only
+    Sidebar + App.tsx routes  | ✓ Minimal touch      | Add routes; do not open ExpensesPage
+    ActivityPage bos labels   | ✓ YES                | Label map only
+
+    Milestones needing ExpensesPage OR read-only expense access (no ExpensesPage edit):
+
+    Milestone                 | Touch ExpensesPage?  | Alternative
+    --------------------------|----------------------|-----------------------------
+    M4 attribution (old)      | YES (old plan)       | NO — BosAttributionWorkspace in BOS module
+    M5 Reports enrichment     | NO file change       | ReportsPage.tsx only — read expenses query
+    M5 ERP Dashboard widgets  | NO if deferred       | Use BosDashboard instead for Phase 1A
+
+
+A.3  Can Expense refactoring be postponed until Phase 2?
+
+    ANSWER: YES.
+
+    Rationale:
+        • Sidecar law (Doc 04) does not require ExpensesPage changes — only bosAttributions writes
+        • Option C UX ("staff form unchanged") is preserved by attributing FROM BOS module
+        • Lightweight integration options avoid ExpensesPage entirely:
+              — BosInitiativeDetail → "Link expense" (read expenses, write bosAttributions)
+              — BosAttributionsPage → searchable expense picker
+              — Optional: read-only badge on ExpensesPage later (Phase 1B) without refactor
+        • ExpensesPage split (Epic 0) becomes OPTIONAL technical debt (TD-12), not a gate
+        • If Phase 1B integration can ship with <20 lines in ExpensesPage (link/button only),
+          refactor remains unnecessary
+        • Full ExpensesPage refactor may still be valuable in Phase 2 for maintainability —
+          but it is NOT required to validate BOS or to attribute expenses
+
+    Doc 10 "CONDITIONAL GO" condition 1 (Epic 0 before Stream D) is WAIVED by founder
+    strategy change. Sidecar law and Option C remain in force.
+
+
+================================================================================
+SECTION B — REVISED PHASE 1 STRUCTURE (TWO SUB-PHASES)
+================================================================================
+
+    Phase 1A — BOS Standalone Validation     [Minimum risk — START HERE]
+    Phase 1B — ERP Integration Layer         [After 1A stable ≥ 14–30 days]
+
+    Phase 1 (overall) business outcome unchanged long-term:
+        Founder tracks ventures, initiatives, decisions, then spend attribution.
+    Phase 1A outcome (new near-term):
+        Founder runs BOS as independent product area inside the app — zero ERP risk.
+
+
+--------------------------------------------------------------------------------
+PHASE 1A — BOS STANDALONE (VERTICAL SLICE 1)
+--------------------------------------------------------------------------------
+
+Goal:
+    Prove BOS works as an independent module. Zero changes to ExpensesPage.
+
+Deliverables:
+    Independent module structure:
+        pages/app/bos/                    — all BOS pages
+        components/bos/                   — all BOS UI
+        services/bos*.ts                  — all BOS services
+        hooks/useBos*.ts                  — BOS hooks (permissions, data)
+        contexts/BosContext.tsx           — venture/initiative scope (optional)
+        layouts/BosLayout.tsx             — BOS section layout (or BosSection wrapper)
+        docs/business-operating-system/implementation/bos-module/  — module README (optional, implementation note)
+
+    Entities & features:
+        bosVentures, bosInitiatives, bosDecisions collections + services
+        BosVenturesPage, BosInitiativesPage, BosInitiativeDetailPage
+        BosDashboardPage (BOS-native dashboard — NOT ERP DashboardPage)
+        BosNavGroup in Sidebar + App.tsx lazy routes
+        bos_* permissions + RoleManagement category
+        firestore.rules + indexes for Phase 1A collections
+        ActivityLogger bos_* types
+        backup v6 for bosVentures, bosInitiatives, bosDecisions
+
+    Explicitly NOT in Phase 1A:
+        bosAttributions writes (defer to 1B)
+        ExpensesPage, ReportsPage, DashboardPage (ERP) modifications
+        AttributionModal tied to expense detail
+        Epic 0 / ExpensesPage refactor
+
+Exit criteria (Phase 1A):
+    □ Owner creates venture + initiative on staging/production
+    □ BosDashboard shows initiative counts / open decisions (BOS data only)
+    □ Staff without bos_* sees no Strategy nav; ExpensesPage untouched
+    □ npm run build passes
+    □ Backup v6 includes bos* collections (no attributions yet if deferred)
+    □ 14-day staging soak with zero ERP regressions
+
+
+--------------------------------------------------------------------------------
+PHASE 1B — INTEGRATION LAYER (VERTICAL SLICE 2)
+--------------------------------------------------------------------------------
+
+Goal:
+    Connect BOS to ERP read-only data via integration layer — not ExpensesPage surgery.
+
+Deliverables:
+        bosAttributions collection + bosAttributionService
+        BosAttributionWorkspace OR BosInitiativeDetail "Link expense" flow
+              — reads expenses collection (companyId query)
+              — writes bosAttributions only (sidecar law)
+        BosReportsPage OR InitiativeSpendTab inside BOS module (preferred first)
+              — optional later: ReportsPage column enrichment
+        Manual / planned spend entries on initiative (optional fallback if expense
+              linking delayed — still no ExpensesPage change)
+
+    ExpensesPage integration (optional, last resort):
+        — Read-only InitiativeBadge on expense row IF <minimal diff>
+        — OR defer badge to Phase 2
+        — ExpensesPage REFACTOR only if integration cannot ship otherwise
+
+Exit criteria (Phase 1B):
+    □ bosAttributions created without expense document field changes (Doc 08 E-04)
+    □ Staff expense form unchanged (Doc 08 E-01, E-02)
+    □ Initiative spend visible from BOS module (BosReports or initiative detail)
+    □ Duplicate attribution guard active (R-009)
+
+
+================================================================================
+SECTION C — REVISED MILESTONES
+================================================================================
+
+    ID    | Name                              | ExpensesPage | Phase
+    ------|-----------------------------------|--------------|-------
+    M0    | Architecture validation complete  | No           | Done
+    M2    | BOS foundation (rules, types, perms)| No         | 1A
+    M3    | BOS module shell + entities       | No           | 1A
+    M3a   | BOS standalone validation         | No           | 1A
+    M6a   | Backup v6 (bos core collections)  | No           | 1A
+    M7a   | Phase 1A production               | No           | 1A
+    M4b   | Attribution integration layer     | No*          | 1B
+    M5b   | Spend reporting (BOS-first)       | No*          | 1B
+    M6b   | Backup v6 (+ bosAttributions)     | No           | 1B
+    M7b   | Phase 1 complete (full P1)        | No*          | 1B
+
+    * ExpensesPage not required; optional minimal touch in 1B only if needed
+
+
+MILESTONE DETAIL — Phase 1A
+────────────────────────────
+
+M2 — BOS FOUNDATION (unchanged scope, no M1 dependency)
+    Dependencies: M0, Gate 0
+    Deliverables: types/bos.ts, bos_* permissions, firestore.rules, indexes
+    Exit: indexes READY; canBos* default deny
+
+M3 — BOS INDEPENDENT MODULE
+    Dependencies: M2
+    Deliverables:
+        bosVentureService, bosInitiativeService, bosDecisionService
+        BosLayout + BosContext (or equivalent)
+        BosVenturesPage, BosInitiativesPage, BosInitiativeDetailPage
+        BosDashboardPage
+        Sidebar BosNavGroup, App.tsx /bos/* routes
+        RoleManagement BOS category
+    Exit: full CRUD without any ERP file changes
+
+M3a — STANDALONE VALIDATION
+    Dependencies: M3
+    Deliverables: staging test script; founder walkthrough
+    Exit:
+        □ 3+ days owner testing on BOS module only
+        □ Zero edits to ExpensesPage.tsx in git history for Phase 1A PRs
+        □ Gate 3A passed (Section F)
+
+M6a — BACKUP v6 (core)
+    Dependencies: M3
+    Deliverables: databaseMigrationService export bosVentures, bosInitiatives, bosDecisions
+    Exit: round-trip restore on staging
+
+M7a — PHASE 1A PRODUCTION
+    Dependencies: M3a, M6a, Founder checklist 1A (Section G)
+    Exit: BOS module live; ERP untouched
+
+
+MILESTONE DETAIL — Phase 1B
+────────────────────────────
+
+M4b — ATTRIBUTION INTEGRATION LAYER
+    Dependencies: M7a stable (≥14 days recommended)
+    Deliverables:
+        bosAttributionService
+        BosAttributionPage and/or initiative detail "Link expense" UI
+        Integration reads expenses; never writes expense docs
+    Exit: Doc 08 N-03, E-04 without ExpensesPage refactor
+
+M5b — SPEND VISIBILITY
+    Dependencies: M4b
+    Deliverables (pick one path first):
+        Path A (preferred): BosReportsPage inside /bos/reports — join expenses read + bosAttributions
+        Path B (later): ReportsPage initiative column — still no ExpensesPage change
+    Exit: founder sees initiative spend total from BOS UI
+
+M6b — BACKUP v6 COMPLETE
+    Dependencies: M4b
+    Deliverables: bosAttributions in export/restore
+    Exit: Doc 08 M-01, M-02 with attributions
+
+M7b — PHASE 1 COMPLETE
+    Dependencies: M5b, M6b
+    Exit: Doc 19 Section 7 full success criteria (revised timing — attribution in 1B)
+
+
+================================================================================
+SECTION D — REVISED SPRINT PLAN
+================================================================================
+
+    Sprint | Goal                              | ExpensesPage | Phase
+    -------|-----------------------------------|--------------|------
+    1      | BOS foundation (M2)               | NO           | 1A
+    2      | BOS services (venture/init/dec)   | NO           | 1A
+    3      | BOS UI module + layout + nav      | NO           | 1A
+    4      | BosDashboard + polish + backup v6 | NO           | 1A
+    5      | QA + owner testing + prod 1A      | NO           | 1A
+    -------|-----------------------------------|--------------|------
+    6      | bosAttributionService + link UI   | NO           | 1B
+    7      | BosReports / spend join           | NO           | 1B
+    8      | Optional ERP Reports column       | NO           | 1B
+    9      | QA + prod 1B complete             | NO*          | 1B
+
+    REMOVED from plan: Old Sprint 0, Sprint 1 (Epic 0 expense refactor)
+
+    Sprint 1 files (example):
+        types/bos.ts, config/permissions.ts, hooks/usePermissions.tsx,
+        firestore.rules, firestore.indexes.json
+
+    Sprint 3 files (example):
+        pages/app/bos/*, components/bos/*, layouts/BosLayout.tsx,
+        contexts/BosContext.tsx, App.tsx, Sidebar.tsx, RoleManagement.tsx
+
+    Sprint 6 files (example):
+        services/bosAttributionService.ts,
+        pages/app/bos/BosAttributionPage.tsx OR BosInitiativeDetail expense linker,
+        components/bos/ExpensePickerModal.tsx (reads expenses — lives in BOS module)
+
+    * Sprint 9: optional 1-line route to open BOS attribution from finance menu — not ExpensesPage refactor
+
+
+================================================================================
+SECTION E — REVISED DEPENDENCY GRAPH
+================================================================================
+
+    Architecture frozen (v1.0)
+            │
+            ▼
+    M0 Validation complete
+            │
+            ▼
+    ┌───────────────────────────┐
+    │  PHASE 1A — BOS MODULE    │     ExpensesPage ─── UNTOUCHED ───┐
+    │                           │                                    │
+    │  Types → Permissions      │                                    │
+    │       ↓                   │                                    │
+    │  Rules + Indexes          │                                    │
+    │       ↓                   │                                    │
+    │  Services (venture,       │                                    │
+    │    initiative, decision)  │                                    │
+    │       ↓                   │                                    │
+    │  BosLayout + Context      │                                    │
+    │       ↓                   │                                    │
+    │  BOS Pages + BosDashboard │                                    │
+    │       ↓                   │                                    │
+    │  Sidebar routes only      │                                    │
+    │       ↓                   │                                    │
+    │  Backup v6 (core)         │                                    │
+    │       ↓                   │                                    │
+    │  M7a Production           │                                    │
+    └─────────────┬─────────────┘                                    │
+                  │ ≥14 days stable                                  │
+                  ▼                                                  │
+    ┌───────────────────────────┐                                    │
+    │  PHASE 1B — INTEGRATION   │                                    │
+    │                           │                                    │
+    │  bosAttributionService    │── reads expenses ──────────────────┘
+    │       ↓                   │     (read-only, no ExpensesPage edit)
+    │  BOS attribution UI       │
+    │  (ExpensePickerModal)     │
+    │       ↓                   │
+    │  BosReports / spend view  │
+    │       ↓                   │
+    │  Optional ReportsPage col │
+    │       ↓                   │
+    │  Backup v6 + attributions │
+    │       ↓                   │
+    │  M7b Phase 1 complete     │
+    └───────────────────────────┘
+
+    Optional future (Phase 2+, only if needed):
+        ExpensesPage refactor (TD-12)
+        ExpensesPage badge / deep link
+        LeadsPage integration
+
+
+================================================================================
+SECTION F — REVISED GO / NO-GO GATES
+================================================================================
+
+Gate 0 — START IMPLEMENTATION (unchanged)
+    GO → Begin Sprint 1 (BOS foundation) — NOT Expense audit
+
+Gate 1A — START BOS UI (Sprint 3)
+    M2 complete; rules + indexes READY; build green
+    NO expense split required
+
+Gate 2A — PHASE 1A STAGING RC (Sprint 4)
+    M3 complete; BosDashboard functional; no ERP file diffs except App/Sidebar/permissions
+
+Gate 3A — PHASE 1A PRODUCTION (Sprint 5)
+    Founder checklist 1A; 3+ days staging; zero ExpensesPage commits
+
+Gate 1B — START INTEGRATION (Sprint 6)
+    M7a stable ≥14 days; founder approves integration
+    Sidecar law review; attribution UI spec confirmed
+
+Gate 2B — PHASE 1 COMPLETE (Sprint 9)
+    M4b + M5b + M6b; Doc 08 E-04, N-03; full Phase 1 success criteria
+
+
+================================================================================
+SECTION G — REVISED SUCCESS CRITERIA
+================================================================================
+
+Phase 1A complete (M7a) — BOS validated standalone:
+    □ Venture + initiative + decision CRUD works
+    □ BosDashboard reflects BOS data
+    □ bos_* permissions enforced; staff sees no BOS nav
+    □ ExpensesPage.tsx git history: NO changes in Phase 1A PRs
+    □ Backup v6 for core bos collections
+    □ npm run build passes; no ERP regressions
+
+Phase 1 complete (M7b) — includes integration:
+    □ All Phase 1A criteria sustained
+    □ Expense attribution via BOS module (sidecar only)
+    □ Staff expense workflow unchanged
+    □ Initiative spend visible in BOS reporting UI
+    □ bosAttributions in backup v6
+    □ Expense refactor (Epic 0): NOT required unless explicitly triggered
+
+
+================================================================================
+SECTION H — REVISED TECHNICAL DEBT (TD-12 UPDATE)
+================================================================================
+
+    TD-12 | ExpensesPage inline Firestore | Phase 2 (optional) | Deferred from P0 gate.
+          | Refactor only if integration requires OR maintainability sprint in P2
+
+    NEW TD-19 | Dual dashboard (BosDashboard + ERP Dashboard) | Phase 1A | Merge widgets in 1B or P2
+    NEW TD-20 | Attribution UI outside ExpensesPage | Phase 1B | By design — vertical slice
+
+
+================================================================================
+SECTION I — MODULE STRUCTURE (INDEPENDENT BOS)
+================================================================================
+
+    App.tsx
+      └── /bos/*  →  BosLayout  →  BosContextProvider
+                        ├── BosDashboardPage      /bos
+                        ├── BosVenturesPage       /bos/ventures
+                        ├── BosInitiativesPage    /bos/initiatives
+                        ├── BosInitiativeDetail   /bos/initiatives/:id
+                        ├── BosDecisionsPage      /bos/decisions (optional)
+                        ├── BosAttributionPage    /bos/attributions  (Phase 1B)
+                        └── BosReportsPage        /bos/reports       (Phase 1B)
+
+    ERP routes unchanged: /expenses, /reports, / …
+
+    Cross-cutting (minimal ERP touch):
+        App.tsx          — lazy route registration only
+        Sidebar.tsx      — BosNavGroup entry
+        config/permissions.ts — bos_* keys
+        hooks/usePermissions.tsx — canBos* helpers
+        firestore.rules  — bos* match blocks
+        activityLogger   — bos_* ActivityType labels
+        databaseMigrationService — backup stages
+
+
+================================================================================
+SECTION J — RISK REGISTER UPDATES (DOC 07)
+================================================================================
+
+    R-003 | Downgraded for Phase 1A | ExpensesPage refactor NOT started
+          | Reactivated only if Phase 1B touches ExpensesPage extensively
+
+    R-001 | Unchanged | Still CRITICAL — no BOS fields on expenses collection
+
+    R-004 | Mitigated in 1A | Staff form untouched — attribution from BOS module in 1B
+
+    New R-020 | BOS module isolation failure | Medium | BOS pages import ERP write paths
+              | Mitigation: lint/review — BOS services only write bos* collections
+
+
+================================================================================
+SECTION K — DOCUMENT CROSS-REFERENCES
+================================================================================
+
+    Still valid (architecture + analysis):
+        Docs 01–05, 07–08, 10, Arch 01–13, 99
+
+    Superseded for execution order (Phase 1):
+        Doc 06 Stream D prerequisite (Epic 0) — waive until proven needed
+        Doc 09 Epic 0 tasks T-000–T-004 — deferred to Phase 2 optional
+        Doc 19 Sections 1–3, 4.1, Gate 1, Sprint 0–1, M1 — superseded by this doc
+
+    Single source of truth for execution:
+        Doc 20 (this document) for Phase 1 sequence
+        Doc 19 Sections 5–6, 9, 8 — still valid for deploy, rollback, founder checklist
+          (update checklist items for 1A vs 1B at implementation time)
+
+
+================================================================================
+SECTION L — IMPLEMENTATION START (REVISED)
+================================================================================
+
+    When Gate 0 = GO:
+
+        Begin Sprint 1 → BOS foundation (M2)
+        First PR: types/bos.ts + permissions + firestore.rules — NO ExpensesPage
+
+    Do NOT begin Epic 0.
+    Do NOT modify ExpensesPage until Phase 1B integration design confirms necessity.
+
+
+================================================================================
+END OF DOCUMENT 20 — Phase 1 Vertical Slice Roadmap
+================================================================================
+
+Status: ACTIVE — supersedes Refactor-First Phase 1 sequence in Doc 19
+Next action: Founder approves Gate 0 → Sprint 1 (BOS foundation)

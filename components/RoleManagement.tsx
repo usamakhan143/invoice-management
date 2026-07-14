@@ -11,12 +11,17 @@ import {
   ensurePerformanceHubWithContent,
 } from "../config/permissions";
 import Spinner from "./Spinner";
+import { BankAccountService } from "../services/bankAccountService";
+import { formatBankAccountListLabel } from "../utils/bankAccountDisplay";
+import { normalizeRestrictedBankAccountIds } from "../utils/bankAccountAccess";
+import type { BankAccount } from "../types";
 
 interface CustomRole {
   id: string;
   name: string;
   description: string;
   granularPermissions: string[]; // New granular permissions array
+  restrictedBankAccountIds?: string[];
   companyId: string;
   isDefault: boolean;
   createdAt: any;
@@ -48,10 +53,15 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
   const [editingRole, setEditingRole] = useState<CustomRole | null>(null);
   const [error, setError] = useState("");
 
+  const [companyBankAccounts, setCompanyBankAccounts] = useState<BankAccount[]>(
+    [],
+  );
   const [roleForm, setRoleForm] = useState({
     name: "",
     description: "",
     granularPermissions: [] as string[],
+    bankAccountAccessLimited: false,
+    restrictedBankAccountIds: [] as string[],
   });
 
   const loadRoles = useCallback(async () => {
@@ -89,6 +99,25 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
     void loadRoles();
   }, [loadRoles]);
 
+  useEffect(() => {
+    if (!isModalOpen || !effectiveCompanyId) {
+      setCompanyBankAccounts([]);
+      return;
+    }
+    let active = true;
+    void BankAccountService.getAllCompanyBankAccounts(effectiveCompanyId).then(
+      (rows) => {
+        if (active) setCompanyBankAccounts(rows);
+      },
+      () => {
+        if (active) setCompanyBankAccounts([]);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [isModalOpen, effectiveCompanyId]);
+
   const initializePermissions = () => {
     // Return empty array - permissions will be selected individually
     return [];
@@ -96,11 +125,16 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
 
   const openModal = (role?: CustomRole) => {
     if (role) {
+      const restricted = normalizeRestrictedBankAccountIds(
+        role.restrictedBankAccountIds,
+      );
       setEditingRole(role);
       setRoleForm({
         name: role.name,
         description: role.description,
         granularPermissions: role.granularPermissions || [],
+        bankAccountAccessLimited: restricted.length > 0,
+        restrictedBankAccountIds: restricted,
       });
     } else {
       setEditingRole(null);
@@ -108,6 +142,8 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
         name: "",
         description: "",
         granularPermissions: [],
+        bankAccountAccessLimited: false,
+        restrictedBankAccountIds: [],
       });
     }
     setIsModalOpen(true);
@@ -121,8 +157,19 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
       name: "",
       description: "",
       granularPermissions: [],
+      bankAccountAccessLimited: false,
+      restrictedBankAccountIds: [],
     });
     setError("");
+  };
+
+  const toggleBankAccountAccessForRole = (accountId: string, enabled: boolean) => {
+    setRoleForm((prev) => {
+      const set = new Set(prev.restrictedBankAccountIds);
+      if (enabled) set.delete(accountId);
+      else set.add(accountId);
+      return { ...prev, restrictedBankAccountIds: [...set] };
+    });
   };
 
   const togglePermission = (permission: string) => {
@@ -161,6 +208,9 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
         name: roleForm.name.trim(),
         description: roleForm.description.trim(),
         granularPermissions: ensurePerformanceHubWithContent(roleForm.granularPermissions),
+        restrictedBankAccountIds: roleForm.bankAccountAccessLimited
+          ? roleForm.restrictedBankAccountIds
+          : [],
         companyId,
         isDefault: false,
         ...(editingRole
@@ -408,6 +458,72 @@ const RoleManagement: React.FC<RoleManagementProps> = ({
                   placeholder="Enter role description"
                   rows={2}
                 />
+              </div>
+
+              <div className="border rounded-lg p-4 dark:border-gray-600">
+                <h4 className="text-md font-semibold text-gray-800 dark:text-white mb-1">
+                  Bank account access
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  Disable accounts this role must not use in expense, invoice, loan,
+                  and transfer forms. Disabled accounts are hidden from dropdowns.
+                </p>
+                <label className="flex items-start gap-2 mb-3">
+                  <input
+                    type="checkbox"
+                    checked={roleForm.bankAccountAccessLimited}
+                    onChange={(e) =>
+                      setRoleForm({
+                        ...roleForm,
+                        bankAccountAccessLimited: e.target.checked,
+                        restrictedBankAccountIds: e.target.checked
+                          ? roleForm.restrictedBankAccountIds
+                          : [],
+                      })
+                    }
+                    className="mt-0.5 rounded"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Limit which bank accounts this role can use
+                  </span>
+                </label>
+                {roleForm.bankAccountAccessLimited ? (
+                  companyBankAccounts.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      No bank accounts in this company yet.
+                    </p>
+                  ) : (
+                    <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-600">
+                      {companyBankAccounts.map((account) => {
+                        const enabled = !roleForm.restrictedBankAccountIds.includes(
+                          account.id,
+                        );
+                        return (
+                          <label
+                            key={account.id}
+                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={(e) =>
+                                toggleBankAccountAccessForRole(
+                                  account.id,
+                                  e.target.checked,
+                                )
+                              }
+                              className="rounded"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-gray-300">
+                              {formatBankAccountListLabel(account)} (
+                              {account.currencySymbol || "$"})
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : null}
               </div>
 
               <div>

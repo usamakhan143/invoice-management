@@ -11,19 +11,16 @@ export const usePermissionRefresh = () => {
     try {
 
 
-      // Load fresh permissions from role
-      const granularPermissions = await PermissionService.loadUserPermissions(userProfile);
+      const access = await PermissionService.loadUserAccessSettings(userProfile);
 
-      // Update user profile
       const updatedProfile = {
         ...userProfile,
-        granularPermissions: granularPermissions
+        granularPermissions: access.granularPermissions,
+        restrictedBankAccountIds: access.restrictedBankAccountIds,
       };
 
-      // Sync to database
-      await PermissionService.syncUserPermissions(userProfile.uid, granularPermissions);
+      await PermissionService.syncUserAccessSettings(userProfile.uid, access);
 
-      // Update local state
       setUserProfile(updatedProfile);
 
 
@@ -41,10 +38,22 @@ export const usePermissionRefresh = () => {
         const nextRole = updatedProfile.role ?? prev.role;
         const nextPerms = updatedProfile.granularPermissions ?? prev.granularPermissions ?? [];
         const prevPerms = prev.granularPermissions ?? [];
-        if (prev.role === nextRole && JSON.stringify(prevPerms) === JSON.stringify(nextPerms)) {
+        const nextBanks =
+          updatedProfile.restrictedBankAccountIds ?? prev.restrictedBankAccountIds ?? [];
+        const prevBanks = prev.restrictedBankAccountIds ?? [];
+        if (
+          prev.role === nextRole &&
+          JSON.stringify(prevPerms) === JSON.stringify(nextPerms) &&
+          JSON.stringify(prevBanks) === JSON.stringify(nextBanks)
+        ) {
           return prev;
         }
-        return { ...prev, role: nextRole, granularPermissions: nextPerms };
+        return {
+          ...prev,
+          role: nextRole,
+          granularPermissions: nextPerms,
+          restrictedBankAccountIds: nextBanks,
+        };
       });
     });
   };

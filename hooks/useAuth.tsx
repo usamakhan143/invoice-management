@@ -82,8 +82,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
           // Set target user profile immediately
           const targetProfile = impersonation.targetUserProfile as UserProfile;
-          const granularPermissions = await PermissionService.loadUserPermissions(targetProfile);
-          targetProfile.granularPermissions = granularPermissions;
+          const access = await PermissionService.loadUserAccessSettings(targetProfile);
+          targetProfile.granularPermissions = access.granularPermissions;
+          targetProfile.restrictedBankAccountIds = access.restrictedBankAccountIds;
           targetProfile.isImpersonating = true;
           targetProfile.originalAdmin = impersonation.originalAdmin;
 
@@ -190,8 +191,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
           // Load target user profile
           const targetProfile = impersonation.targetUserProfile as UserProfile;
-          const granularPermissions = await PermissionService.loadUserPermissions(targetProfile);
-          targetProfile.granularPermissions = granularPermissions;
+          const access = await PermissionService.loadUserAccessSettings(targetProfile);
+          targetProfile.granularPermissions = access.granularPermissions;
+          targetProfile.restrictedBankAccountIds = access.restrictedBankAccountIds;
           targetProfile.isImpersonating = true;
           targetProfile.originalAdmin = impersonation.originalAdmin;
 
@@ -288,8 +290,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           const targetProfile = impersonation.targetUserProfile as UserProfile;
 
           // Load fresh permissions for the target user
-          const granularPermissions = await PermissionService.loadUserPermissions(targetProfile);
-          targetProfile.granularPermissions = granularPermissions;
+          const access = await PermissionService.loadUserAccessSettings(targetProfile);
+          targetProfile.granularPermissions = access.granularPermissions;
+          targetProfile.restrictedBankAccountIds = access.restrictedBankAccountIds;
 
           // Add impersonation flag to the profile
           targetProfile.isImpersonating = true;
@@ -422,14 +425,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                   userData.companyId = firebaseUser.uid;
                 }
 
-                // Load granular permissions from role if needed
-                const granularPermissions = await PermissionService.loadUserPermissions(userData);
-                if (granularPermissions.length > 0 &&
-                    JSON.stringify(userData.granularPermissions || []) !== JSON.stringify(granularPermissions)) {
-                  userData.granularPermissions = granularPermissions;
-                  // Update the database with loaded permissions
-                  await PermissionService.syncUserPermissions(userData.uid, granularPermissions);
-                }
+                const access = await PermissionService.hydrateUserAccess(userData);
+                userData.granularPermissions = access.granularPermissions;
+                userData.restrictedBankAccountIds = access.restrictedBankAccountIds;
 
                 setUserProfile(userData);
 
@@ -489,14 +487,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                       }
                     }
 
-                    // Load granular permissions from role if needed
-                    const granularPermissions = await PermissionService.loadUserPermissions(userData);
-                    if (granularPermissions.length > 0 &&
-                        JSON.stringify(userData.granularPermissions || []) !== JSON.stringify(granularPermissions)) {
-                      userData.granularPermissions = granularPermissions;
-                      // Update the database with loaded permissions
-                      await PermissionService.syncUserPermissions(userData.uid, granularPermissions);
-                    }
+                    const access = await PermissionService.hydrateUserAccess(userData);
+                    userData.granularPermissions = access.granularPermissions;
+                    userData.restrictedBankAccountIds = access.restrictedBankAccountIds;
 
                     setUserProfile(userData);
 

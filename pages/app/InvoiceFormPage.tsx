@@ -33,6 +33,7 @@ const InvoiceFormPage: React.FC = () => {
     isOwner,
     isAdmin,
     canUseCompanyProductCatalog,
+    filterBankAccountsForRole,
   } = usePermissions();
   const useCompanyCatalog = canUseCompanyProductCatalog();
   const { id } = useParams<{ id: string }>();
@@ -115,13 +116,14 @@ const InvoiceFormPage: React.FC = () => {
   };
 
   const banksForInvoicePicker = useMemo(() => {
-    const allowed = bankAccounts.filter(isBankIncludedInInvoicePicker);
+    const roleAllowed = filterBankAccountsForRole(bankAccounts);
+    const allowed = roleAllowed.filter(isBankIncludedInInvoicePicker);
     const selId = invoiceData.bankAccountId;
     if (!selId) return allowed;
     if (allowed.some((b) => b.id === selId)) return allowed;
-    const selected = bankAccounts.find((b) => b.id === selId);
+    const selected = roleAllowed.find((b) => b.id === selId);
     return selected ? [selected, ...allowed] : allowed;
-  }, [bankAccounts, invoiceData.bankAccountId]);
+  }, [bankAccounts, invoiceData.bankAccountId, filterBankAccountsForRole]);
 
   const fetchInitialData = useCallback(async () => {
     if (!user || !userProfile) return;

@@ -290,6 +290,19 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Manual bank deposits — company-scoped; append-only (no update).
+    // Reversals are compensating create rows, never edits/deletes.
+    match /bankDeposits/{depositId} {
+      allow get, list: if isAuthenticated() &&
+        canAccessCompanyData(resource.data.companyId);
+      allow create: if isAuthenticated() &&
+        request.resource.data.companyId is string &&
+        request.resource.data.companyId.size() > 0 &&
+        canAccessCompanyData(request.resource.data.companyId) &&
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     // Expenses collection — own rows, or company scope (owner / expenses_company_manage)
     match /expenses/{expenseId} {
       allow get, list: if expenseDataReadOk(resource.data);
@@ -530,6 +543,125 @@ service cloud.firestore {
         request.resource.data.filename is string &&
         request.resource.data.timestamp is timestamp;
       allow update, delete: if false;
+    }
+
+    // ─── Business Operating System (BOS) — company-scoped sidecar collections ───
+    // App enforces bos_* permissions; rules enforce tenancy only (Doc 07 D-002).
+
+    function bosCompanyReadOk(data) {
+      return data.companyId is string &&
+        data.companyId.size() > 0 &&
+        canAccessCompanyData(data.companyId);
+    }
+
+    function bosCompanyWriteOk(data) {
+      return data.companyId is string &&
+        data.companyId.size() > 0 &&
+        canAccessCompanyData(data.companyId) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.createdById is string &&
+        data.createdById.size() > 0;
+    }
+
+    match /bosVentures/{docId} {
+      allow read: if bosCompanyReadOk(resource.data);
+      allow create: if bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.status is string &&
+        request.resource.data.ownerUserId is string &&
+        request.resource.data.ownerUserId.size() > 0;
+      allow update: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /bosInitiatives/{docId} {
+      allow read: if bosCompanyReadOk(resource.data);
+      allow create: if bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.ventureId is string &&
+        request.resource.data.ventureId.size() > 0 &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.status is string;
+      allow update: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.ventureId == resource.data.ventureId;
+      allow delete: if false;
+    }
+
+    match /bosDecisions/{docId} {
+      allow read: if bosCompanyReadOk(resource.data);
+      allow create: if bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.decision is string &&
+        request.resource.data.decision.size() > 0 &&
+        request.resource.data.decisionType is string &&
+        request.resource.data.status is string;
+      allow update: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /bosAttributions/{docId} {
+      allow read: if bosCompanyReadOk(resource.data);
+      allow create: if bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.initiativeId is string &&
+        request.resource.data.initiativeId.size() > 0 &&
+        request.resource.data.ventureId is string &&
+        request.resource.data.ventureId.size() > 0 &&
+        request.resource.data.sourceType is string &&
+        request.resource.data.sourceId is string &&
+        request.resource.data.sourceId.size() > 0 &&
+        request.resource.data.status is string &&
+        request.resource.data.allocationPercent is number &&
+        request.resource.data.attributedById is string &&
+        request.resource.data.attributedById.size() > 0;
+      allow update: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.initiativeId == resource.data.initiativeId &&
+        request.resource.data.ventureId == resource.data.ventureId &&
+        request.resource.data.sourceType == resource.data.sourceType &&
+        request.resource.data.sourceId == resource.data.sourceId;
+      allow delete: if false;
+    }
+
+    match /bosMilestones/{docId} {
+      allow read: if bosCompanyReadOk(resource.data);
+      allow create: if bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.initiativeId is string &&
+        request.resource.data.initiativeId.size() > 0 &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.sequence is number &&
+        request.resource.data.status is string;
+      allow update: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.initiativeId == resource.data.initiativeId;
+      allow delete: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(resource.data) &&
+        resource.data.status == 'planned';
+    }
+
+    match /bosMilestoneTemplates/{docId} {
+      allow read: if bosCompanyReadOk(resource.data);
+      allow create: if bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.visibility is string &&
+        request.resource.data.steps is list &&
+        request.resource.data.steps.size() > 0;
+      allow update: if bosCompanyReadOk(resource.data) &&
+        bosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
     }
 
     // Default deny rule for any other collections

@@ -1,0 +1,525 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 07 — Data Flow
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+This document traces how information flows through the entire BOS —
+from the first dollar invested to the final lesson learned.
+
+================================================================================
+1. MASTER DATA FLOW
+================================================================================
+
+    Investment ──► Campaign ──► Lead ──► Meeting ──► Proposal ──►
+    Client ──► Revenue ──► ROI ──► Lessons Learned
+
+Each step is explained in detail below.
+
+
+================================================================================
+2. STEP 1 — INVESTMENT
+================================================================================
+
+What happens:
+    The founder decides to invest money, time, or resources into a business
+    initiative. This is the starting point of every business effort.
+
+Business question answered:
+    "Where am I investing, and how much?"
+
+Flow:
+
+    Founder Decision
+        │
+        ▼
+    Growth Initiative created (DRAFT → ACTIVE)
+        │
+        ├── Budget allocated: $5,000
+        ├── Channel selected: LinkedIn Outreach
+        ├── Hypothesis defined: "CTOs at 10-50 person companies will respond
+        │   to case study-based outreach"
+        └── Success criteria set: 10 clients in 90 days
+        │
+        ▼
+    Money is spent (operational layer — unchanged):
+        │
+        ├── Expense: $500 — LinkedIn Sales Navigator (tool)
+        │   └── BOS Attribution: Initiative X, Channel: LinkedIn, Cost Center: Tools
+        │
+        ├── Expense: $200 — Email verification service
+        │   └── BOS Attribution: Initiative X, Channel: LinkedIn, Experiment #1
+        │
+        ├── Expense: $1,500 — Contractor for outreach copywriting
+        │   └── BOS Attribution: Initiative X, Channel: LinkedIn
+        │
+        └── Expense: $800 — Google Ads (testing secondary channel)
+            └── BOS Attribution: Initiative X, Channel: Google Ads, Experiment #2
+
+Data captured:
+    • Initiative record (BOS — owned)
+    • Expense records (ERP — owned, unchanged)
+    • Attribution links (BOS — owned)
+    • Running investment total (BOS — computed)
+
+Key metrics at this stage:
+    • Total investment to date
+    • Budget utilization %
+    • Burn rate (investment per week)
+    • Investment by channel breakdown
+
+
+================================================================================
+3. STEP 2 — CAMPAIGN / EXPERIMENT
+================================================================================
+
+What happens:
+    Based on the initiative strategy, specific campaigns and experiments are
+    launched to test channels and approaches.
+
+Business question answered:
+    "What specific actions are we taking to acquire customers?"
+
+Flow:
+
+    Initiative (ACTIVE)
+        │
+        ├── Experiment #1: "LinkedIn — case study vs no case study"
+        │   Status: ACTIVE
+        │   Budget: $200
+        │   Duration: 2 weeks
+        │   Linked to: CRM Campaign "Agency Q1 Outreach"
+        │
+        ├── Experiment #2: "Google Ads — service vs problem keywords"
+        │   Status: ACTIVE
+        │   Budget: $800
+        │   Duration: 4 weeks
+        │
+        └── CRM Campaign: "Agency Q1 Outreach"
+            (Existing CRM module — unchanged)
+            Linked to BOS Initiative X via attribution
+
+Data captured:
+    • Experiment records (BOS — owned)
+    • CRM campaign records (CRM — owned, linked via BOS)
+    • Campaign-attributed expenses (via BOS attribution)
+    • External platform data (via adapters, if connected)
+
+Key metrics at this stage:
+    • Experiment progress (days elapsed vs planned)
+    • Experiment spend vs budget
+    • Campaign activity volume (emails sent, ads shown)
+
+
+================================================================================
+4. STEP 3 — LEAD GENERATED
+================================================================================
+
+What happens:
+    A potential customer enters the system — through outreach response, ad click,
+    referral, website form, or any acquisition channel.
+
+Business question answered:
+    "Is our investment producing potential customers?"
+
+Flow:
+
+    Campaign/Experiment activity
+        │
+        ▼
+    Lead enters CRM (operational layer — unchanged):
+        │
+        ├── CRM Lead created: "John Smith, CTO at TechCo"
+        │   Source: LinkedIn outreach response
+        │   Campaign: "Agency Q1 Outreach"
+        │
+        └── BOS Attribution created:
+            • Lead → Initiative X
+            • Lead → Channel: LinkedIn
+            • Lead → Experiment #1
+
+    Alternative entry paths:
+        │
+        ├── GoHighLevel funnel → GHL Adapter → BOS Attribution
+        ├── Google Ads click → Landing page form → CRM Lead → BOS Attribution
+        ├── Referral → Manual CRM entry → BOS Attribution
+        └── Cold email reply → CRM Lead → BOS Attribution
+
+Data captured:
+    • Lead record (CRM — owned)
+    • BOS attribution (BOS — owned)
+    • Lead source and channel (CRM + BOS)
+    • Timestamp (for funnel velocity tracking)
+
+Key metrics at this stage:
+    • Total leads generated
+    • Leads by channel
+    • Cost per lead (CPL) = Investment / Leads
+    • Lead generation rate (leads per week)
+    • Channel comparison (which channel produces most leads at lowest CPL)
+
+
+================================================================================
+5. STEP 4 — MEETING HELD
+================================================================================
+
+What happens:
+    A meaningful conversation occurs between the founder/team and the lead.
+    This is the first qualification gate in the funnel.
+
+Business question answered:
+    "Are the leads we're generating actually interested?"
+
+Flow:
+
+    Lead (in CRM)
+        │
+        ▼
+    Meeting occurs:
+        │
+        ├── CRM Activity logged: "Discovery call with John Smith — 30 min"
+        │   (Existing call activity module — unchanged)
+        │
+        └── BOS Funnel Event recorded:
+            • Lead ID → Stage: MEETING HELD
+            • Timestamp
+            • Initiative X, Channel: LinkedIn
+
+Data captured:
+    • Call/activity record (CRM — owned)
+    • Funnel stage transition (BOS — owned)
+    • Meeting date (for sales cycle calculation)
+
+Key metrics at this stage:
+    • Meetings held (total)
+    • Meeting rate = Meetings / Leads × 100
+    • Meeting rate by channel
+    • Cost per meeting = Investment / Meetings
+    • Average time from lead to meeting (days)
+
+
+================================================================================
+6. STEP 5 — PROPOSAL SENT
+================================================================================
+
+What happens:
+    A formal proposal, quote, or scope of work is sent to the qualified lead.
+    This represents serious buying intent.
+
+Business question answered:
+    "How many interested leads are we converting to opportunities?"
+
+Flow:
+
+    Meeting held (qualified lead)
+        │
+        ▼
+    Proposal sent:
+        │
+        ├── CRM status updated: "Proposal Sent"
+        │   (Or custom stage tracked in BOS)
+        │
+        └── BOS Funnel Event recorded:
+            • Lead ID → Stage: PROPOSAL SENT
+            • Proposal amount: $4,500
+            • Timestamp
+
+Data captured:
+    • CRM status change (CRM — owned)
+    • Funnel stage transition (BOS — owned)
+    • Proposal amount (for pipeline value tracking)
+
+Key metrics at this stage:
+    • Proposals sent (total)
+    • Proposal rate = Proposals / Meetings × 100
+    • Average proposal value
+    • Pipeline value (sum of open proposal amounts)
+    • Proposal rate by channel
+
+
+================================================================================
+7. STEP 6 — CLIENT CLOSED
+================================================================================
+
+What happens:
+    The lead accepts the proposal and becomes a paying client. This is the
+    primary conversion event in the funnel.
+
+Business question answered:
+    "Are we actually winning business from our investment?"
+
+Flow:
+
+    Proposal accepted
+        │
+        ▼
+    Client conversion:
+        │
+        ├── CRM: Lead status → Converted
+        │   Customer/Business record created (existing CRM flow)
+        │
+        ├── BOS Funnel Event: Stage → CLIENT CLOSED
+        │
+        └── BOS Revenue Attribution prepared:
+            (Revenue will be counted when invoice is paid)
+
+Data captured:
+    • Conversion record (CRM — owned)
+    • Funnel stage transition (BOS — owned)
+    • Deal size (proposal amount or negotiated amount)
+    • Sales cycle length = Client close date - Lead date
+
+Key metrics at this stage:
+    • Clients closed (total)
+    • Close rate = Clients / Proposals × 100
+    • Overall conversion rate = Clients / Leads × 100
+    • Average deal size
+    • Sales cycle length (average days)
+    • Close rate by channel
+    • Cost per acquisition (CAC) = Investment / Clients
+
+
+================================================================================
+8. STEP 7 — REVENUE RECORDED
+================================================================================
+
+What happens:
+    Money is received from the client — via invoice payment, direct deposit,
+    or any revenue mechanism.
+
+Business question answered:
+    "How much money did this initiative actually produce?"
+
+Flow:
+
+    Client closed
+        │
+        ▼
+    Revenue enters ERP (operational layer — unchanged):
+        │
+        ├── Invoice created: $4,500 — "Mobile App Development for TechCo"
+        │   Customer linked to converted lead
+        │
+        ├── Invoice paid → Bank account credited
+        │
+        └── BOS Revenue Attribution:
+            • Invoice → Initiative X
+            • Invoice → Channel: LinkedIn
+            • Revenue amount: $4,500
+
+    Multiple revenue events per initiative:
+        │
+        ├── Invoice #1: $4,500 (TechCo — project)
+        ├── Invoice #2: $8,000 (StartupY — project)
+        ├── Invoice #3: $3,200 (CorpZ — project)
+        └── Invoice #4: $12,000 (BigCo — project)
+        │
+        └── Total attributed revenue: $27,700
+
+Data captured:
+    • Invoice record (ERP — owned)
+    • Payment record (ERP — owned)
+    • Revenue attribution (BOS — owned)
+    • Time to first revenue (days from initiative start)
+
+Key metrics at this stage:
+    • Total revenue (attributed to initiative)
+    • Revenue by channel
+    • Average deal size
+    • Revenue per dollar invested
+    • Time to first revenue
+    • Outstanding pipeline (proposals not yet invoiced)
+
+
+================================================================================
+9. STEP 8 — ROI COMPUTED
+================================================================================
+
+What happens:
+    The BOS automatically computes return on investment by comparing total
+    attributed revenue against total attributed investment.
+
+Business question answered:
+    "Was this initiative worth the investment?"
+
+Flow:
+
+    All attributed data collected
+        │
+        ▼
+    KPI Engine computes:
+
+        Initiative: "Launch Mobile App Agency — Q1 Client Acquisition"
+        ─────────────────────────────────────────────────────────
+        Investment:     $3,200
+        Returns:        $50 (ad credit refund)
+        Net Investment: $3,150
+        Revenue:        $27,700
+        ─────────────────────────────────────────────────────────
+        Gross ROI:      765%  = ($27,700 - $3,200) / $3,200 × 100
+        Net ROI:        779%  = ($27,700 - $3,150) / $3,150 × 100
+        ─────────────────────────────────────────────────────────
+        By Channel:
+        • LinkedIn:  Investment $1,700 → Revenue $22,500 → ROI 1,224%
+        • Google Ads: Investment $800 → Revenue $5,200 → ROI 550%
+        • Referral:  Investment $0 → Revenue $0 → N/A
+
+        Decision Recommendation: SCALE — ROI exceeds 300% target.
+        Suggested action: Increase LinkedIn budget, reduce Google Ads.
+
+Data captured:
+    • All KPI values (BOS — computed, cached for performance)
+    • ROI by initiative, channel, experiment (BOS — computed)
+    • Decision recommendation (BOS — generated)
+    • Timestamp of computation
+
+Key metrics at this stage:
+    • ROI (gross and net)
+    • ROI by channel
+    • ROI trend over time
+    • Comparison to target ROI
+    • Comparison to other initiatives
+    • Comparison to other businesses in portfolio
+
+
+================================================================================
+10. STEP 9 — LESSONS LEARNED
+================================================================================
+
+What happens:
+    The initiative is closed (success, failure, or pivot) and the founder
+    captures structured lessons for future reference.
+
+Business question answered:
+    "What did we learn, and what should we do differently next time?"
+
+Flow:
+
+    Initiative CLOSED (outcome: SUCCESS)
+        │
+        ▼
+    Required: Lessons Learned entry
+        │
+        ├── What worked (specific, actionable)
+        ├── What didn't work (specific, actionable)
+        ├── Key insight (the "so what")
+        ├── Recommendation (for future initiatives)
+        ├── Tags (searchable: business type, channel, outcome)
+        │
+        ▼
+    Decision Log final entry:
+        "Closing initiative with SUCCESS outcome. ROI 779% exceeded 300% target.
+         Recommending LinkedIn outreach as primary channel for future agency launches."
+        │
+        ▼
+    Optional: Create Playbook
+        "Agency Launch Playbook v1" derived from this initiative's data
+        │
+        ▼
+    Future initiative creation:
+        When founder creates "Launch AI Automation Agency — Q1 2027":
+        BOS surfaces: "Similar initiative found: Mobile App Agency Q1 2026.
+        Key lesson: Start with LinkedIn outreach. Avoid Google Ads until
+        organic channel validated. Expected CPL: $12-15."
+
+Data captured:
+    • Lesson learned record (BOS — owned)
+    • Decision log entry (BOS — owned)
+    • Playbook template (BOS — owned, optional)
+    • Initiative closure record with final KPIs (BOS — owned)
+
+Key metrics at this stage:
+    • Lesson count by business type
+    • Success rate by channel (across all initiatives)
+    • Playbook usage count
+    • Institutional knowledge growth over time
+
+
+================================================================================
+11. COMPLETE FLOW DIAGRAM
+================================================================================
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                    BUSINESS OPERATING SYSTEM                     │
+    │                                                                 │
+    │  ┌──────────┐                                                   │
+    │  │ INITIATIVE│ ← Founder creates strategic bet                  │
+    │  │ CREATED  │                                                   │
+    │  └────┬─────┘                                                   │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    Expenses attributed    ┌──────────┐           │
+    │  │INVESTMENT │◄─────────────────────────│ EXPENSE  │ (ERP)     │
+    │  │ TRACKED  │                          │ MODULE   │           │
+    │  └────┬─────┘                          └──────────┘           │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    CRM campaign linked   ┌──────────┐           │
+    │  │ CAMPAIGN │◄─────────────────────────│ CRM      │ (CRM)     │
+    │  │ RUNNING  │                          │ CAMPAIGN │           │
+    │  └────┬─────┘                          └──────────┘           │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    Lead attributed        ┌──────────┐           │
+    │  │   LEAD   │◄─────────────────────────│ CRM LEAD │ (CRM)     │
+    │  │GENERATED │                          │ + GHL    │           │
+    │  └────┬─────┘                          └──────────┘           │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    Activity logged        ┌──────────┐           │
+    │  │ MEETING  │◄─────────────────────────│ CALL     │ (CRM)     │
+    │  │  HELD    │                          │ ACTIVITY │           │
+    │  └────┬─────┘                          └──────────┘           │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    Status updated                             │
+    │  │ PROPOSAL │                                                   │
+    │  │  SENT    │                                                   │
+    │  └────┬─────┘                                                   │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    Lead converted         ┌──────────┐           │
+    │  │ CLIENT   │◄─────────────────────────│ CRM      │ (CRM)     │
+    │  │ CLOSED   │                          │ CONVERT  │           │
+    │  └────┬─────┘                          └──────────┘           │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐    Invoice paid           ┌──────────┐           │
+    │  │ REVENUE  │◄─────────────────────────│ INVOICE  │ (ERP)     │
+    │  │RECORDED  │                          │ MODULE   │           │
+    │  └────┬─────┘                          └──────────┘           │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐                                                   │
+    │  │   ROI    │ ← Auto-computed from investment vs revenue        │
+    │  │COMPUTED  │                                                   │
+    │  └────┬─────┘                                                   │
+    │       │                                                         │
+    │       ▼                                                         │
+    │  ┌──────────┐                                                   │
+    │  │ LESSONS  │ ← Required on initiative closure                  │
+    │  │ LEARNED  │ → Feeds future initiatives & playbooks            │
+    │  └──────────┘                                                   │
+    │                                                                 │
+    └─────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+12. DATA FLOW RULES
+================================================================================
+
+    1. Data always flows FORWARD through the funnel (Investment → Lesson)
+    2. Each step can happen independently (not every lead needs a meeting)
+    3. Steps can be skipped (referral lead may go straight to client)
+    4. Multiple paths can feed one initiative (multiple channels)
+    5. One expense can feed multiple initiatives (split attribution)
+    6. ROI is always computed, never manually entered
+    7. Lessons learned are always captured on closure, never optional
+    8. External systems feed into the flow via adapters, not direct integration
+
+================================================================================
+END OF DOCUMENT 07 — Data Flow
+================================================================================

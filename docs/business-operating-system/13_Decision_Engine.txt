@@ -1,0 +1,351 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 13 — Decision Engine
+================================================================================
+
+Authoring perspective: Principal Enterprise Software Architect
+Status: Architecture phase — core institutional memory design
+Version: 1.0
+
+The Decision Engine is not a feature. It is a core asset of the BOS —
+the mechanism that preserves WHY the business chose a path, not just WHAT happened.
+
+Without it, the BOS is a reporting layer.
+With it, the BOS becomes institutional memory that compounds across decades.
+
+================================================================================
+1. PURPOSE
+================================================================================
+
+Problems the Decision Engine solves:
+
+    1. "Why did we kill that initiative?" — answered 2 years later
+    2. "We tried this before and it failed" — but nobody remembers the details
+    3. "I would have decided differently" — but alternatives were never recorded
+    4. "The ROI looked good on paper" — but expected vs actual was never compared
+    5. "New hire repeats old mistakes" — no searchable decision history
+
+The Decision Engine ensures every significant strategic choice is:
+    • Recorded with context
+    • Linked to initiatives, ventures, and KPIs
+    • Evaluated against actual outcomes
+    • Searchable for future ventures
+
+
+================================================================================
+2. WHAT QUALIFIES AS A DECISION
+================================================================================
+
+A BosDecision should be recorded when:
+
+    MUST record:
+        • Initiative activated, paused, closed, killed, or pivoted
+        • Budget increase/decrease > 20% on active initiative
+        • Channel allocation change (major reallocation)
+        • New venture launched or venture archived
+        • Attribution void or major correction
+        • Experiment adoption (roll out winner) or abandonment
+        • Playbook published
+
+    SHOULD record:
+        • Pricing change for an offer
+        • ICP/market segment change
+        • Hire vs outsource choice
+        • Tool/platform selection (GHL vs alternative)
+        • Continue vs kill when ROI negative but leads positive
+
+    DO NOT record (noise):
+        • Individual expense entry
+        • Individual lead assignment
+        • Routine weekly tasks
+        • UI preference changes
+
+Rule: If the choice affects initiative ROI, venture direction, or budget >
+      $500 equivalent — record a BosDecision.
+
+
+================================================================================
+3. DECISION ENTITY MODEL (CONCEPTUAL)
+================================================================================
+
+BosDecision
+    ├── id
+    ├── companyId
+    ├── ventureId(s)              — Which venture(s) affected
+    ├── initiativeId(s)           — Which initiative(s) affected
+    ├── experimentId (optional)
+    ├── decisionType              — Enum (see section 4)
+    ├── title                     — Short summary
+    ├── context                   — Situation at time of decision
+    ├── decision                  — What was decided (the choice made)
+    ├── rationale                 — Why this choice (the reasoning)
+    ├── alternatives[]            — BosDecisionAlternative records
+    ├── expectedOutcome           — What we expect to happen
+    ├── expectedKpiImpact[]       — Which KPIs should move, how
+    ├── actualOutcome (later)     — What actually happened
+    ├── actualKpiSnapshot[] (later) — KPI values at evaluation time
+    ├── confidenceLevel           — LOW | MEDIUM | HIGH
+    ├── reversibility             — EASY | MODERATE | IRREVERSIBLE
+    ├── ownerId                   — Who made/owns the decision
+    ├── approverId (optional)     — Who approved if different
+    ├── relatedDecisionIds[]      — Prior decisions this builds on or supersedes
+    ├── supersededById (optional) — If this decision was replaced
+    ├── status                    — Lifecycle state (see Document 11)
+    ├── decidedAt                 — Timestamp
+    ├── evaluatedAt (optional)    — When outcome was reviewed
+    ├── lessonLearnedId (optional)— Link to BosLessonLearned on evaluation
+    ├── tags[]                    — Searchable: channel, model, outcome
+    └── attachments (optional)    — Links to notes, screenshots, external docs
+
+
+BosDecisionAlternative
+    ├── id
+    ├── decisionId
+    ├── title                     — Alternative option name
+    ├── description               — What this alternative entailed
+    ├── pros[]                    — Advantages
+    ├── cons[]                    — Disadvantages
+    ├── estimatedCost (optional)
+    ├── estimatedOutcome (optional)
+    ├── rejectedReason            — Why not chosen
+    └── wasSelected               — boolean (exactly one true per decision)
+
+
+================================================================================
+4. DECISION TYPES (TAXONOMY)
+================================================================================
+
+INVESTMENT
+    • INCREASE_BUDGET
+    • DECREASE_BUDGET
+    • REALLOCATE_CHANNEL_BUDGET
+    • APPROVE_NEW_SPEND_CATEGORY
+
+INITIATIVE_LIFECYCLE
+    • ACTIVATE_INITIATIVE
+    • PAUSE_INITIATIVE
+    • RESUME_INITIATIVE
+    • CLOSE_INITIATIVE_SUCCESS
+    • CLOSE_INITIATIVE_KILL
+    • PIVOT_INITIATIVE
+
+CHANNEL & GROWTH
+    • ADD_CHANNEL
+    • REMOVE_CHANNEL
+    • SCALE_CHANNEL
+    • ADOPT_EXPERIMENT_RESULT
+    • ABANDON_EXPERIMENT
+
+VENTURE & PORTFOLIO
+    • LAUNCH_VENTURE
+    • PAUSE_VENTURE
+    • ARCHIVE_VENTURE
+    • ENTER_NEW_MARKET
+
+OFFER & POSITIONING
+    • CHANGE_PRICING
+    • CHANGE_ICP
+    • LAUNCH_NEW_OFFER
+    • RETIRE_OFFER
+
+OPERATIONS
+    • HIRE vs OUTSOURCE
+    • SELECT_TOOL_PLATFORM
+    • CHANGE_ATTRIBUTION_POLICY
+
+CORRECTION
+    • VOID_ATTRIBUTION
+    • CORRECT_KPI_DEFINITION
+    • DATA_QUALITY_ESCALATION
+
+
+================================================================================
+5. DECISION LIFECYCLE (SUMMARY — FULL DETAIL IN DOC 11)
+================================================================================
+
+    PROPOSED ──► APPROVED ──► ACTIVE ──► EVALUATED
+                    │           │
+                    │           ├──► SUPERSEDED (by newer decision)
+                    │           └──► REVOKED (rare)
+
+Entry (ACTIVE):
+    Decision is in effect. May trigger initiative state transitions.
+
+Evaluation (EVALUATED):
+    Required for decisions with expectedOutcome when:
+        • Initiative closes
+        • 90 days elapsed (configurable)
+        • Founder manually triggers review
+
+    Evaluation captures:
+        • actualOutcome
+        • actualKpiSnapshot
+        • outcomeRating: BETTER_THAN_EXPECTED | AS_EXPECTED | WORSE_THAN_EXPECTED
+        • optional BosLessonLearned auto-draft
+
+
+================================================================================
+6. DECISION RECOMMENDATION ENGINE (ADVISORY — NOT AUTONOMOUS)
+================================================================================
+
+The BOS may PROPOSE decisions based on KPI thresholds. It never executes
+them without human approval (founder or authorized role).
+
+Recommendation record:
+    BosDecisionRecommendation
+        ├── triggerType         — KPI_THRESHOLD | BUDGET_BURN | STALE_INITIATIVE
+        ├── triggerEvidence     — KPI values that fired the trigger
+        ├── suggestedDecisionType
+        ├── suggestedTitle
+        ├── suggestedRationale  — Auto-generated prose from KPI data
+        ├── status              — PENDING | ACCEPTED | DISMISSED | EXPIRED
+        └── linkedDecisionId    — If founder accepts and creates BosDecision
+
+Example triggers:
+
+    ROI < 0% for 60 days + investment > $1,000
+        → Recommend: CLOSE_INITIATIVE_KILL or PIVOT_INITIATIVE
+
+    Channel A ROI > 3× Channel B ROI
+        → Recommend: REALLOCATE_CHANNEL_BUDGET
+
+    Budget utilization > 80% with no revenue
+        → Recommend: PAUSE_INITIATIVE or DECREASE_BUDGET
+
+    Initiative active > 120 days with no leads
+        → Recommend: Review ICP and channel (CHANGE_ICP or ADD_CHANNEL)
+
+Critical rule:
+    Recommendations create BosDecisionRecommendation records.
+    They do NOT auto-close initiatives or void attributions.
+    Human approval always required.
+
+
+================================================================================
+7. RELATIONSHIPS TO OTHER BOS ENTITIES
+================================================================================
+
+    BosDecision ──► BosInitiative     (many-to-many)
+    BosDecision ──► BosVenture        (many-to-many)
+    BosDecision ──► BosExperiment     (optional)
+    BosDecision ──► BosMetricSnapshot (expected and actual KPIs)
+    BosDecision ──► BosLessonLearned  (on evaluation)
+    BosDecision ──► BosDecision       (supersedes / related chain)
+    BosDecision ──► BosAssumption     (invalidate assumption on evaluation)
+    BosDecision ──► BosRisk           (realize risk on evaluation)
+
+Decision chain example:
+
+    Decision D1: "Launch Mobile App Agency Q1 Acquisition" (ACTIVATE_INITIATIVE)
+        └── Decision D2: "Increase LinkedIn budget to $1,500" (INCREASE_BUDGET)
+            └── Decision D3: "Kill Google Ads experiment" (ABANDON_EXPERIMENT)
+                └── Decision D4: "Close initiative as SUCCESS" (CLOSE_INITIATIVE)
+                    └── Lesson L1: "LinkedIn outreach wins for agencies"
+
+Future founder launching AI Agency sees D1-L1 chain when creating similar initiative.
+
+
+================================================================================
+8. INSTITUTIONAL MEMORY — SEARCH & DISCOVERY
+================================================================================
+
+Search dimensions:
+    • By venture, initiative, channel, decision type
+    • By tag (agency, saas, linkedin, failed, success)
+    • By outcome rating (find past WORSE_THAN_EXPECTED decisions)
+    • By KPI affected (all decisions that targeted CPL)
+    • Full-text on rationale and context
+
+Discovery features (phased):
+
+    Phase 1: Manual search and filters
+    Phase 2: "Similar decisions" when creating new initiative
+    Phase 3: Auto-surface relevant lessons + decisions on initiative create
+    Phase 4: Pattern analysis ("Decisions to increase budget without experiment
+             evidence have 70% WORSE_THAN_EXPECTED rate")
+
+
+================================================================================
+9. DECISION vs LESSON LEARNED — BOUNDARY
+================================================================================
+
+    BosDecision               | BosLessonLearned
+    --------------------------|------------------------------------------
+    A choice made             | An insight derived
+    Has alternatives          | Has recommendations
+    Has expected outcome      | Has what worked / didn't work
+    Evaluated for accuracy    | Published for reuse
+    Point-in-time             | Timeless (until deprecated)
+
+Flow:
+    Decision (ACTIVE) → time passes → Evaluation (EVALUATED) → Lesson (PUBLISHED)
+
+One decision may produce zero or one primary lesson.
+One lesson may reference multiple decisions.
+
+
+================================================================================
+10. REPORTING & AUDIT REQUIREMENTS
+================================================================================
+
+Reports the Decision Engine must support (future):
+
+    • Decision log export (CSV) — full audit trail
+    • Decision outcome accuracy — % BETTER / AS / WORSE than expected
+    • Decision latency — time from PROPOSED to ACTIVE
+    • Un evaluated decisions — decisions past due for review
+    • Initiative decision history — all decisions for one initiative
+    • Portfolio decision density — decisions per venture per quarter
+
+Audit requirements:
+    • No hard delete of BosDecision ever
+    • All status changes append to decision audit trail
+    • Supersede must link forward and backward IDs
+    • Void attribution must reference a BosDecision of type VOID_ATTRIBUTION
+
+
+================================================================================
+11. PERMISSIONS (SEE DOCUMENT 12)
+================================================================================
+
+    bos_decisions_view      — See decision log
+    bos_decisions_manage    — Create, approve, evaluate
+    bos_decisions_supersede — Supersede/revoke (founder-level)
+
+Analyst role: view only — valuable for advisors/investors without write access.
+
+
+================================================================================
+12. WHY THIS IS CORE — NOT OPTIONAL
+================================================================================
+
+Documents 01–09 treated Decision Log as one module among many.
+This document elevates it to a first-class pillar:
+
+    BOS Pillars:
+        1. Attribution (what happened, strategically contextualized)
+        2. Measurement (KPIs, ROI, funnel)
+        3. Decision Engine (why it happened, was it right)
+        4. Institutional Memory (lessons, playbooks, assumptions)
+
+Remove Decision Engine → BOS degrades to a fancy reporting dashboard.
+Remove Attribution → BOS has no data.
+Remove Measurement → BOS has no feedback loop.
+Remove Institutional Memory → BOS does not compound across ventures.
+
+All four pillars required.
+
+
+================================================================================
+13. ARCHITECTURAL CONSTRAINTS (FOR FUTURE IMPLEMENTATION)
+================================================================================
+
+    • BosDecision stored in BOS-owned collection — never in ERP documents
+    • Decision creation does NOT trigger ERP side effects directly
+    • Initiative state transitions may REQUIRE a BosDecision reference ID
+    • KPI recommendation triggers read from BosMetricSnapshot — not live compute
+    • Decision search indexed by ventureId, initiativeId, tags, decidedAt
+
+================================================================================
+END OF DOCUMENT 13 — Decision Engine
+================================================================================

@@ -11,7 +11,7 @@ const BACKUP_PAGE_SIZE = 400;
 const FIRESTORE_BATCH_LIMIT = 450;
 
 /** Major export milestones (company meta → … → finalize). Used for progress UI. */
-export const BACKUP_EXPORT_TOTAL_STAGES = 28;
+export const BACKUP_EXPORT_TOTAL_STAGES = 29;
 
 export interface BackupExportProgress {
   /** Stages fully finished (0 … totalStages). */
@@ -339,6 +339,14 @@ export class DatabaseMigrationService {
           companyId,
         ),
       );
+      data.bankDeposits = toRows(
+        await runQueryStage(
+          "Bank deposits",
+          "bankDeposits",
+          "companyId",
+          companyId,
+        ),
+      );
       data.assigneeAssignmentLog = toRows(
         await runQueryStage(
           "Assignment audit log",
@@ -661,6 +669,7 @@ export class DatabaseMigrationService {
         ["bankAccounts", "bankAccounts"],
         ["bankTransfers", "bankTransfers"],
         ["bankReconciliations", "bankReconciliations"],
+        ["bankDeposits", "bankDeposits"],
         ["products", "products"],
         ["customers", "customers"],
         ["businesses", "businesses"],

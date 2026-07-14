@@ -1,0 +1,363 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 05 — Growth Initiative Blueprint
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+The Growth Initiative is the central strategic unit of the entire BOS.
+This document defines its complete business design.
+
+================================================================================
+1. PURPOSE
+================================================================================
+
+A Growth Initiative represents a deliberate, time-bound, measurable effort
+to achieve a specific business outcome within a specific business venture.
+
+It is the answer to: "What am I trying to accomplish, and is it working?"
+
+Examples:
+
+    • "Launch Mobile App Agency — Acquire First 10 Clients (Q1–Q2 2026)"
+    • "Validate AI Automation SaaS — 100 Signups in 60 Days"
+    • "Test Cold Email as Primary Channel for Agency Leads"
+    • "Build Personal Brand to Support All Ventures — Content Strategy 2026"
+    • "Enter European Market for Mobile App Agency"
+
+An initiative is NOT:
+    • A project (delivery work for a specific client)
+    • A campaign (a single marketing push)
+    • An expense category
+    • A task or to-do item
+
+An initiative IS:
+    • A strategic bet with expected return
+    • A container for investments, channels, and experiments
+    • A unit of measurement for ROI
+    • A learning vehicle
+
+
+================================================================================
+2. INITIATIVE STRUCTURE (CONCEPTUAL FIELDS)
+================================================================================
+
+Identity:
+    • Name                    — Human-readable title
+    • Business                — Which venture this belongs to
+    • Description             — What we are trying to achieve and why
+    • Owner                   — Who is responsible (founder, team member)
+
+Timeline:
+    • Start date              — When the initiative begins
+    • Target end date         — When we expect to evaluate results
+    • Actual end date         — When it actually closed (if closed)
+
+Strategy:
+    • Strategic goal          — Which OKR/goal this supports
+    • Primary channel         — Main acquisition method
+    • Secondary channels      — Supporting acquisition methods
+    • Cost center(s)          — Where spend is categorized
+    • Hypothesis              — "We believe that [action] will result in [outcome]
+                               because [reason]"
+
+Financial:
+    • Budget allocated        — Planned investment ceiling
+    • Investment to date      — Computed from attributed expenses (read-only)
+    • Revenue to date         — Computed from attributed invoices (read-only)
+    • ROI to date             — Computed (read-only)
+    • Target ROI              — Expected return (e.g., 300%)
+
+Measurement:
+    • Success criteria        — How we define success (specific, measurable)
+    • KPI targets             — Target values for key metrics
+    • Current KPI values      — Computed (read-only)
+
+
+================================================================================
+3. LIFECYCLE & STATES
+================================================================================
+
+Every initiative moves through a defined lifecycle:
+
+    ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+    │  DRAFT   │────►│  ACTIVE  │────►│  PAUSED  │────►│  CLOSED  │
+    └──────────┘     └────┬─────┘     └────┬─────┘     └──────────┘
+                          │                │
+                          │                └──────► ACTIVE (resume)
+                          │
+                          └──────────────► CLOSED (kill early)
+
+State definitions:
+
+    DRAFT
+        Initiative is being planned. No investments attributed yet.
+        Actions: Edit freely, define hypothesis, set budget, assign channels.
+        Exit: Activate when ready to begin spending/acquiring.
+
+    ACTIVE
+        Initiative is live. Investments, leads, and revenue are being tracked.
+        Actions: Run experiments, attribute expenses, monitor KPIs, log decisions.
+        Exit: Pause (temporary halt) or Close (final evaluation).
+
+    PAUSED
+        Initiative is temporarily halted. No new investments should be attributed.
+        Existing data remains. Useful when waiting for market conditions,
+        budget approval, or external dependencies.
+        Exit: Resume (back to Active) or Close.
+
+    CLOSED
+        Initiative is complete. Final ROI calculated. Lessons learned required.
+        Sub-states:
+            • SUCCESS    — Met or exceeded success criteria
+            • PARTIAL    — Some progress but did not meet criteria
+            • FAILED     — Did not achieve meaningful results
+            • KILLED     — Deliberately stopped before completion
+            • PIVOTED    — Changed direction; original initiative closed,
+                           new initiative created
+
+Closure requirements:
+    • Final ROI computed automatically
+    • Lessons learned entry required (cannot close without it)
+    • Decision log final entry: "Why are we closing this initiative?"
+    • All open experiments must be closed first
+
+
+================================================================================
+4. KEY PERFORMANCE INDICATORS (INITIATIVE-LEVEL)
+================================================================================
+
+Each initiative tracks these KPIs automatically (computed, not manually entered):
+
+Investment KPIs:
+    • Total investment          — Sum of all attributed expenses + time
+    • Budget utilization %      — Investment / Budget allocated
+    • Burn rate                 — Investment per week/month
+    • Cost per channel          — Investment broken down by acquisition channel
+
+Acquisition KPIs:
+    • Total leads generated     — Attributed leads count
+    • Cost per lead (CPL)       — Investment / Leads
+    • Lead source breakdown     — Leads by channel
+
+Conversion KPIs:
+    • Meetings held             — Leads that reached meeting stage
+    • Meeting rate              — Meetings / Leads
+    • Proposals sent            — Leads that received proposals
+    • Proposal rate             — Proposals / Meetings
+    • Clients closed            — Leads converted to clients
+    • Close rate                — Clients / Proposals
+    • Overall conversion rate   — Clients / Leads
+
+Revenue KPIs:
+    • Total revenue             — Sum of attributed invoice amounts
+    • Average deal size         — Revenue / Clients closed
+    • Revenue per channel       — Revenue broken down by channel
+
+ROI KPIs:
+    • Gross ROI                 — (Revenue - Investment) / Investment × 100
+    • Net ROI                   — (Revenue - Investment - Returns) / Investment
+    • ROI per channel           — Channel-specific ROI
+    • Time to first revenue     — Days from start to first attributed invoice
+    • Time to positive ROI      — Days from start until ROI > 0%
+
+Efficiency KPIs:
+    • Sales cycle length        — Average days from lead to client
+    • Investment efficiency     — Revenue per dollar invested
+    • Channel efficiency ranking — Channels sorted by ROI
+
+
+================================================================================
+5. INVESTMENT MODEL
+================================================================================
+
+Investments flow INTO an initiative through the Attribution Engine.
+The initiative never stores investment amounts directly — it computes them.
+
+Investment sources:
+
+    Source              | How It Enters                    | Example
+    --------------------|----------------------------------|---------------------------
+    Expenses            | Post-hoc or inline attribution   | $500 Google Ads expense
+    Expense returns     | Reduces net investment           | $50 ad credit refund
+    Time (future)       | Manual or integrated time entry  | 20 hours founder time
+    Tools/subscriptions | Expense attribution              | $99/month CRM tool
+    Contractor payments | Expense attribution              | $2,000 developer payment
+    Ad platform spend   | Adapter or manual expense        | $1,200 Meta Ads
+
+Investment rules:
+    • One expense can be split across multiple initiatives (allocation %)
+    • One expense can be attributed to initiative + channel + experiment simultaneously
+    • Unattributed expenses are visible but do not count toward any initiative ROI
+    • Returns/refunds reduce net investment automatically
+
+
+================================================================================
+6. ROI MODEL
+================================================================================
+
+ROI is the single most important output of an initiative.
+
+    Gross ROI  = (Total Attributed Revenue - Total Investment) / Total Investment × 100
+
+    Net ROI    = (Total Attributed Revenue - Total Investment + Total Returns) / Total Investment × 100
+
+    Channel ROI = (Channel Revenue - Channel Investment) / Channel Investment × 100
+
+ROI interpretation guidelines:
+
+    ROI > 300%     — Excellent. Scale investment.
+    ROI 100–300%   — Good. Continue and optimize.
+    ROI 0–100%     — Marginal. Evaluate channel mix.
+    ROI < 0%       — Losing money. Decide: pivot, pause, or kill.
+    ROI = N/A      — No revenue yet. Evaluate leading indicators (leads, meetings).
+
+ROI is computed in real-time as new expenses and invoices are attributed.
+It is never manually entered.
+
+
+================================================================================
+7. REVENUE ATTRIBUTION
+================================================================================
+
+Revenue enters an initiative when:
+
+    1. A lead attributed to this initiative converts to a client
+    2. An invoice is created for that client
+    3. The invoice is linked (via attribution) to the initiative
+
+Attribution models (in order of sophistication):
+
+    Phase 1 — Last Touch:
+        Revenue attributed to the initiative that generated the converting lead.
+
+    Phase 2 — First Touch:
+        Revenue attributed to the initiative that first acquired the lead.
+
+    Phase 3 — Multi-Touch (future):
+        Revenue split across all initiatives that touched the lead journey.
+
+Start with Last Touch. It is simple, auditable, and sufficient for
+single-founder operations.
+
+
+================================================================================
+8. DECISION FRAMEWORK
+================================================================================
+
+The BOS should recommend decisions based on initiative performance.
+These are not automated actions — they are recommendations for the founder.
+
+Decision triggers:
+
+    ┌─────────────────────────┬────────────────────────────────────────────┐
+    │ Signal                  │ Recommended Decision                       │
+    ├─────────────────────────┼────────────────────────────────────────────┤
+    │ ROI > target after 90d  │ SCALE — increase budget, expand channels   │
+    │ ROI positive but low    │ OPTIMIZE — run experiments, cut weak channels│
+    │ ROI negative after 60d  │ PIVOT — change channel, offer, or audience │
+    │ ROI negative after 90d  │ KILL — close initiative, capture lessons   │
+    │ Budget 80% used, no     │ REVIEW — evaluate leading indicators,      │
+    │   revenue yet           │   decide continue/pause/kill               │
+    │ One channel ROI 3x      │ REALLOCATE — shift budget to winning channel│
+    │   others                │                                            │
+    │ Experiment success      │ ADOPT — roll winning variant into main     │
+    │ Experiment failure      │ ARCHIVE — log lesson, try next experiment  │
+    └─────────────────────────┴────────────────────────────────────────────┘
+
+Every decision is logged in the Decision Log with rationale.
+
+
+================================================================================
+9. EXPERIMENTS WITHIN INITIATIVES
+================================================================================
+
+Experiments are structured tests nested inside an initiative.
+
+    Initiative: "Launch Mobile App Agency — Client Acquisition"
+    ├── Experiment 1: "LinkedIn outreach — case study vs no case study"
+    │   Hypothesis: "Leads with case study convert 2x"
+    │   Budget: $200 (tool costs)
+    │   Duration: 2 weeks
+    │   Success: Meeting rate > 10%
+    │   Result: SUCCESS — 14% meeting rate with case study
+    │
+    ├── Experiment 2: "Google Ads — service keywords vs problem keywords"
+    │   Hypothesis: "Problem keywords have lower CPL"
+    │   Budget: $500
+    │   Duration: 1 month
+    │   Success: CPL < $15
+    │   Result: FAILED — CPL was $42, lesson captured
+    │
+    └── Experiment 3: "Cold email — 3 subject line variants"
+        Status: ACTIVE
+
+Experiment lifecycle: PLANNED → ACTIVE → COMPLETED (success/failure/inconclusive)
+Each experiment closure feeds into the initiative's Lessons Learned.
+
+
+================================================================================
+10. LESSONS LEARNED (INITIATIVE CLOSURE)
+================================================================================
+
+When an initiative closes, a structured lesson capture is required:
+
+    ┌─────────────────────────────────────────────────────────┐
+    │  LESSON LEARNED — Initiative Closure                     │
+    ├─────────────────────────────────────────────────────────┤
+    │  Business:        Mobile App Agency                      │
+    │  Initiative:      Q1 Client Acquisition                 │
+    │  Outcome:         SUCCESS (ROI 775%)                     │
+    │  Duration:        92 days                                │
+    │  Investment:      $3,200                                 │
+    │  Revenue:         $28,000                                │
+    │                                                         │
+    │  What worked:                                           │
+    │  • LinkedIn outreach with case studies (14% meeting rate)│
+    │  • Targeting CTOs at 10-50 person companies              │
+    │  • $2,500-$5,000 project range sweet spot               │
+    │                                                         │
+    │  What didn't work:                                      │
+    │  • Google Ads ($42 CPL — too expensive for agency model)│
+    │  • Facebook Ads (zero qualified leads)                   │
+    │                                                         │
+    │  Key insight:                                           │
+    │  Direct outreach to technical decision-makers with proof │
+    │  of past work is the highest-ROI channel for agencies.   │
+    │                                                         │
+    │  Recommendation for future:                             │
+    │  Start with LinkedIn outreach for any new agency launch. │
+    │  Skip paid ads until organic channel is validated.       │
+    │                                                         │
+    │  Tags: [agency] [linkedin] [outreach] [success]          │
+    └─────────────────────────────────────────────────────────┘
+
+This lesson becomes searchable and surfaces when launching similar initiatives.
+
+
+================================================================================
+11. FUTURE EXPANSION
+================================================================================
+
+Phase 1 (Year 1):
+    Manual initiative creation, post-hoc attribution, basic KPI computation
+
+Phase 2 (Year 2):
+    Initiative templates/playbooks, automated KPI dashboards, decision triggers
+
+Phase 3 (Year 3):
+    Cross-initiative comparison, channel benchmarks, AI-powered recommendations
+
+Phase 4 (Year 5):
+    Multi-business portfolio view, automated resource allocation suggestions,
+    predictive ROI modeling based on historical data
+
+Phase 5 (Year 10):
+    Semi-autonomous initiative management — system proposes initiatives based
+    on market signals, historical patterns, and portfolio gaps
+
+================================================================================
+END OF DOCUMENT 05 — Growth Initiative Blueprint
+================================================================================

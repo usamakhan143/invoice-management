@@ -29,6 +29,15 @@ const ProductsPage = lazy(() => import("./pages/app/ProductsPage"));
 const BankAccountsPage = lazy(() => import("./pages/app/BankAccountsPage"));
 const ExpensesPage = lazy(() => import("./pages/app/ExpensesPage"));
 const LoansPage = lazy(() => import("./pages/app/LoansPage"));
+const ReportsPage = lazy(() => import("./pages/app/ReportsPage"));
+const BosVenturesPage = lazy(() => import("./pages/app/bos/BosVenturesPage"));
+const BosInitiativesPage = lazy(() => import("./pages/app/bos/BosInitiativesPage"));
+const BosInitiativeDetailPage = lazy(
+  () => import("./pages/app/bos/BosInitiativeDetailPage"),
+);
+const BosMilestoneTemplatesPage = lazy(
+  () => import("./pages/app/bos/BosMilestoneTemplatesPage"),
+);
 const UserManagementPage = lazy(() => import("./pages/app/UserManagementPage"));
 const ActivityPage = lazy(() => import("./pages/app/ActivityPage"));
 const CompanyActivityPage = lazy(
@@ -149,10 +158,11 @@ const App: React.FC = () => {
       <OfflineModeIndicator />
       <NetworkStatus />
       <ConnectionStatus />
-      <HashRouter>
+      <div className="h-full min-h-0 overflow-hidden">
+        <HashRouter>
         <Suspense
           fallback={
-            <div className="flex h-screen items-center justify-center">
+            <div className="flex h-full items-center justify-center">
               <Spinner />
             </div>
           }
@@ -180,6 +190,15 @@ const App: React.FC = () => {
                 <Route path="/bank-accounts" element={<BankAccountsPage />} />
                 <Route path="/expenses" element={<ExpensesPage />} />
                 <Route path="/loans" element={<LoansPage />} />
+                <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/bos" element={<Navigate to="/bos/initiatives" replace />} />
+                <Route path="/bos/ventures" element={<BosVenturesPage />} />
+                <Route path="/bos/initiatives" element={<BosInitiativesPage />} />
+                <Route path="/bos/milestone-templates" element={<BosMilestoneTemplatesPage />} />
+                <Route
+                  path="/bos/initiatives/:initiativeId"
+                  element={<BosInitiativeDetailPage />}
+                />
                 <Route path="/users" element={<UserManagementPage />} />
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route
@@ -201,7 +220,8 @@ const App: React.FC = () => {
 
           </Routes>
         </Suspense>
-      </HashRouter>
+        </HashRouter>
+      </div>
     </>
   );
 };

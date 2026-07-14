@@ -1,0 +1,288 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 02 — Core Design Principles
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+These principles govern every architectural, product, and business decision
+for the BOS. When in doubt, return to this document.
+
+================================================================================
+PRINCIPLE 1 — BACKWARD COMPATIBILITY
+================================================================================
+
+Definition:
+    Nothing we build in the BOS layer may break, alter, or degrade any
+    existing module, workflow, or user experience.
+
+Application:
+    • The Expense form remains unchanged for daily staff
+    • The Reporting Engine continues to function without BOS data
+    • CRM workflows are unaffected if BOS is not configured
+    • Legacy data without BOS attribution remains valid forever
+    • BOS fields are always optional, never required on source records
+
+Test:
+    "If we removed the entire BOS layer tomorrow, would the business still
+     operate exactly as it does today?"
+    Answer must always be YES.
+
+
+================================================================================
+PRINCIPLE 2 — BUSINESS FIRST, TECHNOLOGY SECOND
+================================================================================
+
+Definition:
+    Every entity, module, and feature must be justified by a business question
+    it answers — not by a technical capability it enables.
+
+Application:
+    • We do not create a "Project" entity because project management tools
+      have projects. We create it because the founder asks:
+      "How much have I invested in this business initiative?"
+    • KPIs exist because decisions depend on them, not because dashboards
+      look impressive
+    • If a feature does not help answer "Where am I investing?" or
+      "What should I do next?" — it does not belong in the BOS
+
+Test:
+    "Can I explain this feature to a non-technical founder in one sentence
+     using business language?"
+    Answer must always be YES.
+
+
+================================================================================
+PRINCIPLE 3 — SIMPLICITY AT THE POINT OF USE
+================================================================================
+
+Definition:
+    Complexity is allowed in the architecture. Complexity is forbidden at the
+    point of daily use.
+
+Application:
+    • Staff recording expenses see zero BOS fields
+    • Finance users see optional attribution on detail views
+    • Founders see full initiative dashboards and ROI analysis
+    • Progressive disclosure: simple by default, powerful when needed
+    • One primary action per screen — no feature sprawl
+
+Test:
+    "Can a new team member use this without reading documentation?"
+    For operational modules: YES.
+    For BOS strategic views: acceptable with minimal onboarding.
+
+
+================================================================================
+PRINCIPLE 4 — REUSABILITY ACROSS VENTURES
+================================================================================
+
+Definition:
+    Every BOS concept must work identically regardless of which business,
+    industry, or acquisition channel is active.
+
+Application:
+    • "Growth Initiative" works for a Mobile App Agency AND a SaaS product
+    • "Acquisition Channel" works for cold outreach AND content marketing
+    • "Investment" works for ad spend AND developer salaries AND software tools
+    • No business-specific hardcoding — configuration over customization
+    • Launching Business #5 should require zero architectural changes
+
+Test:
+    "If I launch a completely different type of business tomorrow, do I need
+     to modify the BOS architecture?"
+    Answer must always be NO — only new configuration data.
+
+
+================================================================================
+PRINCIPLE 5 — MODULAR ARCHITECTURE (LOOSE COUPLING)
+================================================================================
+
+Definition:
+    BOS modules connect through well-defined interfaces, not embedded
+    dependencies. Any module can evolve independently.
+
+Application:
+    • BOS does not write to expense documents — it creates sidecar attributions
+    • BOS does not modify CRM lead records — it links via reference IDs
+    • BOS does not alter invoice amounts — it reads revenue for ROI calculation
+    • Integration is via attribution and reference, never via mutation
+    • Removing CRM integration does not break BOS initiative tracking
+
+Test:
+    "Can I disable any single integration without breaking the BOS core?"
+    Answer must always be YES.
+
+
+================================================================================
+PRINCIPLE 6 — SINGLE SOURCE OF TRUTH (WITH CLEAR OWNERSHIP)
+================================================================================
+
+Definition:
+    Every piece of data has exactly one authoritative owner. Other modules
+    may read or reference it, but never duplicate or override it.
+
+Application:
+
+    Data                    | Owner (Source of Truth)  | BOS Role
+    ------------------------|--------------------------|---------------------------
+    Expense amount          | Expense module           | Read + attribute
+    Lead contact info       | CRM module               | Read + attribute
+    Invoice revenue         | Invoice module           | Read for ROI
+    Initiative definition   | BOS                      | Own + manage
+    Investment attribution  | BOS                      | Own + manage
+    Channel performance     | BOS (computed)           | Compute + store
+    ROI calculation         | BOS (computed)           | Compute + store
+    Lessons learned         | BOS                      | Own + manage
+
+    • BOS never stores a copy of an expense amount as authoritative data
+    • BOS may cache computed values (ROI, CAC) for performance, but always
+      with a recompute path from source data
+
+
+================================================================================
+PRINCIPLE 7 — LONG-TERM THINKING (10+ YEAR HORIZON)
+================================================================================
+
+Definition:
+    Design for where the business will be in ten years, not where it is today.
+
+Application:
+    • Entity names must not collide with existing concepts (Bi* prefix,
+      not "Business" which already means CRM customer sub-entity)
+    • Data models must support millions of records per company
+    • Multi-business, multi-unit hierarchy must be possible from day one
+      (even if only one business exists initially)
+    • Audit trails on all strategic decisions — who decided what, when, why
+    • Schema must allow future fields without migration of existing data
+
+Test:
+    "Will this design still work when I have 10 businesses, 100 initiatives,
+     and 1 million attributed transactions?"
+    If uncertain, design for yes.
+
+
+================================================================================
+PRINCIPLE 8 — SCALABILITY WITHOUT PREMATURE OPTIMIZATION
+================================================================================
+
+Definition:
+    Build for scale in architecture, but implement for today's needs.
+
+Application:
+    • Phase 1: Client-side joins and in-memory computation (works for thousands)
+    • Phase 3: Materialized aggregates (works for hundreds of thousands)
+    • Phase 5: Analytics warehouse export (works for millions)
+    • Do not build Phase 5 infrastructure in Phase 1
+    • Do not make Phase 1 decisions that prevent Phase 5
+
+Test:
+    "Does today's implementation block tomorrow's scale path?"
+    Answer must always be NO.
+
+
+================================================================================
+PRINCIPLE 9 — INVESTMENT ATTRIBUTION AS THE CORE PATTERN
+================================================================================
+
+Definition:
+    The fundamental operation of the BOS is linking operational facts to
+    strategic context. This pattern is universal and reusable.
+
+Application:
+    • An expense → attributed to → Initiative + Channel
+    • A lead → attributed to → Initiative + Channel
+    • Revenue → attributed to → Initiative + Channel
+    • Time spent → attributed to → Initiative + Channel
+    • Every attribution is optional, post-hoc, and correctable
+    • Attribution never modifies the source record
+
+This is the single most important pattern in the entire BOS.
+Every module, every integration, every KPI flows from this pattern.
+
+
+================================================================================
+PRINCIPLE 10 — DECISIONS OVER DASHBOARDS
+================================================================================
+
+Definition:
+    The BOS exists to improve decision quality, not to produce charts.
+
+Application:
+    • Every KPI must map to a decision it informs
+    • Dashboards show status; the BOS recommends action
+    • "Initiative X has ROI of -40% after 90 days" → Recommendation: Kill or Pivot
+    • "Channel Y converts at 3x Channel Z" → Recommendation: Reallocate budget
+    • Reports without recommendations are incomplete
+
+Test:
+    "After viewing this BOS output, does the founder know what to do next?"
+    Answer should usually be YES.
+
+
+================================================================================
+PRINCIPLE 11 — LEARNING IS A DELIVERABLE
+================================================================================
+
+Definition:
+    Capturing and transferring lessons learned is as important as capturing
+    financial data.
+
+Application:
+    • Every initiative closure requires a lessons learned entry
+    • Failed experiments are celebrated as data, not hidden as mistakes
+    • Lessons are searchable and tagged by business type, channel, and outcome
+    • Future initiatives surface relevant past lessons automatically
+    • The BOS becomes smarter with every venture, not just bigger
+
+Test:
+    "If I launch a new business type I've never tried, does the BOS show me
+     relevant lessons from similar past attempts?"
+    Goal: YES (Phase 3+).
+
+
+================================================================================
+PRINCIPLE 12 — FUTURE INTEGRATION WITHOUT TIGHT COUPLING
+================================================================================
+
+Definition:
+    The BOS must integrate with external systems (GoHighLevel, ad platforms,
+    payment processors, future SaaS products) through adapters, not embedded
+    logic.
+
+Application:
+    • GoHighLevel integration reads leads/contacts — does not replace CRM
+    • Ad platform integration reads spend data — does not replace expense entry
+    • Payment processor integration reads revenue — does not replace invoices
+    • Each integration is an optional adapter that feeds the BOS attribution layer
+    • Disabling GoHighLevel does not affect any other BOS function
+
+Test:
+    "Can I swap GoHighLevel for HubSpot without changing BOS core architecture?"
+    Answer must always be YES.
+
+
+================================================================================
+PRINCIPLE SUMMARY
+================================================================================
+
+ #  | Principle                        | One-Line Rule
+----|----------------------------------|------------------------------------------
+ 1  | Backward Compatibility           | BOS removal must not break anything
+ 2  | Business First                   | Features serve business questions
+ 3  | Simplicity at Point of Use       | Complex architecture, simple interface
+ 4  | Reusability Across Ventures      | Same OS for every business type
+ 5  | Modular Architecture             | Loose coupling via attribution
+ 6  | Single Source of Truth           | One owner per data point
+ 7  | Long-Term Thinking               | Design for 10 years, build for today
+ 8  | Scalable Without Premature Opt   | Architecture for scale, impl for now
+ 9  | Investment Attribution           | The universal core pattern
+ 10 | Decisions Over Dashboards        | Every output drives a decision
+ 11 | Learning Is a Deliverable        | Failures are institutional assets
+ 12 | Future Integration               | Adapters, not embedded dependencies
+
+================================================================================
+END OF DOCUMENT 02 — Core Principles
+================================================================================

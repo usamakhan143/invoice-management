@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import DashboardCard, { DashboardMiniStat } from "../../components/DashboardCard";
 import { useScreenLock } from "../../contexts/ScreenLockContext";
@@ -17,7 +17,17 @@ import { db } from "../../services/firebase";
 import { InvoiceService } from "../../services/invoiceService";
 import { CustomerService } from "../../services/customerService";
 import { BankAccountService } from "../../services/bankAccountService";
-import type { Invoice, Customer, BankAccount, Expense, Lead, CompanyUser } from "../../types";
+import type {
+  Invoice,
+  Customer,
+  BankAccount,
+  Expense,
+  ExpenseReturn,
+  Lead,
+  Loan,
+  CompanyUser,
+} from "../../types";
+import { resolveCompanyIdForUser } from "../../services/companyId";
 import { LeadService } from "../../services/leadService";
 import Spinner from "../../components/Spinner";
 import InvoiceVerificationSection from "../../components/InvoiceVerificationSection";
@@ -28,6 +38,12 @@ import {
   getExpenseCompanyId,
 } from "../../utils/expenseCompanyScope";
 import { verifyScreenPin } from "../../utils/screenPin";
+import {
+  aggregateAmountsByCurrency,
+  aggregateExpensesByCurrency,
+  buildFinanceStatDisplay,
+  financeStatHint,
+} from "../../utils/financeCurrencyDisplay";
 
 const BANK_BAL_AUTO_HIDE_MS = 60_000;
 
@@ -110,6 +126,10 @@ const DashboardPage: React.FC = () => {
     canAccessLeadsPage,
     leadsListViewAll,
     canAssignLeads,
+    canViewLoans,
+    canViewExpenseReturns,
+    canViewExpenseUsdTotal,
+    canViewReports,
     isOwner,
     isAdmin,
   } = usePermissions();
@@ -133,6 +153,8 @@ const DashboardPage: React.FC = () => {
   > | null>(null);
   const bankBalPinInputRef = useRef<HTMLInputElement>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [expenseReturns, setExpenseReturns] = useState<ExpenseReturn[]>([]);
   const [loading, setLoading] = useState(true);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
   const [myAssignedLeads, setMyAssignedLeads] = useState<Lead[]>([]);
@@ -268,6 +290,50 @@ const DashboardPage: React.FC = () => {
 
   const mayViewMyAssignedDash = canViewDashboardMyAssignedLeads();
   const showLeadGenAnalytics = canViewLeadGenAnalytics();
+  const mayLoadFinanceLoans = canViewLoans();
+  const mayLoadFinanceReturns = canViewExpenseReturns();
+  const showFinanceSnapshot =
+    mayLoadFinanceLoans ||
+    mayLoadFinanceReturns ||
+    canViewMonthlyExpenses() ||
+    canViewReports();
+
+  const financeCompanyId = useMemo(
+    () => (user && userProfile ? resolveCompanyIdForUser(user, userProfile) : ""),
+    [user, userProfile],
+  );
+
+  useEffect(() => {
+    if (!financeCompanyId) return;
+    const unsubs: Array<() => void> = [];
+    if (mayLoadFinanceLoans) {
+      const unsub = db
+        .collection("loans")
+        .where("companyId", "==", financeCompanyId)
+        .onSnapshot(
+          (snap) => {
+            setLoans(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Loan));
+          },
+          () => setLoans([]),
+        );
+      unsubs.push(unsub);
+    }
+    if (mayLoadFinanceReturns) {
+      const unsub = db
+        .collection("expenseReturns")
+        .where("companyId", "==", financeCompanyId)
+        .onSnapshot(
+          (snap) => {
+            setExpenseReturns(
+              snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ExpenseReturn),
+            );
+          },
+          () => setExpenseReturns([]),
+        );
+      unsubs.push(unsub);
+    }
+    return () => unsubs.forEach((u) => u());
+  }, [financeCompanyId, mayLoadFinanceLoans, mayLoadFinanceReturns]);
 
   useEffect(() => {
     if (!user || !userProfile) return;
@@ -561,20 +627,200 @@ const DashboardPage: React.FC = () => {
       return sum + convertedTotal;
     }, 0);
 
-  const thisMonthExpenses = expenses
-    .filter((exp) => {
-      const expenseDate = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date);
-      const now = new Date();
+  const thisMonthExpenseList = useMemo(() => {
+    const now = new Date();
+    return expenses.filter((exp) => {
+      const expenseDate = exp.date?.toDate
+        ? exp.date.toDate()
+        : new Date(exp.date as never);
       return (
         expenseDate.getMonth() === now.getMonth() &&
         expenseDate.getFullYear() === now.getFullYear()
       );
-    })
-    .reduce((sum, exp) => {
-      const rate = exchangeRates[exp.currency || "USD"] || 1;
-      const convertedAmount = exp.amount / rate;
-      return sum + convertedAmount;
-    }, 0);
+    });
+  }, [expenses]);
+
+  const returnsByExpenseId = useMemo(() => {
+    const map = new Map<string, ExpenseReturn[]>();
+    for (const ret of expenseReturns) {
+      const id = ret.expenseId;
+      if (!id) continue;
+      const list = map.get(id) ?? [];
+      list.push(ret);
+      map.set(id, list);
+    }
+    return map;
+  }, [expenseReturns]);
+
+  const returnedAmountForExpense = useCallback(
+    (expense: Expense): number => {
+      const cached = expense.totalReturnedAmount;
+      if (typeof cached === "number" && cached > 0) return cached;
+      const rows = returnsByExpenseId.get(expense.id);
+      if (!rows?.length) return 0;
+      return rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    },
+    [returnsByExpenseId],
+  );
+
+  const thisMonthExpensesByCurrency = useMemo(
+    () =>
+      aggregateExpensesByCurrency(
+        thisMonthExpenseList,
+        returnedAmountForExpense,
+      ),
+    [thisMonthExpenseList, returnedAmountForExpense],
+  );
+
+  const thisMonthExpenses = useMemo(
+    () =>
+      thisMonthExpenseList.reduce((sum, exp) => {
+        const rate = exchangeRates[exp.currency || "USD"] || 1;
+        return sum + (Number(exp.amount) || 0) / rate;
+      }, 0),
+    [thisMonthExpenseList, exchangeRates],
+  );
+
+  const thisMonthReturnList = useMemo(() => {
+    const now = new Date();
+    return expenseReturns.filter((ret) => {
+      const d = ret.receivedDate?.toDate?.();
+      if (!d) return false;
+      return (
+        d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      );
+    });
+  }, [expenseReturns]);
+
+  const thisMonthReturnsByCurrency = useMemo(
+    () =>
+      aggregateAmountsByCurrency(
+        thisMonthReturnList,
+        (r) => Number(r.amount) || 0,
+        (r) => r.currency,
+        (r) => r.currencySymbol,
+      ),
+    [thisMonthReturnList],
+  );
+
+  const thisMonthReturnsUsd = useMemo(
+    () =>
+      thisMonthReturnList.reduce((sum, ret) => {
+        const rate = exchangeRates[ret.currency || "USD"] || 1;
+        return sum + Number(ret.amount || 0) / rate;
+      }, 0),
+    [thisMonthReturnList, exchangeRates],
+  );
+
+  const activeLoans = useMemo(
+    () =>
+      loans.filter(
+        (l) => l.status !== "written_off" && l.status !== "closed",
+      ),
+    [loans],
+  );
+
+  const outstandingLoansByCurrency = useMemo(
+    () =>
+      aggregateAmountsByCurrency(
+        activeLoans,
+        (l) =>
+          Math.max(
+            0,
+            Number(l.principalAmount || 0) - Number(l.totalRepaidAmount || 0),
+          ),
+        (l) => l.currency,
+        (l) => l.currencySymbol,
+      ),
+    [activeLoans],
+  );
+
+  const outstandingLoansUsd = useMemo(
+    () =>
+      activeLoans.reduce((sum, l) => {
+        const outstanding = Math.max(
+          0,
+          Number(l.principalAmount || 0) - Number(l.totalRepaidAmount || 0),
+        );
+        const rate = exchangeRates[l.currency || "USD"] || 1;
+        return sum + outstanding / rate;
+      }, 0),
+    [activeLoans, exchangeRates],
+  );
+
+  const thisMonthNetSpendUsd = Math.max(0, thisMonthExpenses - thisMonthReturnsUsd);
+
+  const showExpenseUsdTotal = canViewExpenseUsdTotal();
+
+  const thisMonthGrossExpenseDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        thisMonthExpensesByCurrency,
+        thisMonthExpenses,
+        showExpenseUsdTotal,
+        "gross",
+        exchangeRates,
+      ),
+    [
+      thisMonthExpensesByCurrency,
+      thisMonthExpenses,
+      showExpenseUsdTotal,
+      exchangeRates,
+    ],
+  );
+
+  const thisMonthSpendFinanceDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        thisMonthExpensesByCurrency,
+        mayLoadFinanceReturns ? thisMonthNetSpendUsd : thisMonthExpenses,
+        showExpenseUsdTotal,
+        mayLoadFinanceReturns ? "net" : "gross",
+        exchangeRates,
+      ),
+    [
+      thisMonthExpensesByCurrency,
+      thisMonthExpenses,
+      thisMonthNetSpendUsd,
+      mayLoadFinanceReturns,
+      showExpenseUsdTotal,
+      exchangeRates,
+    ],
+  );
+
+  const outstandingLoansDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        outstandingLoansByCurrency,
+        outstandingLoansUsd,
+        showExpenseUsdTotal,
+        "gross",
+        exchangeRates,
+      ),
+    [
+      outstandingLoansByCurrency,
+      outstandingLoansUsd,
+      showExpenseUsdTotal,
+      exchangeRates,
+    ],
+  );
+
+  const thisMonthReturnsDisplay = useMemo(
+    () =>
+      buildFinanceStatDisplay(
+        thisMonthReturnsByCurrency,
+        thisMonthReturnsUsd,
+        showExpenseUsdTotal,
+        "gross",
+        exchangeRates,
+      ),
+    [
+      thisMonthReturnsByCurrency,
+      thisMonthReturnsUsd,
+      showExpenseUsdTotal,
+      exchangeRates,
+    ],
+  );
 
   if (loading) {
     return (
@@ -657,21 +903,25 @@ const DashboardPage: React.FC = () => {
     <>
       {pinBarActive ? (
         <div
-          className="-mx-4 -mt-4 shrink-0 border-b border-amber-300/90 bg-amber-50 px-3 py-0.5 dark:border-amber-800/80 dark:bg-amber-950 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8"
+          className="pin-setup-reminder mb-3 shrink-0 rounded-lg border border-amber-300/90 bg-amber-50 p-3 dark:border-amber-800/80 dark:bg-amber-950 sm:mb-0 sm:rounded-none sm:border-x-0 sm:border-t-0 sm:border-b sm:-mx-6 sm:-mt-6 sm:px-6 sm:py-2 lg:-mx-8 lg:-mt-8 lg:px-8"
           role="status"
         >
-          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-x-2 gap-y-1">
-            <p className="min-w-0 flex-1 text-[11px] leading-tight text-amber-950 dark:text-amber-100/95 sm:text-xs">
+          <div className="mx-auto flex max-w-[1600px] flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <p className="min-w-0 text-xs leading-snug text-amber-950 dark:text-amber-100/95 sm:flex-1 sm:text-sm sm:leading-tight">
               <span className="font-semibold">Screen PIN</span>
-              <span className="text-amber-800/85 dark:text-amber-300/70">: </span>
-              Set a 4-digit code on Profile to lock the app and reveal revenue safely.
+              <span className="text-amber-800/85 dark:text-amber-300/70"> — </span>
+              <span className="text-amber-900/95 dark:text-amber-200/90">
+                Set a 4-digit code on Profile to lock the app and reveal revenue
+                safely.
+              </span>
             </p>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
               <Link
                 to="/profile"
-                className="rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold leading-none text-white hover:bg-amber-700 sm:text-xs"
+                className="inline-flex min-h-9 flex-1 items-center justify-center rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 sm:flex-none sm:px-3 sm:py-1.5 sm:text-sm"
               >
-                Profile
+                <span className="sm:hidden">Profile</span>
+                <span className="hidden sm:inline">Set PIN on Profile</span>
               </Link>
               <button
                 type="button"
@@ -682,7 +932,7 @@ const DashboardPage: React.FC = () => {
                   );
                   setPinReminderDismissed(true);
                 }}
-                className="rounded border border-amber-700/25 bg-white/90 px-2 py-0.5 text-[11px] font-medium leading-none text-amber-900 hover:bg-white dark:border-amber-500/35 dark:bg-amber-900/70 dark:text-amber-50 sm:text-xs"
+                className="inline-flex min-h-9 flex-1 items-center justify-center rounded-md border border-amber-700/25 bg-white/90 px-3 py-2 text-xs font-medium text-amber-900 hover:bg-white dark:border-amber-500/35 dark:bg-amber-900/70 dark:text-amber-50 sm:flex-none sm:px-3 sm:py-1.5 sm:text-sm"
               >
                 Dismiss
               </button>
@@ -761,7 +1011,8 @@ const DashboardPage: React.FC = () => {
           {canViewMonthlyExpenses() && (
             <DashboardCard
               title="This month expenses"
-              value={formatCurrency(thisMonthExpenses)}
+              value={thisMonthGrossExpenseDisplay.primary}
+              footer={thisMonthGrossExpenseDisplay.secondary}
               icon={<ExpenseIcon />}
               variant="rose"
             />
@@ -956,6 +1207,66 @@ const DashboardPage: React.FC = () => {
           )}
         </DashboardSection>
       )}
+
+      {showFinanceSnapshot ? (
+        <DashboardSection
+          title="Finance snapshot"
+          description="Quick view of loans, returns, and spend. Open Reports for full exports and balance checks."
+          headerAction={
+            canViewReports() ? (
+              <Link to="/reports" className={linkPillClass}>
+                View reports
+              </Link>
+            ) : undefined
+          }
+        >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            {mayLoadFinanceLoans ? (
+              <DashboardMiniStat
+                label="Outstanding loans"
+                value={outstandingLoansDisplay.primary}
+                subvalue={outstandingLoansDisplay.secondary}
+                tone="amber"
+                hint={financeStatHint(showExpenseUsdTotal, "Outstanding by currency")}
+              />
+            ) : null}
+            {mayLoadFinanceReturns ? (
+              <DashboardMiniStat
+                label="Returns this month"
+                value={thisMonthReturnsDisplay.primary}
+                subvalue={thisMonthReturnsDisplay.secondary}
+                tone="emerald"
+                hint={financeStatHint(showExpenseUsdTotal, "Returns by currency")}
+              />
+            ) : null}
+            {canViewMonthlyExpenses() ? (
+              <DashboardMiniStat
+                label={
+                  mayLoadFinanceReturns ? "Net spend (month)" : "Spend (month)"
+                }
+                value={thisMonthSpendFinanceDisplay.primary}
+                subvalue={thisMonthSpendFinanceDisplay.secondary}
+                tone="rose"
+                hint={
+                  showExpenseUsdTotal
+                    ? financeStatHint(true)
+                    : mayLoadFinanceReturns
+                      ? "Net spend by currency"
+                      : "Gross spend by currency"
+                }
+              />
+            ) : null}
+            {canViewDashboardBankAccounts() ? (
+              <DashboardMiniStat
+                label="Bank accounts"
+                value={String(bankAccounts.length)}
+                tone="sky"
+                hint="Active wallets in your company"
+              />
+            ) : null}
+          </div>
+        </DashboardSection>
+      ) : null}
 
       {canViewDashboardBankAccounts() && (
         <DashboardSection

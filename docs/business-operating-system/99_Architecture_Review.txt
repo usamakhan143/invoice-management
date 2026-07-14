@@ -1,0 +1,490 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 99 — Architecture Review
+================================================================================
+
+Authoring perspective: Principal Enterprise Software Architect (20+ years)
+Review type: Pre-implementation architecture challenge review
+Documents reviewed: 01–09 (original) + 10–13 (gap remediation)
+Status: Architecture phase — GO / NO-GO assessment
+Review date: Architecture phase completion
+Version: 1.0
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+The BOS blueprint (documents 01–09) is STRONG at the product vision and
+integration philosophy level. It correctly identifies the sidecar attribution
+pattern, backward compatibility with ERP, and the Growth Initiative as the
+strategic hub. These are the hardest architectural decisions, and they are
+right.
+
+However, the original documentation set was NOT sufficient to begin
+implementation. It lacked canonical terminology, formal lifecycles for most
+entities, a permission architecture, metric versioning, and — critically — a
+first-class Decision Engine design. Without these, implementation would begin
+on ambiguous foundations and accumulate structural debt within 18–24 months.
+
+Documents 10–13 address the highest-severity gaps. Additional documents
+listed in Section 6 should be completed before Phase 1 coding begins.
+
+RECOMMENDATION: Do NOT begin implementation yet.
+RECOMMENDATION: Complete remaining architecture artifacts (Section 6), then
+                approve Phase 1 bounded scope.
+
+================================================================================
+OVERALL ARCHITECTURE SCORE
+================================================================================
+
+    Category                              | Score (/10) | Weight
+    --------------------------------------|-------------|-------
+    Vision & product strategy             | 9.0         | 15%
+    Integration philosophy (sidecar)      | 9.5         | 20%
+    Domain model completeness             | 6.5 → 8.0*  | 15%
+    Lifecycle & state machine rigor       | 5.0 → 8.0*  | 10%
+    Permission & multi-tenant design      | 4.0 → 7.5*  | 10%
+    KPI & measurement governance          | 6.0         | 10%
+    Decision / institutional memory     | 5.0 → 8.5*  | 10%
+    Scalability & 10-year path            | 7.5         | 5%
+    Naming & bounded context clarity      | 4.0 → 8.0*  | 5%
+
+    * After documents 10–13 (not yet reflected in implemented code)
+
+    WEIGHTED OVERALL SCORE (original 01–09 only):     6.8 / 10
+    WEIGHTED OVERALL SCORE (with 10–13 remediation):  8.2 / 10
+
+    IMPLEMENTATION READINESS SCORE:                   6.5 / 10
+    (Readiness requires Section 6 artifacts — target 8.5 before coding)
+
+
+================================================================================
+SECTION 1 — STRENGTHS (WHAT TO PROTECT)
+================================================================================
+
+S1. Sidecar attribution pattern
+    The decision to NEVER embed BOS fields in expense/lead/invoice documents
+    is architecturally correct and must never be reversed. This is the single
+    most important technical decision in the entire BOS.
+
+S2. Backward compatibility as a first-class requirement
+    Principle #1 in Document 02 is non-negotiable and correctly stated.
+    Production ERP users must never feel the BOS exists unless they opt in.
+
+S3. Growth Initiative as strategic hub
+    Correct center of gravity. All measurement and attribution flows toward
+    initiatives. Do not dilute this by adding parallel hubs.
+
+S4. Phased roadmap realism
+    Document 09 correctly sequences value delivery and avoids Phase 5
+    infrastructure in Phase 1. The "three things to build first" list is right.
+
+S5. ERP vs BOS vs CRM distinction
+    Document 01 clearly separates accounting, CRM, ERP, and BOS layers.
+    This prevents the most common failure mode: rebuilding ERP inside BOS.
+
+S6. Integration maturity levels (Manual → Semi → Auto)
+    Document 06 Level 0–3 model prevents premature automation debt.
+
+S7. Decision-over-dashboard philosophy
+    Principle #10 correctly prioritizes actionable output over vanity metrics.
+
+S8. Existing production financial integrity
+    The current expense/return/bank transaction model is a solid foundation.
+    BOS builds on trustworthy operational data.
+
+
+================================================================================
+SECTION 2 — WEAKNESSES (ORIGINAL DOCUMENTS 01–09)
+================================================================================
+
+W1. CRITICAL — Naming collision: "Business" and "Campaign"
+    Document 03 uses "Business Portfolio" and "Campaigns (BOS Context)" without
+    resolving conflict with ERP:Business (CRM customer sub-entity) and
+    ERP:Campaign (CRM outreach). This would cause implementation confusion
+    within the first sprint.
+    Remediation: Document 10 (BosVenture, BosCampaignLink). MUST be enforced
+    in all future specs and code reviews.
+
+W2. CRITICAL — Decision Engine under-specified
+    Document 03 lists "Decision Log" as a minor module. Document 05 mentions
+    decisions briefly. For a system whose value is institutional memory,
+    decisions were treated as a footnote. This is a product architecture error.
+    Remediation: Document 13 elevates Decision Engine to core pillar.
+
+W3. HIGH — No metric definition versioning
+    Document 08 lists 52 KPIs with formulas but no governance for formula
+    changes. If ROI definition changes in Year 3, Year 1 historical ROI becomes
+    incomparable — destroying institutional memory.
+    Remediation needed: Document 10 introduces BosMetricDefinition;
+    Section 6 recommends 14_Metric_Governance.txt.
+
+W4. HIGH — Initiative lifecycle only partially defined
+    Document 05 defines initiative states well but no other entity had formal
+    lifecycles. Attribution void/supersede — undefined. Venture archive — undefined.
+    Remediation: Document 11.
+
+W5. HIGH — Permission architecture absent
+    Document 04 mentions roles in one table. Document 09 lists 3 permission keys.
+    Insufficient for multi-venture team scaling.
+    Remediation: Document 12.
+
+W6. MEDIUM — Growth Initiative as domain "God Object" risk
+    Initiative owns budget, channels, experiments, KPIs, decisions, lessons,
+    revenue, investment. At domain level this is a God Object. Acceptable as
+    aggregate root IF supporting entities are first-class (Decision, Attribution,
+    MetricSnapshot) and NOT embedded value objects inside initiative document.
+    Risk: Implementing initiative as a single Firestore doc with nested arrays.
+    Mitigation: Initiative stores IDs and cached snapshots only; details in
+    side collections.
+
+W7. MEDIUM — Missing Offer and ICP entities
+    Multi-revenue-model support (agency project fee vs SaaS MRR vs product sale)
+    requires BosOffer and BosMarketSegment. Without them, ROI comparisons across
+    business models are meaningless.
+    Remediation: Document 10.
+
+W8. MEDIUM — Assumption and Risk registers missing
+    Document 05 mentions hypothesis but not assumption invalidation or risk
+    realization flows. Real strategic operations depend on these.
+    Remediation: Document 10, 11.
+
+W9. MEDIUM — Funnel authority ambiguity
+    Document 06 maps CRM status to BOS funnel stages but does not define
+    which system wins on conflict. Dual-write risk if both CRM and BOS record
+    meetings.
+    Remediation needed: Section 6 recommends explicit authority matrix.
+
+W10. LOW — Inconsistent "BI" vs "BOS" naming in older doc
+    BUSINESS_INTELLIGENCE_LAYER_ARCHITECTURE.txt uses "BI Layer" while
+    new docs use "BOS". Canonical name must be BOS everywhere going forward.
+
+
+================================================================================
+SECTION 3 — ARCHITECTURAL SMELLS & COUPLING RISKS
+================================================================================
+
+SMELL 1: Monolithic BOS page (repeating ExpensesPage anti-pattern)
+    Risk: Building BosInitiativePage as 5,000-line component mirroring
+    ExpensesPage.tsx (~3,300 lines). Probability: HIGH if not explicitly prevented.
+    Mitigation: Mandate service layer + bounded UI modules in implementation spec.
+
+SMELL 2: KPI Engine as single compute-all service
+    52 KPIs in one service violates Single Responsibility Principle. One formula
+    change risks breaking unrelated KPIs.
+    Mitigation: KPI plugins by domain (investment KPIs, funnel KPIs, ROI KPIs)
+    with BosMetricDefinition registry.
+
+SMELL 3: CRM funnel stage mapping hardcoded
+    Document 06 table mapping CRM status → BOS stage will break when CRM evolves.
+    Mitigation: Configurable mapping per venture in BosVenture settings.
+
+SMELL 4: Reports join layer becoming mandatory
+    If Reports page requires BOS data load to function, backward compatibility
+    is violated. Join must be optional enrichment path.
+    Mitigation: Explicit lazy load of attributions only when BI tab active.
+
+SMELL 5: GoHighLevel adapter leaking into core
+    Risk: GHL-specific fields in BosAttribution or BosLead types.
+    Mitigation: ExternalAdapter normalizes to canonical BosExternalReference.
+
+SMELL 6: Revenue attribution last-touch forever
+    Document 05 acknowledges multi-touch as Phase 3 but data model must not
+    assume last-touch at storage layer. BosAttribution must support model tag
+    (last_touch, first_touch, linear) from day one.
+
+SMELL 7: Lesson Learned vs Decision overlap
+    Without Document 13 boundaries, teams will store decisions as lessons and
+    lessons as decision rationale — duplicate unstructured data.
+    Mitigation: Document 13 Section 9 boundary — enforce in UI workflows.
+
+
+================================================================================
+SECTION 4 — SOLID & CLEAN ARCHITECTURE ASSESSMENT
+================================================================================
+
+Single Responsibility Principle (SRP):
+    VIOLATION RISK: High — if Initiative document embeds all child data.
+    COMPLIANT PATH: Initiative as aggregate root with separate collections for
+    Attribution, Decision, Experiment, MetricSnapshot.
+
+Open/Closed Principle (OCP):
+    PARTIAL: Adapter pattern for external systems supports extension.
+    GAP: KPI formulas not yet plugin-extensible.
+
+Liskov Substitution Principle (LSP):
+    N/A at business architecture phase; relevant when adapters share interface.
+
+Interface Segregation Principle (ISP):
+    GAP: Permission keys well-segregated in Doc 12. UI roles should not require
+    bos_admin for read-only KPI viewing.
+
+Dependency Inversion Principle (DIP):
+    PARTIAL: BOS depends on ERP abstractions conceptually but no explicit
+    port/adapter interfaces documented yet.
+    GAP: Need 15_Bounded_Contexts.txt (recommended) defining ERP read ports.
+
+Clean Architecture layers (conceptual):
+    ┌─────────────────────────────────────┐
+    │  BOS UI (React)                     │
+    ├─────────────────────────────────────┤
+    │  BOS Application Services           │  ← Missing explicit spec
+    ├─────────────────────────────────────┤
+    │  BOS Domain (entities, lifecycles)  │  ← Docs 10, 11, 13
+    ├─────────────────────────────────────┤
+    │  ERP Read Ports (interfaces)        │  ← MISSING — add before code
+    ├─────────────────────────────────────┤
+    │  ERP / CRM / External Adapters      │  ← Doc 06
+    └─────────────────────────────────────┘
+
+
+================================================================================
+SECTION 5 — SCALABILITY CONCERNS (2–5 YEAR HORIZON)
+================================================================================
+
+SC1. Client-side join at scale
+    Current ERP Reports pattern (load all, filter in memory) inherited by BOS
+    join layer will fail at ~50k–100k attributions per company.
+    Timeline: 2–3 years for active founder.
+    Mitigation: Document 09 Phase 4 aggregates; design BosAttribution queries
+    by companyId + date range from day one.
+
+SC2. Historical ROI drift
+    When attributions are voided/superseded, historical ROI must be recomputable
+    OR frozen via BosMetricSnapshot at initiative closure.
+    Without snapshot: closed initiative ROI changes retroactively — audit failure.
+    Mitigation: Mandatory MetricSnapshot on initiative CLOSED transition.
+
+SC3. Multi-currency portfolio ROI
+    Document 08 KPIs assume comparable amounts. Agency in USD + PKR expenses
+    requires FX policy for portfolio-level ROI.
+    Gap: No BosFxPolicy or conversion rule documented.
+    Mitigation: Add to future 14_Metric_Governance.txt.
+
+SC4. Venture-scoped team access at data layer
+    UI-only scoping will leak cross-venture data when team grows.
+    Document 12 addresses conceptually; must be enforced in queries not just rules.
+
+SC5. Attribution coverage decay
+    As expense volume grows, manual attribution falls behind. Stale KPIs silently
+    wrong. Document 08 mentions Attribution Coverage KPI but no operational
+    cadence for attribution hygiene.
+    Mitigation: Weekly attribution coverage review ritual in operating cadence doc.
+
+
+================================================================================
+SECTION 6 — MISSING AREAS & RECOMMENDED NEW DOCUMENTS
+================================================================================
+
+COMPLETED IN THIS REVIEW:
+    ✓ 10_Domain_Glossary.txt
+    ✓ 11_Entity_Lifecycles.txt
+    ✓ 12_Permission_Matrix.txt
+    ✓ 13_Decision_Engine.txt
+    ✓ 99_Architecture_Review.txt (this document)
+
+RECOMMENDED BEFORE PHASE 1 IMPLEMENTATION:
+
+    14_Metric_Governance.txt (HIGH priority)
+        • BosMetricDefinition versioning rules
+        • When to snapshot vs recompute
+        • Multi-currency conversion policy
+        • KPI dependency graph (ROI depends on Investment + Revenue definitions)
+
+    15_Bounded_Contexts.txt (HIGH priority)
+        • DDD context map: BOS, ERP Finance, CRM, External Adapters
+        • Anti-corruption layers
+        • ERP read port interfaces (conceptual)
+        • What each context owns vs reads
+
+    16_Authority_Matrix.txt (MEDIUM priority)
+        • CRM vs BOS authority for funnel stages
+        • Source of truth per field
+        • Conflict resolution rules
+
+    17_Operating_Cadence.txt (MEDIUM priority)
+        • Weekly/monthly/quarterly BOS rituals
+        • When decisions must be evaluated
+        • Attribution hygiene schedule
+        • Initiative review meetings structure
+
+    18_Phase1_Scope_Lock.txt (HIGH priority before coding)
+        • Exact entities in Phase 1
+        • Exact entities explicitly OUT of Phase 1
+        • Acceptance criteria for Phase 1 complete
+
+OPTIONAL (Phase 2+):
+    19_Event_Audit_Model.txt — attribution/decision change event log
+    20_Data_Retention_Archival.txt — 10-year retention policy
+
+
+================================================================================
+SECTION 7 — MISSING BUSINESS CONCEPTS (CONSOLIDATED)
+================================================================================
+
+Concept                  | In 01–09? | Addressed in 10–13?
+-------------------------|-----------|---------------------
+BosVenture (canonical)   | Partial   | Yes (Doc 10)
+BosOffer                 | No        | Yes (Doc 10)
+BosICP / Market Segment  | No        | Yes (Doc 10)
+BosAssumption            | No        | Yes (Doc 10, 11)
+BosRisk                  | No        | Yes (Doc 10, 11)
+Metric versioning        | No        | Partial (Doc 10)
+Attribution void/dispute | No        | Yes (Doc 11)
+Venture lifecycle        | No        | Yes (Doc 11)
+Decision alternatives    | No        | Yes (Doc 13)
+Decision evaluation      | Partial   | Yes (Doc 13)
+Venture-scoped roles     | No        | Yes (Doc 12)
+Multi-touch attribution  | Future    | Not yet — flag for Doc 14
+FX policy for ROI        | No        | Not yet — flag for Doc 14
+Operating cadence        | No        | Not yet — flag for Doc 17
+Bounded context map      | No        | Not yet — flag for Doc 15
+
+
+================================================================================
+SECTION 8 — MISSING MODULES (CONSOLIDATED)
+================================================================================
+
+Module                       | Priority  | Phase
+-----------------------------|-----------|------
+Decision Engine (full)       | CRITICAL  | 1 (minimal) / 2 (full)
+Metric Definition Registry   | HIGH      | 1 (basic) / 2 (versioning)
+Assumption Register          | MEDIUM    | 2
+Risk Register                | MEDIUM    | 2
+Offer & ICP Registry         | HIGH      | 2
+Operating Cadence (process)  | MEDIUM    | 1 (manual ritual)
+Notification/Recommendation  | MEDIUM    | 2
+External Adapter framework   | MEDIUM    | 3
+Aggregate/Rollup engine      | LOW       | 4
+
+
+================================================================================
+SECTION 9 — TECHNICAL DEBT FORECAST (IF IMPLEMENTATION STARTS NOW)
+================================================================================
+
+If coding begins WITHOUT documents 14, 15, 18:
+
+    Month 1–3:   Manageable. Phase 1 scope small.
+    Month 6:     Naming collisions (Business/Campaign) cause refactor.
+    Month 12:    KPI formula change breaks historical reports — emergency patch.
+    Month 18:    ExpensesPage-style monolith in BOS module — hard to test.
+    Month 24:    Multi-venture team sees cross-venture data — security issue.
+    Month 36:    Attribution voiding retroactively changes closed initiative ROI
+                 — trust in system destroyed.
+
+If coding begins AFTER architecture completion (target readiness 8.5/10):
+
+    Technical debt remains manageable through Year 5 with planned Phase 4
+    aggregate layer.
+
+
+================================================================================
+SECTION 10 — RECOMMENDED IMPROVEMENTS (PRIORITIZED)
+================================================================================
+
+P0 — Before any code:
+    1. Adopt Document 10 glossary as mandatory naming law
+    2. Write 18_Phase1_Scope_Lock.txt with explicit in/out scope
+    3. Write 15_Bounded_Contexts.txt with ERP read ports
+    4. Write 14_Metric_Governance.txt with snapshot-on-close rule
+
+P1 — During Phase 1 implementation:
+    5. Enforce service layer — no Firestore in React components for BOS
+    6. BosMetricSnapshot mandatory on initiative CLOSED
+    7. Decision required on initiative state transitions (Doc 11 + 13)
+    8. Permission keys from Doc 12 implemented before UI, not after
+
+P2 — Before Phase 2:
+    9. 16_Authority_Matrix.txt for CRM/BOS funnel
+    10. Offer + ICP entities
+    11. KPI plugin architecture (not monolithic KPI service)
+
+P3 — Before multi-venture team:
+    12. Venture-scoped queries enforced at data layer
+    13. Attribution coverage dashboard + weekly cadence
+
+
+================================================================================
+SECTION 11 — SHOULD IMPLEMENTATION BEGIN?
+================================================================================
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                                                                 │
+    │   IMPLEMENTATION DECISION:  NO — NOT YET                        │
+    │                                                                 │
+    │   Architecture phase is NOT complete.                           │
+    │   Documents 01–13 provide strong foundation.                    │
+    │   Documents 14, 15, 18 are required before Phase 1 code.        │
+    │                                                                 │
+    │   Estimated architecture completion effort:                     │
+    │       14_Metric_Governance.txt      — 1 session                 │
+    │       15_Bounded_Contexts.txt       — 1 session                 │
+    │       18_Phase1_Scope_Lock.txt     — 1 session                  │
+    │       16_Authority_Matrix.txt       — optional but recommended  │
+    │                                                                 │
+    │   After those documents: re-run readiness assessment.           │
+    │   Target readiness score for GO: 8.5 / 10                       │
+    │                                                                 │
+    └─────────────────────────────────────────────────────────────────┘
+
+What CAN begin now (non-code):
+    • Founder validation: review Document 05 initiative model against your
+      actual first business launch plan
+    • Manual operating cadence: track first initiative in spreadsheet using
+      BOS vocabulary — validates domain model before automation
+    • Phase 1 scope workshop: decide which 3 entities ship first
+
+
+================================================================================
+SECTION 12 — READINESS SCORES (DETAILED)
+================================================================================
+
+    Dimension                           | Score    | Gate for GO
+    ------------------------------------|----------|-------------
+    Product vision clarity              | 9/10     | ✓ Pass
+    Domain terminology                  | 8/10     | ✓ Pass (Doc 10)
+    Entity lifecycle definitions        | 8/10     | ✓ Pass (Doc 11)
+    Permission model                    | 7.5/10   | ✓ Pass (Doc 12)
+    Decision Engine design              | 8.5/10   | ✓ Pass (Doc 13)
+    Metric governance                   | 4/10     | ✗ FAIL — need Doc 14
+    Bounded context / clean architecture| 4/10     | ✗ FAIL — need Doc 15
+    Phase 1 scope lock                  | 3/10     | ✗ FAIL — need Doc 18
+    Integration authority clarity       | 5/10     | ⚠ Warn — need Doc 16
+    Scalability path documented         | 7.5/10   | ✓ Pass (Doc 09)
+    Backward compatibility guarantees   | 9/10     | ✓ Pass (Doc 02, 06)
+    10-year institutional memory design | 8/10     | ✓ Pass (Doc 13)
+
+    IMPLEMENTATION READINESS:  6.5 / 10
+    ARCHITECTURE QUALITY:      8.2 / 10 (with docs 10–13)
+    CONFIDENCE IN 10-YEAR ROI: 7.5 / 10 (high if P0 improvements completed)
+
+
+================================================================================
+SECTION 13 — FINAL ARCHITECT VERDICT
+================================================================================
+
+You have done something most founders skip: thinking before building.
+
+The original nine documents are among the better pre-implementation ERP
+architecture briefs I have reviewed at this stage. The sidecar attribution
+model, the initiative-centric hub, and the explicit non-modification of
+production modules are all correct calls that will save years of rework.
+
+The system will fail not because the vision is wrong, but because:
+    (a) naming collisions cause schema churn,
+    (b) KPI definitions drift destroys historical trust,
+    (c) decisions remain informal while the product claims institutional memory,
+    (d) the BOS module repeats the monolithic page anti-pattern of ExpensesPage.
+
+Documents 10–13 eliminate the highest-severity risks (a) and (c) and partially
+address (b). Complete documents 14, 15, and 18 to address (b) and monolith
+prevention before writing code.
+
+The Business Operating System is worth building.
+The architecture is worth completing first.
+
+    "Discover problems in documents, not in production."
+
+================================================================================
+END OF DOCUMENT 99 — Architecture Review
+================================================================================

@@ -5,6 +5,10 @@ import { useScreenLock } from "../contexts/ScreenLockContext";
 import { usePermissions } from "../hooks/usePermissions";
 import { PAGES } from "../config/permissions";
 import {
+  BOS_NAV_GROUP_LABEL,
+  BOS_VERTICAL_SLICE_NAV_ITEMS,
+} from "../bos/config/navigation";
+import {
   DashboardIcon,
   InvoiceIcon,
   CustomerIcon,
@@ -22,20 +26,42 @@ import { BRAND_LOGO_ALT, BRAND_LOGO_DARK } from "../config/brand";
 const Sidebar: React.FC = () => {
   const { logout, userProfile } = useAuth();
   const { hasScreenPin, lockScreen } = useScreenLock();
-  const { hasPageAccess, isOwner, isAdmin, canImportLeads } = usePermissions();
+  const { hasPageAccess, isOwner, isAdmin, canImportLeads, hasPermission, canAccessBosModule } =
+    usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const financePaths = [
+    "/bank-accounts",
+    "/expenses",
+    "/loans",
+    "/reports",
+  ];
+  const isFinancePath = financePaths.some(
+    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+  );
+  const isBosPath =
+    location.pathname === "/bos" ||
+    location.pathname.startsWith("/bos/");
+
   const [leadsOpen, setLeadsOpen] = useState(
     () =>
       location.pathname === "/leads" || location.pathname.startsWith("/leads/"),
   );
+  const [financeOpen, setFinanceOpen] = useState(() => isFinancePath);
+  const [bosOpen, setBosOpen] = useState(() => isBosPath);
 
   useEffect(() => {
     if (location.pathname === "/leads" || location.pathname.startsWith("/leads/")) {
       setLeadsOpen(true);
     }
-  }, [location.pathname]);
+    if (isFinancePath) {
+      setFinanceOpen(true);
+    }
+    if (isBosPath) {
+      setBosOpen(true);
+    }
+  }, [location.pathname, isFinancePath, isBosPath]);
 
   const handleLogout = async () => {
     try {
@@ -116,38 +142,6 @@ const Sidebar: React.FC = () => {
       icon: <ProductIcon />,
       label: "Products",
       page: PAGES.PRODUCTS,
-    },
-    {
-      to: "/bank-accounts",
-      icon: <BankIcon />,
-      label: "Bank Accounts",
-      page: PAGES.BANK_ACCOUNTS,
-    },
-    {
-      to: "/expenses",
-      icon: <ExpenseIcon />,
-      label: "Expenses",
-      page: PAGES.EXPENSES,
-    },
-    {
-      to: "/loans",
-      icon: (
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-          />
-        </svg>
-      ),
-      label: "Loans",
-      page: PAGES.LOANS,
     },
     {
       to: "/activity",
@@ -246,6 +240,111 @@ const Sidebar: React.FC = () => {
 
   const canAssignedLeadsHub = hasPageAccess(PAGES.LEADS_ASSIGNED_HUB);
 
+  const financeNavItems = [
+    {
+      to: "/bank-accounts",
+      icon: <BankIcon />,
+      label: "Bank Accounts",
+      page: PAGES.BANK_ACCOUNTS,
+    },
+    {
+      to: "/expenses",
+      icon: <ExpenseIcon />,
+      label: "Expenses",
+      page: PAGES.EXPENSES,
+    },
+    {
+      to: "/loans",
+      icon: (
+        <svg
+          className="h-5 w-5 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+          />
+        </svg>
+      ),
+      label: "Loans",
+      page: PAGES.LOANS,
+    },
+    {
+      to: "/reports",
+      icon: (
+        <svg
+          className="h-5 w-5 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
+          />
+        </svg>
+      ),
+      label: "Reports",
+      page: PAGES.REPORTS,
+    },
+  ].filter((item) => hasPageAccess(item.page));
+
+  const financeNavIcon = (
+    <svg
+      className="h-6 w-6 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
+      />
+    </svg>
+  );
+
+  const financeSubLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-sm font-medium transition-colors ${
+      isActive
+        ? "bg-primary-50 text-primary-800 ring-1 ring-primary-500/15 dark:bg-gray-800 dark:text-white dark:ring-primary-400/20"
+        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+    }`;
+
+  const bosNavIcon = (
+    <svg
+      className="h-6 w-6 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"
+      />
+    </svg>
+  );
+
+  const bosSubLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-sm font-medium transition-colors ${
+      isActive
+        ? "bg-primary-50 text-primary-800 ring-1 ring-primary-500/15 dark:bg-gray-800 dark:text-white dark:ring-primary-400/20"
+        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+    }`;
+
+  const bosNavItems = BOS_VERTICAL_SLICE_NAV_ITEMS.filter((item) =>
+    item.requiredPermissions.some((permission) => hasPermission(permission)),
+  );
+
   const leadsNavIcon = (
     <svg
       className="h-6 w-6 shrink-0"
@@ -293,6 +392,98 @@ const Sidebar: React.FC = () => {
     : navItems.some((i) => i.to === "/invoices")
       ? "/invoices"
       : "/";
+
+  /** Finance group sits after Products when visible, else after Performance or Dashboard. */
+  const financeMenuAfterTo = navItems.some((i) => i.to === "/products")
+    ? "/products"
+    : navItems.some((i) => i.to === "/performance")
+      ? "/performance"
+      : "/";
+
+  /** Strategy (BOS) group sits after Finance when visible, else after Products or Performance. */
+  const bosMenuAfterTo = financeNavItems.length > 0
+    ? financeMenuAfterTo
+    : navItems.some((i) => i.to === "/products")
+      ? "/products"
+      : navItems.some((i) => i.to === "/performance")
+        ? "/performance"
+        : "/";
+
+  const financeMenuBlock =
+    financeNavItems.length > 0 ? (
+      <li className="space-y-0.5">
+        <button
+          type="button"
+          onClick={() => setFinanceOpen((o) => !o)}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+            isFinancePath
+              ? "text-primary-700 dark:text-primary-300"
+              : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+          }`}
+          aria-expanded={financeOpen}
+        >
+          {financeNavIcon}
+          <span className="min-w-0 flex-1 truncate">Finance</span>
+          <span className="shrink-0 text-xs text-slate-400 dark:text-gray-500" aria-hidden>
+            {financeOpen ? "▲" : "▼"}
+          </span>
+        </button>
+        {financeOpen ? (
+          <ul className="ml-3 space-y-0.5 border-l border-slate-200/90 pl-2 dark:border-gray-700">
+            {financeNavItems.map((item) => (
+              <li key={item.to}>
+                <NavLink
+                  to={item.to}
+                  onClick={() => setIsOpen(false)}
+                  className={financeSubLinkClass}
+                >
+                  <span className="shrink-0 opacity-80">{item.icon}</span>
+                  <span className="truncate">{item.label}</span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </li>
+    ) : null;
+
+  const bosMenuBlock =
+    canAccessBosModule() && bosNavItems.length > 0 ? (
+      <li className="space-y-0.5">
+        <button
+          type="button"
+          onClick={() => setBosOpen((o) => !o)}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+            isBosPath
+              ? "text-primary-700 dark:text-primary-300"
+              : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+          }`}
+          aria-expanded={bosOpen}
+        >
+          {bosNavIcon}
+          <span className="min-w-0 flex-1 truncate">{BOS_NAV_GROUP_LABEL}</span>
+          <span className="shrink-0 text-xs text-slate-400 dark:text-gray-500" aria-hidden>
+            {bosOpen ? "▲" : "▼"}
+          </span>
+        </button>
+        {bosOpen ? (
+          <ul className="ml-3 space-y-0.5 border-l border-slate-200/90 pl-2 dark:border-gray-700">
+            {bosNavItems.map((item) => (
+              <li key={item.path}>
+                <NavLink
+                  to={item.path}
+                  end={item.path === "/bos/initiatives"}
+                  onClick={() => setIsOpen(false)}
+                  className={bosSubLinkClass}
+                >
+                  <span className="truncate">{item.label}</span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </li>
+    ) : null;
 
   const leadsMenuBlock =
     hasPageAccess(PAGES.LEADS) ? (
@@ -386,6 +577,10 @@ const Sidebar: React.FC = () => {
                   </NavLink>
                 </li>
                 {leadsMenuBlock && item.to === leadsMenuAfterTo ? leadsMenuBlock : null}
+                {financeMenuBlock && item.to === financeMenuAfterTo
+                  ? financeMenuBlock
+                  : null}
+                {bosMenuBlock && item.to === bosMenuAfterTo ? bosMenuBlock : null}
               </React.Fragment>
             ))}
           </ul>
@@ -484,7 +679,7 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden lg:block w-64 h-screen">{sidebarContent}</div>
+      <div className="hidden lg:block w-64 h-full shrink-0">{sidebarContent}</div>
     </>
   );
 };

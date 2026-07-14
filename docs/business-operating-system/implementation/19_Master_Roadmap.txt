@@ -1,0 +1,1046 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 19 — Master Roadmap
+================================================================================
+
+Status:     SINGLE SOURCE OF TRUTH — deployment, rollback, founder checklist
+Project:    invoice-management (React + Firebase)
+References: Architecture docs 01–13, 99 (frozen)
+             Implementation validation docs 01–10 (complete)
+             **Doc 20 — Phase 1 execution sequence (ACTIVE, supersedes §1–3 below)**
+Does NOT:   Redesign architecture · Modify ERP · Replace validation docs
+
+*** REVISION NOTICE (Implementation strategy v2.0 — Vertical Slice) ***
+Founder directive: Do NOT start from Expense module refactor.
+Phase 1 execution order → see Doc 20_Phase1_Vertical_Slice_Roadmap.txt
+Sections below (Phase 0 refactor gate, M1, Sprint 0–1, Gate 1) are SUPERSEDED for
+new work. Retained for historical reference only.
+*** END REVISION NOTICE ***
+
+This document orchestrates execution. For detail, follow cross-references.
+
+    Doc 01 — Current system baseline
+    Doc 02 — Per-concept gap mapping
+    Doc 03 — Reuse / extend / never-modify rules
+    Doc 04 — Firestore collections and rules
+    Doc 05 — Component split and UI impact
+    Doc 06 — Phase 1 scope lock and streams
+    Doc 07 — Risk register (R-001 … R-019)
+    Doc 08 — Backward compatibility checklist
+    Doc 09 — Task breakdown (T-000 … T-706)
+    Doc 10 — Validation verdict (CONDITIONAL GO)
+    Arch 09 — Long-term phase vision (Years 1–5)
+    Arch 08 — KPI phase targets
+    Arch 12 — Full bos_* permission matrix
+
+
+================================================================================
+SECTION 1 — EXECUTIVE ROADMAP
+================================================================================
+
+Overview (5 phases):
+
+    Phase 0  Validation complete + safe refactor gate     [NOW → Sprint 1]
+    Phase 1  Define & Track (BOS foundation in production) [Sprints 1–6]
+    Phase 2  Funnel & Measurement (full journey ROI)       [Post-P1, ~3–6 mo]
+    Phase 3  Multi-Venture Intelligence (portfolio layer)  [Year 2]
+    Phase 4  Predictive & Enterprise (automation, AI)      [Year 3+]
+
+Each phase delivers standalone value. No phase requires the next to function.
+
+
+--------------------------------------------------------------------------------
+PHASE 0 — VALIDATION & REFACTOR GATE
+--------------------------------------------------------------------------------
+
+Timeline:   Complete (validation) + 1 sprint (refactor)
+Reference:  Doc 10 (validation PASS), Doc 09 Epic 0
+
+Purpose:
+    Lock architecture. Remove blockers. Prove ERP unchanged before BOS writes.
+
+Scope:
+    ✓ Architecture validation docs 01–10 (DONE)
+    ✓ ExpensesPage split (Epic 0 — NOT YET DONE)
+    ✓ Staging Firebase project confirmed for rules/index deploy
+    ✗ No BOS collections or services yet
+
+Outcome:
+    Clean integration surface for sidecar attribution without touching expense schema.
+
+
+--------------------------------------------------------------------------------
+PHASE 1 — DEFINE & TRACK
+--------------------------------------------------------------------------------
+
+Timeline:   ~4–6 development sprints (see Section 3)
+Reference:  Doc 06, Arch 09 Phase 1 (implementation subset)
+
+Purpose:
+    Register ventures and initiatives. Attribute expenses post-hoc (Option C).
+    Enrich reports. Minimal decision log. Backup includes BOS data.
+
+In scope (locked — Doc 06):
+    bosVentures, bosInitiatives, bosAttributions, bosDecisions
+    bos_* permissions, BOS pages, AttributionModal, Reports enrichment,
+    Dashboard summary cards, backup v6
+
+Out of scope (Doc 06 §2):
+    GHL adapter, BosMetricSnapshot, BosExperiment, invoice attribution,
+    BosFunnelStageEvent, BosCampaignLink UI, expense form changes for staff
+
+Business outcome:
+    Founder answers "What did this initiative cost?" without spreadsheets.
+
+
+--------------------------------------------------------------------------------
+PHASE 2 — FUNNEL & MEASUREMENT
+--------------------------------------------------------------------------------
+
+Timeline:   3–6 months after Phase 1 production sign-off
+Reference:  Arch 09 Phase 2, Doc 02 §B lifecycles, Arch 08 KPI Phase 2
+
+Purpose:
+    Measure full journey: investment → lead → meeting → revenue → ROI.
+
+New modules (planned):
+    bosExperiments, bosFunnelStageEvents, bosCampaignLinks,
+    bosAcquisitionChannels (if deferred from P1), bosLessonsLearned,
+    invoice attribution (sourceType: invoice), expanded decision engine
+
+Integrations (read-only ERP):
+    Leads + callLogs → funnel events
+    Invoices → revenue attribution
+    Reports → "Business Intelligence" tab (Arch 09)
+
+Business outcome:
+    Channel comparison, funnel drop-off, experiment results, monthly BI review.
+
+
+--------------------------------------------------------------------------------
+PHASE 3 — MULTI-VENTURE INTELLIGENCE
+--------------------------------------------------------------------------------
+
+Timeline:   Year 2
+Reference:  Arch 09 Phase 3, Arch 08 KPI Phase 3, Doc 12 Phase 3 permissions
+
+Purpose:
+    Portfolio view across multiple BosVentures. Cross-initiative KPIs.
+    Materialized metrics where client-side joins no longer scale.
+
+New modules (planned):
+    bosMetricSnapshots, bosStrategicGoals, bosCostCenters,
+    server-side aggregation (Cloud Functions or scheduled jobs — TBD at P3 gate)
+
+Business outcome:
+    Compare ventures, LTV:CAC, portfolio ROI, cross-initiative decisions.
+
+
+--------------------------------------------------------------------------------
+PHASE 4 — PREDICTIVE & ENTERPRISE
+--------------------------------------------------------------------------------
+
+Timeline:   Year 3+
+Reference:  Arch 09 Phase 4–5, Arch 13 Decision Engine Phase 4, Doc 12 Phase 4
+
+Purpose:
+    Decision quality scoring, lead quality signals, pattern analysis,
+    external system adapters at scale, multi-team permission tiers.
+
+New capabilities (planned):
+    Predictive KPIs, AI-assisted decision surfacing, GHL real-time sync,
+    attribution coverage automation, enterprise audit exports
+
+Business outcome:
+    System recommends actions; founder governs via Decision Engine.
+
+
+================================================================================
+SECTION 2 — MILESTONES
+================================================================================
+
+Format: Goal | Deliverables | Dependencies | Exit criteria
+
+Reference task IDs: Doc 09
+
+
+--------------------------------------------------------------------------------
+M0 — ARCHITECTURE VALIDATION COMPLETE
+--------------------------------------------------------------------------------
+Goal:         Prove BOS fits existing app without ERP redesign
+Deliverables: Implementation docs 01–10; Doc 10 verdict
+Dependencies: Frozen architecture docs 01–13
+Exit criteria:
+    □ Doc 10 status = VALIDATION COMPLETE
+    □ Sidecar law documented (Doc 03, Doc 04)
+    □ ExpensesPage split identified as P0 blocker (Doc 05)
+    □ Founder approves Phase 1 scope (Doc 06)
+
+
+--------------------------------------------------------------------------------
+M1 — EXPENSE MODULE SAFE FOR INTEGRATION
+--------------------------------------------------------------------------------
+Goal:         Split god component; zero ERP regression
+Deliverables: useExpenses hook, ExpenseDetailModal, ExpenseFormModal
+Dependencies: M0
+Tasks:        T-000 → T-004 (Doc 09 Epic 0)
+Exit criteria:
+    □ ExpensesPage reduced; detail/form in separate files (Doc 05)
+    □ BC checklist E-01 through E-09 PASS (Doc 08)
+    □ npm run build passes
+    □ No BOS code merged yet
+
+
+--------------------------------------------------------------------------------
+M2 — BOS FOUNDATION LIVE (STAGING)
+--------------------------------------------------------------------------------
+Goal:         Types, permissions, rules, indexes deployed before any writes
+Deliverables:
+    types/bos.ts (or types.ts section)
+    config/permissions.ts bos_* keys
+    hooks/usePermissions.tsx canBos* helpers
+    firestore.rules bos* blocks
+    firestore.indexes.json composites
+Dependencies: M0
+Tasks:        T-101 → T-109
+Exit criteria:
+    □ Indexes status READY in Firebase console
+    □ Rules deployed to staging
+    □ canBos* defaults deny for users without bos_* keys
+    □ Cross-company read/write denied on bos* (Doc 08 F-01, F-02)
+
+
+--------------------------------------------------------------------------------
+M3 — BOS CORE SERVICES & UI SHELL
+--------------------------------------------------------------------------------
+Goal:         CRUD ventures, initiatives, decisions without ERP touch
+Deliverables:
+    bosVentureService, bosInitiativeService, bosAttributionService,
+    bosDecisionService
+    BosVenturesPage, BosInitiativesPage, BosInitiativeDetailPage
+    Sidebar BosNavGroup, App.tsx routes, RoleManagement BOS category
+Dependencies: M2
+Tasks:        T-201 → T-205, T-301 → T-308
+Exit criteria:
+    □ Owner can create venture + initiative on staging
+    □ Activity log records bos_* events (Doc 08 A-03)
+    □ Staff without bos_* sees no Strategy nav (Doc 08 D-03)
+    □ No writes to expenses, leads, invoices collections
+
+
+--------------------------------------------------------------------------------
+M4 — EXPENSE ATTRIBUTION (OPTION C)
+--------------------------------------------------------------------------------
+Goal:         Post-hoc attribution via sidecar only
+Deliverables: AttributionModal, ExpenseDetailModal integration, InitiativeBadge
+Dependencies: M1, M3
+Tasks:        T-401 → T-404
+Risks:        R-001, R-003, R-004 (Doc 07)
+Exit criteria:
+    □ bosAttributions doc created on attribute action
+    □ Expense document byte-identical before/after (Doc 08 E-04, N-03)
+    □ Staff form unchanged (Doc 08 E-01, E-02)
+    □ Duplicate attribution blocked (Doc 08 N-04, R-009)
+
+
+--------------------------------------------------------------------------------
+M5 — REPORTS & DASHBOARD ENRICHMENT
+--------------------------------------------------------------------------------
+Goal:         Initiative dimension on reports; strategic snapshot on dashboard
+Deliverables:
+    utils/bosReportJoin.ts
+    ReportsPage Initiative column + InitiativeSpendTab
+    DashboardPage BOS summary cards
+Dependencies: M3 (attributions exist for test data)
+Tasks:        T-501 → T-506, T-601
+Exit criteria:
+    □ Cashflow/integrity tabs unchanged (Doc 08 R-01, R-08)
+    □ Initiative column blank for unattributed expenses
+    □ CSV export includes initiative when bos_reports_view
+    □ Dashboard existing finance widgets unchanged (Doc 08 D-01)
+
+
+--------------------------------------------------------------------------------
+M6 — BACKUP v6 & PHASE 1 RELEASE CANDIDATE
+--------------------------------------------------------------------------------
+Goal:         BOS data durable; full BC matrix passed
+Deliverables:
+    databaseMigrationService v6 export/restore
+    ActivityPage bos_* labels
+    Staging release candidate build
+Dependencies: M4, M5
+Tasks:        T-602 → T-604, T-701 → T-702
+Exit criteria:
+    □ Doc 06 Definition of Done — all items checked
+    □ Doc 08 full checklist PASS on staging
+    □ Backup v6 round-trip tested (Doc 08 M-01, M-02)
+    □ Doc 10 conditions 1–6 satisfied
+
+
+--------------------------------------------------------------------------------
+M7 — PHASE 1 PRODUCTION
+--------------------------------------------------------------------------------
+Goal:         BOS live for founder + finance with zero staff disruption
+Deliverables: Production deploy, permission rollout, seed venture/initiative
+Dependencies: M6, Founder checklist (Section 9)
+Tasks:        T-703 → T-706
+Exit criteria:
+    □ Section 7 Success Criteria met
+    □ Section 10 Go/No-Go Matrix Phase 1 = GO
+    □ Post-deployment verification complete (Section 5)
+
+
+--------------------------------------------------------------------------------
+M8 — PHASE 2 KICKOFF (FUTURE GATE)
+--------------------------------------------------------------------------------
+Goal:         Funnel + revenue attribution
+Deliverables: Per Arch 09 Phase 2 — scoped at P2 planning sprint only
+Dependencies: M7 stable ≥ 30 days; attribution coverage baseline measured
+Exit criteria:
+    □ Phase 1 success metrics sustained
+    □ P2 scope doc approved by founder (manual request — no auto-generated arch doc)
+    □ LeadsPage split complete (Doc 05 P2 priority)
+
+
+--------------------------------------------------------------------------------
+M9 — PHASE 3 PORTFOLIO LAYER (FUTURE GATE)
+--------------------------------------------------------------------------------
+Goal:         Multi-venture intelligence
+Dependencies: M8, metric snapshot design, scale review (Doc 07 D-001)
+Exit criteria: TBD at Phase 3 gate
+
+
+--------------------------------------------------------------------------------
+M10 — PHASE 4 ENTERPRISE (FUTURE GATE)
+--------------------------------------------------------------------------------
+Goal:         Predictive decision support + external adapters
+Dependencies: M9, compliance review if server-side permissions required (Doc 07 D-002)
+Exit criteria: TBD at Phase 4 gate
+
+
+================================================================================
+SECTION 3 — SPRINT PLAN
+================================================================================
+
+Assumption: 1 developer, ~2-week sprints, part-time QA by founder.
+Adjust velocity after Sprint 1 retrospective.
+
+Reference: Doc 09 tasks · Doc 07 risks · Doc 04 collections · Doc 05 components
+
+
+--------------------------------------------------------------------------------
+SPRINT 0 — VALIDATION CLOSE & EXPENSE AUDIT
+--------------------------------------------------------------------------------
+Goal:     Finalize split plan; no BOS features
+Tasks:    T-000
+Files:    pages/app/ExpensesPage.tsx (read-only audit annotations)
+Collections: None
+Components: ExpensesPage (audit only)
+Services: None
+Risks:    R-003 (scope creep into BOS during audit)
+Effort:   2 hours dev + 1 hour review
+
+
+--------------------------------------------------------------------------------
+SPRINT 1 — EXPENSE REFACTOR (EPIC 0)
+--------------------------------------------------------------------------------
+Goal:     M1 complete — safe integration surface
+Tasks:    T-001 → T-004
+Files:
+    pages/app/ExpensesPage.tsx
+    hooks/useExpenses.ts (new)
+    components/expenses/ExpenseDetailModal.tsx (new)
+    components/expenses/ExpenseFormModal.tsx (new)
+Collections: None (read/write expenses only — unchanged schema)
+Components: ExpenseDetailModal, ExpenseFormModal, ExpensesPage (slim)
+Services: None new
+Risks:    R-003, R-004 (accidental form change)
+Effort:   16 hours dev + 4 hours BC test (Doc 08 E-*)
+
+
+--------------------------------------------------------------------------------
+SPRINT 2 — BOS FOUNDATION
+--------------------------------------------------------------------------------
+Goal:     M2 complete — types, permissions, rules, indexes on staging
+Tasks:    T-101 → T-109
+Files:
+    types.ts or types/bos.ts
+    config/permissions.ts
+    hooks/usePermissions.tsx (+ optional hooks/useBosPermissions.ts)
+    firestore.rules
+    firestore.indexes.json
+Collections: None created yet (rules ready for bos*)
+Components: None
+Services: None
+Risks:    R-005, R-006, R-012, R-014
+Effort:   14 hours dev + 2 hours Firebase deploy/wait for indexes
+
+
+--------------------------------------------------------------------------------
+SPRINT 3 — BOS SERVICES
+--------------------------------------------------------------------------------
+Goal:     All Phase 1 write paths implemented and unit-testable
+Tasks:    T-201 → T-205
+Files:
+    services/bosVentureService.ts
+    services/bosInitiativeService.ts
+    services/bosAttributionService.ts
+    services/bosDecisionService.ts
+    services/activityLogger.ts, types.ts (ActivityType)
+Collections: bosVentures, bosInitiatives, bosAttributions, bosDecisions
+Components: None
+Services: All four bos* services
+Risks:    R-001, R-002, R-009, R-014
+Effort:   19 hours dev
+
+
+--------------------------------------------------------------------------------
+SPRINT 4 — BOS UI SHELL & NAV
+--------------------------------------------------------------------------------
+Goal:     M3 complete — founder can manage ventures/initiatives on staging
+Tasks:    T-301 → T-308
+Files:
+    pages/app/bos/BosVenturesPage.tsx
+    pages/app/bos/BosInitiativesPage.tsx
+    pages/app/bos/BosInitiativeDetailPage.tsx
+    components/bos/VentureSelector.tsx, InitiativeSelector.tsx
+    components/bos/InitiativeBadge.tsx, AttributionStatusChip.tsx
+    components/Sidebar.tsx, App.tsx
+    components/RoleManagement.tsx
+Collections: (same as Sprint 3 — CRUD via UI)
+Components: All BOS pages + nav
+Services: Consumed via Sprint 3
+Risks:    R-006, R-010, R-017
+Effort:   26 hours dev + 4 hours permission matrix test
+
+
+--------------------------------------------------------------------------------
+SPRINT 5 — EXPENSE ATTRIBUTION
+--------------------------------------------------------------------------------
+Goal:     M4 complete — Option C live on staging
+Tasks:    T-401 → T-404
+Files:
+    components/bos/AttributionModal.tsx
+    components/expenses/ExpenseDetailModal.tsx
+    pages/app/ExpensesPage.tsx (badge/list only)
+Collections: bosAttributions (writes)
+Components: AttributionModal, ExpenseDetailModal, InitiativeBadge
+Services: bosAttributionService
+Risks:    R-001, R-003, R-004, R-009 (CRITICAL sprint)
+Effort:   11 hours dev + 6 hours Firestore console verification + BC E-*
+
+
+--------------------------------------------------------------------------------
+SPRINT 6 — REPORTS, DASHBOARD, BACKUP
+--------------------------------------------------------------------------------
+Goal:     M5 + M6 RC — staging release candidate
+Tasks:    T-501 → T-506, T-601 → T-604
+Files:
+    utils/bosReportJoin.ts
+    pages/app/ReportsPage.tsx
+    components/reports/ExpenseReportTab.tsx (extract)
+    components/bos/reports/InitiativeSpendTab.tsx
+    pages/app/DashboardPage.tsx
+    services/databaseMigrationService.ts
+    pages/app/ActivityPage.tsx, CompanyActivityPage.tsx
+Collections: Read bos* + ERP (expenses) — no ERP writes
+Components: InitiativeSpendTab, Dashboard BOS section
+Services: bosReportJoin (util)
+Risks:    R-007, R-008, R-015
+Effort:   22 hours dev + 4 hours backup round-trip
+
+
+--------------------------------------------------------------------------------
+SPRINT 7 — QA, OWNER TESTING & PRODUCTION
+--------------------------------------------------------------------------------
+Goal:     M7 — production deploy
+Tasks:    T-701 → T-706
+Files:    Fix-only from BC failures
+Collections: Production bos* (after deploy sequence Section 5)
+Components: None new unless BC fix
+Services: None new
+Risks:    All P0 risks (Doc 07) — final gate
+Effort:   8 hours QA + 4 hours deploy + founder testing window (Section 9)
+
+
+--------------------------------------------------------------------------------
+SPRINT 8+ — PHASE 2 (NOT SCHEDULED — OUTLINE ONLY)
+--------------------------------------------------------------------------------
+Goal:     M8 — funnel + invoice attribution
+Likely files: LeadsPage, LeadDetailPage, InvoicesListPage, ReportsPage,
+              bosFunnelStageEventService, bosCampaignLinkService
+Collections: bosFunnelStageEvents, bosCampaignLinks, bosExperiments,
+             bosLessonsLearned, bosAcquisitionChannels
+Prerequisite: LeadsPage split (Doc 05), M7 stable 30 days
+Effort:       TBD at P2 kickoff
+
+
+================================================================================
+SECTION 4 — DEPENDENCY GRAPH
+================================================================================
+
+4.1 Vertical stack (build order — every Phase 1 sprint)
+
+    Architecture frozen (docs 01–13)
+            │
+            ▼
+    Validation complete (docs 01–10, Doc 10 PASS)
+            │
+            ▼
+    ┌───────────────────┐
+    │  Sprint 0–1       │
+    │  ExpensesPage     │◄── BLOCKER for attribution (M1)
+    │  split (Epic 0)   │
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Types (Bos*)     │
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Permissions      │◄── config/permissions.ts
+    │  bos_* keys       │    usePermissions / useBosPermissions
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Firestore Rules  │◄── MUST deploy before client writes (R-005)
+    │  + Indexes        │
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Services         │
+    │  bosVenture       │
+    │  bosInitiative    │
+    │  bosAttribution   │◄── sidecar only — never writes expenses
+    │  bosDecision      │
+    └─────────┬─────────┘
+              │
+              ├──────────────────────┐
+              ▼                      ▼
+    ┌───────────────────┐  ┌───────────────────┐
+    │  BOS Pages        │  │  ActivityLogger   │
+    │  Ventures         │  │  bos_* types      │
+    │  Initiatives      │  └───────────────────┘
+    │  InitiativeDetail │
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Sidebar + Routes │◄── App.tsx lazy imports
+    │  RoleManagement   │
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Expense          │◄── REQUIRES M1 split complete
+    │  AttributionModal │
+    │  ExpenseDetail    │
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  bosReportJoin    │
+    └─────────┬─────────┘
+              │
+              ├──────────────────────┐
+              ▼                      ▼
+    ┌───────────────────┐  ┌───────────────────┐
+    │  Reports          │  │  Dashboard        │
+    │  Initiative col   │  │  BOS summary cards│
+    │  InitiativeSpend  │  └───────────────────┘
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  Backup v6        │◄── databaseMigrationService
+    └─────────┬─────────┘
+              │
+              ▼
+    ┌───────────────────┐
+    │  BC Checklist     │◄── Doc 08 full PASS
+    │  Founder sign-off │
+    └─────────┬─────────┘
+              │
+              ▼
+         PRODUCTION (M7)
+
+
+4.2 Module coupling (what must NOT depend on what)
+
+    bosAttributionService  ──X──►  expenses collection writes
+    BosVenturesPage        ──X──►  businessService / businesses
+    bosInitiativeService   ──X──►  campaignService writes
+    ReportsPage BOS join   ──X──►  balanceIntegrityService
+    Staff expense form     ──X──►  any bos_* permission check for submit
+
+
+4.3 Phase 2 dependency preview (reference only)
+
+    Phase 1 stable (M7)
+            │
+            ▼
+    LeadsPage split
+            │
+            ▼
+    bosFunnelStageEvents + Lead.status watcher
+            │
+            ▼
+    Invoice read attribution
+            │
+            ▼
+    Reports BI tab (Arch 09 Phase 2)
+
+
+================================================================================
+SECTION 5 — DEPLOYMENT PLAN
+================================================================================
+
+Environment pipeline:
+
+    Development  →  Local QA  →  Staging  →  Owner Testing  →  Production  →  Post-deploy verification
+
+
+--------------------------------------------------------------------------------
+STAGE A — DEVELOPMENT (Sprints 0–6)
+--------------------------------------------------------------------------------
+    • Feature branches per sprint; merge to main after sprint BC subset passes
+    • npm run build required on every merge
+    • Firebase: use staging project only until Sprint 7
+    • No production Firestore writes to bos* collections
+    Reference: Doc 06 streams A–F
+
+
+--------------------------------------------------------------------------------
+STAGE B — LOCAL QA
+--------------------------------------------------------------------------------
+    • Developer executes targeted BC items per sprint (Doc 08)
+    • Sprint 1: E-01–E-09
+    • Sprint 5: E-04, N-03 (Firestore console expense doc diff)
+    • Sprint 6: R-01–R-10, M-01–M-02
+    • Three personas: Owner, Finance (bos_*), Staff (no bos_*)
+
+
+--------------------------------------------------------------------------------
+STAGE C — STAGING DEPLOY
+--------------------------------------------------------------------------------
+Order (mandatory — Doc 06 §4, Doc 07 R-005):
+
+    1. Deploy firestore.indexes.json → wait until all indexes READY
+    2. Deploy firestore.rules (bos* blocks)
+    3. Deploy app build (BOS routes permission-gated)
+    4. Smoke test: create venture on staging
+    5. Verify staff user sees unchanged Expenses/Reports
+
+Rollback trigger at this stage: See Section 6 (staging-only — low risk)
+
+
+--------------------------------------------------------------------------------
+STAGE D — OWNER TESTING (STAGING)
+--------------------------------------------------------------------------------
+Duration:   Minimum 3 business days before production
+Actor:      Founder (+ finance role test account if available)
+Script:
+    1. Create venture "Main" + initiative "Launch Q1"
+    2. Attribute 5–10 real staging expenses
+    3. Verify Reports initiative column + Initiative spend tab
+    4. Record one decision on initiative detail
+    5. Export backup v6; confirm bos* collections in export
+    6. Log in as staff — confirm zero BOS UI, unchanged expense flow
+Checklist: Section 9 Founder Checklist
+
+
+--------------------------------------------------------------------------------
+STAGE E — PRODUCTION DEPLOY
+--------------------------------------------------------------------------------
+Pre-deploy gate: Section 10 Phase 1 matrix = GO
+
+Order:
+    1. Announce maintenance window (optional — zero-downtime expected)
+    2. Deploy indexes (if not already on prod — may take hours)
+    3. Deploy firestore.rules
+    4. Deploy app build
+    5. Founder assigns bos_* to finance custom role (Doc 06 §5)
+    6. Founder creates production venture + initiative
+    7. Finance attributes first production expenses
+    8. Run backup v6 before bulk attribution
+
+Do NOT enable bulk historical attribution until backup v6 confirmed (R-008)
+
+
+--------------------------------------------------------------------------------
+STAGE F — POST-DEPLOYMENT VERIFICATION (48–72 hours)
+--------------------------------------------------------------------------------
+    • Doc 08 K-01–K-04 on production
+    • Doc 08 E-01–E-05 spot check with real staff account
+    • Monitor R-007 (report load time), R-009 (duplicate attributions)
+    • Confirm no expense document schema changes (sample 10 docs in console)
+    • Activity log shows bos_* events
+    • T-706 monitoring week 1
+
+
+================================================================================
+SECTION 6 — ROLLBACK STRATEGY
+================================================================================
+
+Principle: BOS is additive. ERP must keep working if BOS is disabled or removed.
+
+Reference risks: Doc 07 R-001, R-005, R-008
+
+
+--------------------------------------------------------------------------------
+6.1 ROLLBACK LEVEL 1 — APP ONLY (preferred, minutes)
+--------------------------------------------------------------------------------
+Trigger:
+    • UI regression on Expenses/Reports/Dashboard
+    • Console errors on staff paths
+    • BOS pages broken but ERP healthy
+
+Action:
+    1. Redeploy previous app build (pre-BOS git tag / hosting rollback)
+    2. Leave firestore.rules and bos* data in place (harmless if app not writing)
+    3. bos* collections remain; no ERP impact
+
+Recovery: Fix forward in dev; re-deploy when BC passes
+
+Data impact: NONE on expenses, leads, invoices
+
+
+--------------------------------------------------------------------------------
+6.2 ROLLBACK LEVEL 2 — RULES TIGHTEN (hours)
+--------------------------------------------------------------------------------
+Trigger:
+    • Cross-company access suspected (R-014)
+    • Unauthorized bos* writes
+
+Action:
+    1. Deploy emergency rules: deny all writes to bos* except owner UID
+    2. Redeploy Level 1 app rollback if needed
+    3. Audit activities collection for bos_* events
+    4. Fix rules bug; redeploy corrected rules before re-enabling writes
+
+Data impact: BOS writes paused; ERP unaffected
+
+
+--------------------------------------------------------------------------------
+6.3 ROLLBACK LEVEL 3 — BOS DATA QUARANTINE (days — last resort)
+--------------------------------------------------------------------------------
+Trigger:
+    • Incorrect attributions at scale
+    • Backup corruption
+
+Action:
+    1. Level 1 + Level 2
+    2. Export bos* collections for forensic backup
+    3. Delete erroneous bosAttributions docs (NEVER delete expenses)
+    4. Restore bos* from last good backup v6 if needed
+    5. Re-attribute manually after fix
+
+Data impact: BOS attribution data only; ERP pristine
+
+NEVER:
+    • Delete or migrate expenses collection
+    • Strip fields from expense documents
+    • Restore v5 backup over v6 without understanding BOS data loss (Doc 08 M-03)
+
+
+--------------------------------------------------------------------------------
+6.4 ROLLBACK DECISION AUTHORITY
+--------------------------------------------------------------------------------
+    Level 1: Developer or Founder
+    Level 2: Founder approval required
+    Level 3: Founder + export backup before any bos* deletion
+
+
+================================================================================
+SECTION 7 — SUCCESS CRITERIA (PHASE 1 COMPLETE)
+================================================================================
+
+Reference: Doc 06 §6 Definition of Done, Doc 08, Arch 09 Phase 1 success criteria
+Implementation subset applied (validation locked narrower scope than Arch 09).
+
+Functional:
+    □ Venture and initiative CRUD works for permitted users
+    □ Expense attribution creates bosAttributions only — expense doc unchanged
+    □ Staff expense create/edit/return workflow identical to pre-BOS
+    □ Reports Expenses tab shows Initiative column; Initiative spend tab aggregates
+    □ CSV export includes initiative name when bos_reports_view
+    □ Decisions creatable and listed on initiative detail
+    □ Dashboard BOS cards render without breaking finance snapshot
+
+Security & tenancy:
+    □ bos_* permissions default OFF for existing custom roles
+    □ Cross-company bos* access denied (Doc 08 F-01, F-02)
+    □ Staff cannot access /bos/* routes
+
+Operational:
+    □ Backup v6 exports and restores bos* collections
+    □ Activity log human-readable for bos_* events
+    □ npm run build passes; no new console errors on ERP paths for staff
+
+Business (founder-verified):
+    □ First initiative tracked with attributed expenses visible in Reports
+    □ Founder can state initiative spend total without manual spreadsheet
+    □ ≥ 1 decision recorded on initiative (minimal decision engine P1)
+    □ Finance role can attribute; staff role cannot
+
+Optional stretch (not blocking P1 sign-off):
+    ○ 80% attribution coverage on initiative-related expenses (Arch 09)
+    ○ Lesson learned on closure (deferred to Phase 2)
+    ○ 8 core KPIs automated (deferred — P1 uses reports join, not snapshots)
+
+
+================================================================================
+SECTION 8 — TECHNICAL DEBT REGISTER
+================================================================================
+
+Items intentionally accepted or deferred. Reference: Doc 07 §Architectural Debt
+
+ID    | Item                                      | Phase | Rationale
+------|-------------------------------------------|-------|---------------------------
+TD-01 | Client-side report join vs Cloud Functions| P1    | Matches ReportsPage today; revisit >10k expenses (D-001)
+TD-02 | Rules enforce tenancy only, not bos_*     | P1    | Matches ERP model (D-002)
+TD-03 | Gross expense in initiative spend report  | P1    | Net after returns aligned in P2 (R-015)
+TD-04 | No BosAcquisitionChannel registry         | P2    | Lead.source sufficient for P1
+TD-05 | No BosCostCenter                          | P2    | Do not merge expenseCategories
+TD-06 | No invoice revenue attribution            | P2    | Investment attribution first
+TD-07 | No BosFunnelStageEvent automation         | P2    | Manual initiative tracking P1
+TD-08 | No BosCampaignLink UI                     | P2    | Lead.campaignId unchanged
+TD-09 | No BosMetricSnapshot / KPI engine         | P3    | In-memory join adequate P1
+TD-10 | No BosExperiment module                   | P2    | Arch 09 Phase 2
+TD-11 | No GHL / webhook adapter                  | P3+   | Doc 06 out of scope
+TD-12 | ExpensesPage inline Firestore (pre-split) | P0    | Resolved by Epic 0; debt closed at M1
+TD-13 | usePermissions.tsx monolith               | P1    | Partial — useBosPermissions extract optional (R-011)
+TD-14 | LeadsPage 2,588 lines unsplit               | P2    | Required before funnel BOS
+TD-15 | Decision engine scoring / alternatives    | P2+   | Minimal CRUD only P1 (Arch 13)
+TD-16 | Multi-touch attribution                   | P3+   | Arch 99 / Doc 05 Phase 3
+TD-17 | Permission keys bi_* vs bos_* naming      | P1    | Use bos_* per Doc 12; Arch 09 bi_* is conceptual only
+TD-18 | Doc 14/15/18 architecture supplements     | N/A   | User frozen arch; scope locked in Doc 06 instead
+
+
+================================================================================
+SECTION 9 — FOUNDER CHECKLIST
+================================================================================
+
+Execute on STAGING before production deploy. Execute again on PRODUCTION
+within 24 hours of go-live.
+
+Reference: Doc 08, Doc 06 §5 permission rollout
+
+
+PRE-DEPLOY (STAGING)
+────────────────────
+□ I confirm Phase 1 scope matches Doc 06 (no expense form changes for staff)
+□ I have a staging Firebase project separate from production
+□ Firestore indexes show READY for all bos* composites
+□ I tested login as Owner — can create venture and initiative
+□ I tested login as Staff — NO Strategy nav, NO attribute button
+□ I created a test expense as Staff — form identical to before
+□ I attributed that expense as Owner/Finance — expense doc unchanged in console
+□ Reports Expenses tab shows Initiative column for attributed expense only
+□ Cashflow tab totals unchanged for same date range
+□ I exported CSV — initiative column present when permitted
+□ I recorded a decision on initiative detail page
+□ Backup v6 export includes bosVentures, bosInitiatives, bosAttributions, bosDecisions
+□ I reviewed Doc 07 P0 risks and accept rollback plan (Section 6)
+
+
+PERMISSION ROLLOUT (PRODUCTION — BEFORE WIDE USE)
+──────────────────────────────────────────────────
+□ I assigned bos_* permissions only to roles that need them (Doc 06 §5 table)
+□ Staff roles explicitly have NO bos_* permissions
+□ Finance role has bos_attribution_manage + bos_reports_view (if applicable)
+□ I did NOT grant bos_venture_manage to finance unless intentional
+
+
+PRODUCTION GO-LIVE
+──────────────────
+□ Production indexes READY + rules deployed BEFORE app deploy
+□ App deployed; I hard-refreshed browser (HashRouter cache)
+□ I created production venture (e.g., primary business name)
+□ I created first active initiative
+□ I ran backup v6 AFTER deploy, BEFORE bulk attribution
+□ I attributed 3–5 real expenses — verified in Reports
+□ I asked one staff member to create an expense — they report no change
+□ No console errors reported by staff on Dashboard / Expenses / Reports
+
+
+POST-DEPLOY (48 HOURS)
+──────────────────────
+□ Spot-checked 10 expense documents in Firestore — no new fields
+□ Initiative spend tab total matches manual spot check
+□ Activity log shows attribution events with readable labels
+□ I know how to trigger Rollback Level 1 (Section 6.1)
+
+
+FOUNDER SIGN-OFF
+────────────────
+Name: _______________________  Date: __________
+Environment: Staging □   Production □
+Decision: APPROVE PRODUCTION □   HOLD □   ROLLBACK □
+
+
+================================================================================
+SECTION 10 — FINAL GO / NO-GO MATRIX
+================================================================================
+
+Each gate requires measurable PASS. Any FAIL = NO-GO until resolved.
+Reference: Doc 10 §8 Conditions, Doc 10 §11 Verdict
+
+
+--------------------------------------------------------------------------------
+GATE 0 — START IMPLEMENTATION (after this document)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+Architecture frozen                                | User confirmed; docs 01–13 unchanged
+Validation complete                                | Doc 10 = VALIDATION COMPLETE
+Master Roadmap approved                            | Founder acknowledges Doc 19
+Implementation team ready                          | Dev environment + staging Firebase access
+
+Decision: GO → begin Sprint 0  |  NO-GO → resolve blockers
+
+
+--------------------------------------------------------------------------------
+GATE 1 — START BOS FOUNDATION (Sprint 2)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+M1 Expense split complete                          | Epic 0 done; Doc 08 E-01–E-09 PASS
+Build green                                        | npm run build passes
+No BOS in expense form                             | Code review confirms zero bos fields in ExpenseFormModal
+
+Decision: GO → Sprint 2  |  NO-GO → finish Epic 0
+
+
+--------------------------------------------------------------------------------
+GATE 2 — START BOS UI + ATTRIBUTION (Sprint 4–5)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+M2 Foundation on staging                           | Rules + indexes READY; canBos* works
+Services tested                                    | bosAttribution duplicate guard verified
+Sidecar law                                        | Code review: zero expense collection writes in bos services
+
+Decision: GO → Sprint 4  |  NO-GO → fix M2 failures
+
+
+--------------------------------------------------------------------------------
+GATE 3 — STAGING RELEASE CANDIDATE (end Sprint 6)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+M4 Attribution                                     | Doc 08 N-01–N-04 PASS
+M5 Reports/Dashboard                               | Doc 08 R-01–R-10, D-01 PASS
+M6 Backup v6                                       | Doc 08 M-01–M-02 PASS
+Full BC checklist                                  | Doc 08 all E-* and core R-* PASS
+P0 risks mitigated                                 | R-001, R-003, R-004, R-005 closed
+
+Decision: GO → Sprint 7 owner testing  |  NO-GO → fix FAIL items
+
+
+--------------------------------------------------------------------------------
+GATE 4 — PRODUCTION DEPLOY
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+Founder checklist                                  | Section 9 staging items ALL checked
+Owner testing duration                             | ≥ 3 business days on staging
+Rollback plan acknowledged                         | Section 6 understood
+Backup v6 tested                                   | Round-trip on staging data
+
+Decision: GO → production deploy  |  NO-GO → extend staging
+
+
+--------------------------------------------------------------------------------
+GATE 5 — PHASE 1 COMPLETE (M7)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+Section 7 success criteria                         | All required □ checked
+Production founder checklist                       | Section 9 production items checked
+Post-deploy verification                           | Section 5 Stage F complete
+30-day stability                                   | No P0 incidents; staff workflow confirmed
+
+Decision: GO → Phase 1 CLOSED  |  NO-GO → hotfix or Rollback Level 1
+
+
+--------------------------------------------------------------------------------
+GATE 6 — PHASE 2 KICKOFF (future — manual approval)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+Phase 1 stable                                     | Gate 5 passed ≥ 30 days ago
+Attribution adoption                               | Founder confirms P1 business value
+LeadsPage split                                    | Doc 05 P2 split complete
+P2 scope approved                                  | Founder manually requests P2 plan
+
+Decision: GO → Sprint 8+ planning  |  NO-GO → remain on Phase 1
+
+
+--------------------------------------------------------------------------------
+GATE 7 — PHASE 3 KICKOFF (future)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+Scale review                                       | Expense count / join perf assessed (TD-01)
+Metric snapshot design                             | Approved at P3 gate
+Multi-venture need                                 | ≥ 2 active BosVentures in production
+
+Decision: Founder explicit GO only
+
+
+--------------------------------------------------------------------------------
+GATE 8 — PHASE 4 KICKOFF (future)
+--------------------------------------------------------------------------------
+Criterion                                          | Pass condition
+---------------------------------------------------|----------------------------
+Phase 3 KPIs in use                                | bosMetricSnapshots operational
+Compliance review                                  | If server-side permissions required (TD-02)
+External adapter requirement                       | Business case for GHL / webhooks
+
+Decision: Founder explicit GO only
+
+
+================================================================================
+APPENDIX A — QUICK REFERENCE MAP
+================================================================================
+
+    Need                          | Read first
+    ------------------------------|----------------------------------
+    What exists today             | Doc 01
+    What's missing per BOS concept| Doc 02
+    Can I touch ExpensesPage form?| Doc 03 — NO (staff)
+    Collection schemas            | Doc 04
+    Which files to split          | Doc 05
+    Phase 1 scope boundary        | Doc 06
+    Risk ID lookup                | Doc 07
+    QA test cases                 | Doc 08
+    Task ID lookup                | Doc 09
+    Why we got CONDITIONAL GO     | Doc 10
+    Sprint schedule               | Doc 19 Section 3 (this doc)
+    Deploy order                  | Doc 19 Section 5 (this doc)
+    Long-term vision              | Arch 09 (not implementation spec)
+
+
+================================================================================
+APPENDIX B — IMPLEMENTATION START COMMAND
+================================================================================
+
+When Gate 0 = GO:
+
+    Begin Sprint 0 → Task T-000 (Doc 09)
+    First PR: ExpensesPage audit annotations only — no BOS code
+
+No further planning documents unless founder manually requests.
+
+
+================================================================================
+END OF DOCUMENT 19 — Master Roadmap
+================================================================================
+
+Status: PHASE 1 SEQUENCE SUPERSEDED BY DOC 20 — deploy/rollback/checklists still valid
+Next action: Founder confirms Gate 0 → Sprint 1 (BOS foundation) per Doc 20

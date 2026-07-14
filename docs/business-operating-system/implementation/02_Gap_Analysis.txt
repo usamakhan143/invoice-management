@@ -1,0 +1,309 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 02 — Gap Analysis
+================================================================================
+
+Scope: BOS architecture (docs 01–13) vs existing React + Firebase application
+Method: Per-concept mapping — exists / reuse / extend / untouched / never modify /
+       new module / BOS-aware / backward-compat risk / split candidates
+
+================================================================================
+LEGEND
+================================================================================
+
+    EXISTS       — Implemented in production code today
+    REUSE        — Use without modification
+    EXTEND       — Add to existing module; preserve current behavior
+    UNTOUCHED    — No BOS changes in Phase 1
+    NEVER MODIFY — Core ERP behavior; BOS reads only or sidecar only
+    NEW          — Greenfield module required
+    BOS-AWARE    — Existing module gains optional BOS integration points
+    BC-RISK      — Backward compatibility break if done wrong
+    SPLIT        — Component too large; split before BOS work
+
+
+================================================================================
+A. DOMAIN ENTITIES (Doc 10 — Domain Glossary)
+================================================================================
+
+--------------------------------------------------------------------------------
+A.1 BosPortfolio
+--------------------------------------------------------------------------------
+    EXISTS:        Implicit — one Firestore tenant per companyId (owner uid)
+    REUSE:         companyId resolution (companyId.ts, expenseCompanyScope.ts)
+    EXTEND:        Optional portfolio dashboard widget on DashboardPage
+    UNTOUCHED:     companies collection schema
+    NEVER MODIFY:  resolveCompanyIdForUser() semantics
+    NEW:           bosPortfolioService (read-only aggregate over ventures)
+    BOS-AWARE:     DashboardPage (future portfolio summary card)
+    BC-RISK:       Low — additive only
+    SPLIT:         DashboardPage before adding BOS widgets
+
+--------------------------------------------------------------------------------
+A.2 BosVenture
+--------------------------------------------------------------------------------
+    EXISTS:        NO — no venture registry
+    REUSE:         Permission pattern, companyId scoping, ActivityLogger pattern
+    EXTEND:        —
+    UNTOUCHED:     ERP:businesses (CRM customer sub-entity — different concept)
+    NEVER MODIFY:  businessService.ts, businesses collection
+    NEW:           bosVentures collection, bosVentureService.ts, BosVenturesPage
+    BOS-AWARE:     Sidebar (new nav group), types.ts (BosVenture interface)
+    BC-RISK:       HIGH if developers reuse CRM `businesses` for BOS ventures
+    SPLIT:         N/A (new module)
+
+--------------------------------------------------------------------------------
+A.3 BosInitiative
+--------------------------------------------------------------------------------
+    EXISTS:        NO
+    REUSE:         CRUD patterns from campaignService.ts / loanService.ts
+    EXTEND:        —
+    UNTOUCHED:     campaigns collection (ERP outreach ≠ strategic initiative)
+    NEVER MODIFY:  campaignService.ts entity model
+    NEW:           bosInitiatives collection, bosInitiativeService.ts,
+                   BosInitiativesPage, initiative detail / lifecycle UI
+    BOS-AWARE:     ReportsPage (filter by initiativeId via attribution join)
+    BC-RISK:       Medium — confusing BosInitiative with ERP:Campaign
+    SPLIT:         N/A (new module)
+
+--------------------------------------------------------------------------------
+A.4 BosAcquisitionChannel
+--------------------------------------------------------------------------------
+    EXISTS:        Partial — Lead.source (free text), Campaign.channelsHint (string)
+    REUSE:         Lead.source values as seed hints only (migration script)
+    EXTEND:        —
+    UNTOUCHED:     Lead form fields (keep free-text source for CRM)
+    NEVER MODIFY:  Lead.source schema
+    NEW:           bosAcquisitionChannels collection, channel registry UI
+    BOS-AWARE:     LeadDetailPage (display linked BOS channel if attributed)
+    BC-RISK:       Low if sidecar; high if Lead document gains BOS fields
+    SPLIT:         LeadsPage before funnel BOS integration
+
+--------------------------------------------------------------------------------
+A.5 BosCostCenter
+--------------------------------------------------------------------------------
+    EXISTS:        NO — expenseCategories are operational GL-style buckets
+    REUSE:         Display patterns from expenseCategoryService
+    EXTEND:        —
+    UNTOUCHED:     expenseCategories, ExpensesPage category picker
+    NEVER MODIFY:  Expense.category field semantics
+    NEW:           bosCostCenters collection (Phase 1 optional / Phase 2)
+    BOS-AWARE:     BosAttribution may reference costCenterId
+    BC-RISK:       HIGH if expense category merged with BOS cost center
+    SPLIT:         N/A
+
+--------------------------------------------------------------------------------
+A.6 BosAttribution (CORE — sidecar pattern)
+--------------------------------------------------------------------------------
+    EXISTS:        NO
+    REUSE:         expenseReturnService transaction pattern,
+                   companyId scoping, ActivityLogger
+    EXTEND:        ReportsPage CSV columns (join attributions in memory)
+    UNTOUCHED:     expenses document shape (Doc 04 — sidecar law)
+    NEVER MODIFY:  ExpensesPage create/edit form for staff (Option C UX)
+    NEW:           bosAttributions collection, bosAttributionService.ts,
+                   AttributionPanel component, finance attribution modal
+    BOS-AWARE:     ExpensesPage (read-only badge + finance-only link action),
+                   ReportsPage, DashboardPage (investment by initiative)
+    BC-RISK:       CRITICAL — embedding ventureId on expense breaks ERP isolation
+    SPLIT:         ExpensesPage MUST split before attribution UI
+
+--------------------------------------------------------------------------------
+A.7 BosExperiment
+--------------------------------------------------------------------------------
+    EXISTS:        NO
+    REUSE:         BosInitiative parent-child pattern
+    EXTEND:        —
+    UNTOUCHED:     —
+    NEW:           bosExperiments collection (Phase 2 per Doc 99 recommendation)
+    BOS-AWARE:     BosInitiative detail page
+    BC-RISK:       Low — Phase 2
+    SPLIT:         N/A
+
+--------------------------------------------------------------------------------
+A.8 BosCampaignLink
+--------------------------------------------------------------------------------
+    EXISTS:        Partial — Lead.campaignId → campaigns
+    REUSE:         campaignService.ts read, existing campaignId on leads
+    EXTEND:        —
+    UNTOUCHED:     Lead.campaignId (keep as ERP link)
+    NEVER MODIFY:  campaigns collection for BOS fields
+    NEW:           bosCampaignLinks collection (initiativeId + campaignId + ventureId)
+    BOS-AWARE:     CampaignsPage (show linked initiatives count)
+    BC-RISK:       Medium — duplicate link if both Lead.campaignId and BosCampaignLink
+    SPLIT:         CampaignsPage manageable at 504 lines
+
+--------------------------------------------------------------------------------
+A.9 ERP:Campaign (existing)
+--------------------------------------------------------------------------------
+    EXISTS:        YES — campaigns, campaignTags, outreachEvents
+    REUSE:         campaignService.ts, CampaignsPage, Lead.campaignId
+    EXTEND:        Read-only "Linked initiatives" badge via BosCampaignLink query
+    UNTOUCHED:     Campaign CRUD, outreach workflow
+    NEVER MODIFY:  Campaign schema for BOS initiativeId
+    NEW:           BosCampaignLink sidecar only
+    BOS-AWARE:     CampaignsPage, LeadDetailPage
+    BC-RISK:       Low with sidecar
+    SPLIT:         No
+
+--------------------------------------------------------------------------------
+A.10 ERP:Business (existing CRM)
+--------------------------------------------------------------------------------
+    EXISTS:        YES — businesses collection, businessService.ts
+    REUSE:         As CRM only
+    EXTEND:        —
+    UNTOUCHED:     All CRM business flows
+    NEVER MODIFY:  Rename or overload for BosVenture
+    NEW:           BosVenture is separate collection (Doc 10 naming law)
+    BOS-AWARE:     Documentation + code review gates only
+    BC-RISK:       CRITICAL naming collision
+    SPLIT:         No
+
+
+================================================================================
+B. LIFECYCLES (Doc 11)
+================================================================================
+
+Lifecycle              | ERP signal today              | BOS gap
+-----------------------|-------------------------------|---------------------------
+Venture lifecycle      | N/A                           | NEW state machine + UI
+Initiative lifecycle   | N/A                           | NEW (Draft→Active→Paused→Closed)
+Attribution lifecycle  | N/A                           | NEW (Proposed→Confirmed→Locked)
+Decision lifecycle     | N/A                           | NEW minimal in Phase 1
+Lead funnel stages     | Lead.status field             | EXTEND BosFunnelStageEvent sidecar
+Initiative close       | N/A                           | NEW triggers BosLessonLearned prompt
+
+
+================================================================================
+C. PERMISSIONS (Doc 12)
+================================================================================
+
+    EXISTS:     Granular permission framework (config/permissions.ts, usePermissions)
+    REUSE:      Permission categories UI in RoleManagement.tsx
+    EXTEND:     Add bos_* keys to GRANULAR_PERMISSIONS + canBosXxx() helpers
+    UNTOUCHED:  Existing expense_*, reports_* keys and behavior
+    NEVER MODIFY: Owner bypass logic
+    NEW:        bos_venture_*, bos_initiative_*, bos_attribution_*,
+                bos_decision_*, bos_reports_view (subset of Doc 12 matrix)
+    BOS-AWARE:  ProtectedComponent on new routes; optional inline attribution gate
+    BC-RISK:    Medium — missing bos_* defaults must deny, not allow
+    SPLIT:      usePermissions.tsx (700+ lines) — extract BOS block before growth
+
+
+================================================================================
+D. DECISION ENGINE (Doc 13)
+================================================================================
+
+    EXISTS:     NO decision records, no scoring, no alternatives
+    REUSE:     ActivityLogger for decision events; types pattern from Loan
+    EXTEND:    —
+    UNTOUCHED:  All ERP modules
+    NEW:       bosDecisions, bosDecisionAlternatives collections,
+               bosDecisionService.ts, BosDecisionsPage (minimal list + create)
+    BOS-AWARE:  BosInitiative detail (link decisions); Dashboard (open decisions count)
+    BC-RISK:    Low Phase 1 if read-only ERP inputs only
+    SPLIT:      N/A
+
+
+================================================================================
+E. DATA FLOW / INTEGRATION (Docs 03, 05, 06)
+================================================================================
+
+Flow                              | Current state           | Gap
+----------------------------------|-------------------------|---------------------------
+Expense → Investment attribution  | Expense exists          | BosAttribution sidecar NEW
+Expense → Initiative ROI          | Manual mental math      | Join attribution + returns
+Lead → Funnel event               | status field only       | BosFunnelStageEvent NEW
+Lead → Revenue                    | Won + invoice manual    | BosAttribution on invoice NEW (P2)
+Campaign → Initiative spend       | No link                 | BosCampaignLink NEW
+GHL webhook → Lead                | NO adapter              | NEW adapter (Phase 3+)
+Metric snapshots                  | NO                      | bosMetricSnapshots (Phase 2)
+
+
+================================================================================
+F. UX / OPTION C (Doc 06)
+================================================================================
+
+    EXISTS:     Full expense form for all users with expenses_create
+    REUSE:      Entire staff expense workflow unchanged
+    EXTEND:     Finance/BI role: post-hoc attribution action on expense row/detail
+    UNTOUCHED:  Expense form fields, validation, return recording, categories
+    NEVER MODIFY: expenseAllowsReturnRecording(), expenseReturnService rules
+    NEW:        "Attribute to initiative" modal (bos_attribution_create permission)
+    BOS-AWARE:  ExpensesPage row actions (conditional), optional Reports dimension
+    BC-RISK:    HIGH if form gains venture/initiative dropdowns for all users
+    SPLIT:      ExpensesPage — extract ExpenseForm, ExpenseList, ExpenseDetailModal
+
+
+================================================================================
+G. REPORTS / BI (Docs 07, 08)
+================================================================================
+
+    EXISTS:     ReportsPage with 8 tabs, CSV export, balance integrity
+    REUSE:      downloadCsv, financeCurrencyDisplay, inRange filter, tab pattern
+    EXTEND:     New tab "Initiative spend" OR enrich Expenses tab with initiative column
+    UNTOUCHED:  Cashflow, loans, deposits, integrity tab logic
+    NEVER MODIFY: balanceIntegrityService.ts
+    NEW:        bosReportJoin.ts utility (attribution + expense merge in memory)
+    BOS-AWARE:  ReportsPage, DashboardPage finance snapshot
+    BC-RISK:    Low — additive columns; unattributed expenses show blank initiative
+    SPLIT:      ReportsPage — extract per-tab components before BOS tab
+
+
+================================================================================
+H. FIRESTORE RULES
+================================================================================
+
+    EXISTS:     Company-scoped rules for all ERP collections
+    REUSE:      canAccessCompanyData(companyId) helper pattern
+    EXTEND:     Rules for each new bos* collection with bos_* permission checks
+    UNTOUCHED:  Existing expense/lead/invoice rule blocks
+    NEVER MODIFY: Expense write rules for BOS fields (there should be none)
+    NEW:        bosVentures, bosInitiatives, bosAttributions, bosDecisions rules
+    BC-RISK:    CRITICAL — deploy rules before client writes
+
+
+================================================================================
+I. BACKUP / MIGRATION
+================================================================================
+
+    EXISTS:     databaseMigrationService FLAT_BACKUP_FORMAT_VERSION = 5
+    REUSE:      Backup stage pattern, serializeDocData
+    EXTEND:     Add BOS collections to export/import stages (version bump to 6)
+    UNTOUCHED:  Existing 29 export stages behavior
+    NEW:        BOS collection names in BACKUP_COLLECTIONS list
+    BC-RISK:    Medium — restore without BOS collections loses attribution data
+
+
+================================================================================
+J. COMPONENTS REQUIRING SPLIT BEFORE BOS (PRIORITY ORDER)
+================================================================================
+
+    1. ExpensesPage.tsx        3,190 lines  — attribution UI target
+    2. LeadsPage.tsx           2,588 lines  — funnel attribution
+    3. BankAccountsPage.tsx    2,361 lines  — not BOS Phase 1 (defer split)
+    4. LeadDetailPage.tsx      2,128 lines  — channel/initiative display
+    5. DashboardPage.tsx       1,513 lines  — BOS KPI widgets
+    6. ReportsPage.tsx         1,055 lines  — initiative enrichment
+    7. usePermissions.tsx        700+ lines — bos_* permission block
+
+
+================================================================================
+K. GAP SUMMARY SCORECARD
+================================================================================
+
+    Category                    | Coverage today | Phase 1 work
+    ----------------------------|----------------|-----------------------------
+    Venture / Initiative core   | 0%             | Full greenfield
+    Attribution sidecar         | 0%             | Full greenfield (critical path)
+    Permissions bos_*           | 0%             | Extend existing framework
+    Reports enrichment          | 30%            | Join layer + 1 tab/column
+    CRM data for funnel         | 60%            | Sidecar events + read Lead.status
+    Decision engine             | 0%             | Minimal CRUD Phase 1
+    ERP modules                 | 95%            | Read-only consumption
+    GHL / external adapters     | 0%             | Out of Phase 1
+
+
+================================================================================
+END OF DOCUMENT 02 — Gap Analysis
+================================================================================

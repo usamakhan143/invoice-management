@@ -1,0 +1,350 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 09 — Future Roadmap
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+This roadmap describes how the Business Operating System should evolve over
+the next several years — from first business launch to multi-venture portfolio
+management.
+
+Each phase is designed to deliver standalone value while building toward
+the long-term vision. No phase requires the next phase to function.
+
+================================================================================
+PHASE 1 — FOUNDATION (Months 1–6)
+"Define and Track"
+================================================================================
+
+Goal:
+    Establish the BOS vocabulary and manually track your first business initiative
+    from investment to ROI.
+
+Business context:
+    You are launching your first business (e.g., Mobile App Agency).
+    You need to know: where am I spending, what is it producing, what is the ROI?
+
+Deliverables:
+
+    BOS Module:
+    ├── Business Portfolio — register your first business
+    ├── Growth Initiatives — create and manage initiatives
+    ├── Acquisition Channels — define channels (LinkedIn, Google Ads, etc.)
+    ├── Cost Centers — define spend categories
+    └── Attribution (manual) — link expenses to initiatives post-hoc
+
+    Integration:
+    ├── Expenses → read-only + manual attribution on expense detail view
+    └── Reports → optional BI columns on expense export
+
+    KPIs (8 core):
+    ├── Total Investment, Total Revenue, Gross ROI
+    ├── CPL, CAC, Close Rate
+    └── Active Initiatives, Budget Utilization
+
+    Permissions:
+    ├── bi_view — see BOS dashboards
+    ├── bi_initiatives_manage — create/edit initiatives
+    └── bi_attributions_manage — assign attributions
+
+What does NOT change:
+    ✓ Expense form (zero changes for staff)
+    ✓ CRM workflows
+    ✓ Reports core functionality
+    ✓ Dashboard existing widgets
+
+Success criteria:
+    □ First initiative tracked from start to close with full ROI
+    □ At least 80% of initiative-related expenses attributed
+    □ First lesson learned captured on initiative closure
+    □ Founder can answer "What is my ROI?" without spreadsheets
+
+Risk level: LOW
+    New collections only. No existing module modifications.
+
+
+================================================================================
+PHASE 2 — FUNNEL & MEASUREMENT (Months 6–12)
+"Measure the Full Journey"
+================================================================================
+
+Goal:
+    Track the complete funnel from investment through lead, meeting, proposal,
+    client, revenue, and ROI — automatically where possible.
+
+Business context:
+    First business is running. You need funnel visibility: where are leads
+    dropping off? Which channel converts best?
+
+Deliverables:
+
+    BOS Module (new):
+    ├── Experiments — structured A/B tests within initiatives
+    ├── Funnel Analytics — stage-by-stage conversion tracking
+    ├── Decision Log — record strategic decisions with rationale
+    └── Lessons Learned — structured capture on initiative closure
+
+    Integration (expanded):
+    ├── CRM Leads → read + attribute to initiatives/channels
+    ├── CRM Call Activity → funnel stage: Meeting Held
+    ├── Invoices → read + revenue attribution
+    └── Reports → new "Business Intelligence" tab
+
+    KPIs (20 total — adds 12):
+    ├── Meeting Rate, Proposal Rate, Sales Cycle Length
+    ├── Funnel Drop-off, Pipeline Value, Burn Rate
+    ├── Channel ROI, Revenue by Channel
+    ├── Net ROI, Experiment Success Rate
+    └── Attribution Coverage
+
+    Automation:
+    ├── Funnel stage auto-detection from CRM status changes
+    ├── ROI auto-computation on new attributions
+    └── Budget alert when 80% consumed
+
+Success criteria:
+    □ Full funnel visible for at least one initiative
+    □ Channel comparison shows clear winner/loser
+    □ At least 3 experiments run with results captured
+    □ BI report tab used for monthly review
+    □ Decision log has entries for all major budget changes
+
+Risk level: LOW–MEDIUM
+    CRM integration is read-only. Revenue attribution adds invoice reading.
+
+
+================================================================================
+PHASE 3 — MULTI-BUSINESS & INTELLIGENCE (Year 2)
+"Learn and Replicate"
+================================================================================
+
+Goal:
+    Launch second and third businesses using institutional knowledge from the
+    first. Cross-business comparison and playbook system active.
+
+Business context:
+    First business is profitable. Launching AI Automation Agency and/or a
+    SaaS product. Need to apply lessons and compare performance.
+
+Deliverables:
+
+    BOS Module (new):
+    ├── Business Model Registry — classify business types
+    ├── Strategic Goals / OKRs — quarterly/yearly objectives
+    ├── Playbooks & Templates — reusable launch templates
+    ├── Projects (Delivery) — track client project economics
+    └── Notification & Alert Engine — proactive KPI alerts
+
+    Integration (expanded):
+    ├── GoHighLevel adapter (Level 1–2: manual/semi-auto sync)
+    ├── Ad platform spend import (Google Ads, Meta)
+    └── Loans → read for capital deployment context
+
+    KPIs (35 total — adds 15):
+    ├── LTV, LTV:CAC Ratio, CAC Payback Period
+    ├── Portfolio ROI, Cross-Business ROI Comparison
+    ├── Revenue Growth Rate, Initiative Success Rate
+    ├── Lesson Reuse Rate, Playbook Usage
+    └── MRR/ARR (for SaaS businesses)
+
+    Intelligence:
+    ├── Cross-initiative comparison dashboards
+    ├── "Similar initiative" suggestions when creating new ones
+    ├── Past lessons surfaced automatically
+    └── Channel benchmarks across businesses
+
+Success criteria:
+    □ 2+ businesses active in portfolio
+    □ Second business launched using playbook from first
+    □ Cross-business ROI comparison available
+    □ Lesson reuse rate > 50% on new initiatives
+    □ GoHighLevel leads flowing into BOS attribution
+
+Risk level: MEDIUM
+    Multi-business hierarchy adds complexity. External adapters introduce
+    sync reliability considerations.
+
+
+================================================================================
+PHASE 4 — AUTOMATION & SCALE (Years 3–5)
+"Scale Without Proportional Effort"
+================================================================================
+
+Goal:
+    BOS handles increasing data volume and business complexity without
+    requiring proportional manual effort. Semi-automated attribution and
+    proactive decision support.
+
+Business context:
+    3–5 active businesses. Hundreds of initiatives. Thousands of attributed
+    transactions. Need system to surface insights, not just data.
+
+Deliverables:
+
+    BOS Module (new/enhanced):
+    ├── BiAggregateMonthly — materialized rollups for fast reporting
+    ├── Auto-attribution rules — tag-based and pattern-based assignment
+    ├── Decision recommendation engine — KPI-triggered suggestions
+    └── Portfolio command center — unified multi-business dashboard
+
+    Integration (expanded):
+    ├── GoHighLevel adapter (Level 3: automated sync)
+    ├── Stripe/payment processor adapter (revenue auto-import)
+    ├── Payroll integration (investment attribution for salaries)
+    ├── Subscriptions module (SaaS economics)
+    └── Assets module (investment tracking)
+
+    Scale infrastructure:
+    ├── Paginated date-range queries (replace load-all)
+    ├── Monthly aggregate pre-computation
+    ├── Attribution batch processing
+    └── Report generation optimization
+
+    KPIs (52 total — all defined KPIs active):
+    ├── All Phase 1–3 KPIs automated
+    ├── Decision Quality Score
+    ├── Lead Quality Score
+    ├── Predictive ROI (based on leading indicators)
+    └── Time to Launch (cross-business)
+
+Success criteria:
+    □ System handles 50k+ attributed transactions without performance degradation
+    □ 60%+ attributions auto-assigned (not manual)
+    □ Monthly portfolio review takes < 30 minutes
+    □ Decision recommendations acted on > 70% of the time
+    □ 5+ businesses in portfolio
+
+Risk level: MEDIUM–HIGH
+    Scale infrastructure changes require careful migration.
+    Auto-attribution rules need validation before trust.
+
+
+================================================================================
+PHASE 5 — BUSINESS EMPIRE (Years 5–10)
+"Operating System Maturity"
+================================================================================
+
+Goal:
+    The BOS operates as a true business operating system — managing a portfolio
+    of ventures with minimal founder overhead, institutional memory, and
+    data-driven venture creation.
+
+Business context:
+    Multiple businesses across different models (agencies, SaaS, products).
+    Team members managing individual businesses. Founder focuses on strategy
+    and new venture creation.
+
+Deliverables:
+
+    BOS Module (new/enhanced):
+    ├── Analytics warehouse integration (BigQuery or equivalent)
+    ├── AI-powered initiative recommendations
+    ├── Market signal integration (trends, competitor data)
+    ├── Venture evaluation framework (should I launch this business?)
+    ├── Resource allocation optimizer (where to invest next dollar)
+    └── Board/investor reporting package
+
+    Integration (full ecosystem):
+    ├── All ERP modules attributed (payroll, assets, subscriptions)
+    ├── All external platforms connected (GHL, ads, payments, email)
+    ├── Future SaaS products built on platform feed BOS natively
+    └── API for third-party integrations
+
+    Intelligence:
+    ├── Predictive ROI modeling
+    ├── Automated initiative health scoring
+    ├── Cross-portfolio pattern recognition
+    ├── "Venture DNA" profiles (what makes your businesses succeed)
+    └── Semi-autonomous initiative management (system proposes, human approves)
+
+Success criteria:
+    □ 10+ businesses managed in portfolio
+    □ New business launch time reduced by 50% vs first business
+    □ System proposes 2+ initiative ideas per quarter based on data
+    □ Portfolio-level P&L available in real-time
+    □ Institutional knowledge base has 100+ lessons learned
+
+Risk level: HIGH (but isolated from operational modules)
+    Analytics warehouse and AI features are additive layers.
+    Core BOS and ERP continue functioning independently.
+
+
+================================================================================
+ROADMAP VISUALIZATION
+================================================================================
+
+    Year 1          Year 2          Year 3-5         Year 5-10
+    ──────          ──────          ────────         ─────────
+    PHASE 1         PHASE 2         PHASE 3          PHASE 4         PHASE 5
+    Foundation      Funnel &        Multi-Business   Automation      Empire
+                    Measure         Intelligence     & Scale         Maturity
+
+    ┌────────┐     ┌────────┐     ┌────────┐      ┌────────┐      ┌────────┐
+    │Business│     │Funnel  │     │Multi-  │      │Auto-   │      │AI-Power│
+    │Initiat.│     │Analytic│     │Business│      │Attrib. │      │Venture │
+    │Channel │     │Experim.│     │Playbook│      │Aggregat│      │Portfolio│
+    │Manual  │     │Decision│     │Goals   │      │Decision│      │Warehouse│
+    │Attrib. │     │Log     │     │GHL Ad. │      │Engine  │      │API     │
+    │8 KPIs  │     │20 KPIs │     │35 KPIs │      │52 KPIs │      │Full OS │
+    └────────┘     └────────┘     └────────┘      └────────┘      └────────┘
+
+    Businesses: 1       2-3            3-5             5-10           10+
+    Initiatives: 2-5    10-20          50-100          100-500        500+
+    Attribution: Manual Semi-auto      Auto-rules      Auto + AI      Autonomous
+
+
+================================================================================
+PHASE DEPENDENCIES
+================================================================================
+
+    Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
+       │            │            │            │
+       │            │            │            └── Requires aggregate infrastructure
+       │            │            └── Requires 2+ businesses and lesson library
+       │            └── Requires CRM integration and funnel tracking
+       └── No dependencies (start here)
+
+Each phase can be paused indefinitely without breaking previous phases.
+Skipping phases is not recommended but possible (with reduced functionality).
+
+
+================================================================================
+INVESTMENT OF TIME & EFFORT (ESTIMATED)
+================================================================================
+
+Phase   | Duration  | Effort Level | Business Value | Technical Risk
+--------|-----------|-------------|----------------|---------------
+Phase 1 | 1–3 months| Low         | HIGH           | Low
+Phase 2 | 2–4 months| Medium      | HIGH           | Low–Medium
+Phase 3 | 3–6 months| Medium      | HIGH           | Medium
+Phase 4 | 6–12 mo.  | High        | MEDIUM–HIGH    | Medium–High
+Phase 5 | Ongoing   | High        | MEDIUM         | High (isolated)
+
+Recommendation: Complete Phase 1 and Phase 2 before evaluating Phase 3 timing.
+Phase 1 alone delivers 80% of the value for a single-business founder.
+
+
+================================================================================
+WHAT TO BUILD FIRST (RECOMMENDED START)
+================================================================================
+
+If you can only build three things, build these:
+
+    1. Growth Initiative module (create, track, close initiatives)
+    2. Manual expense attribution (link expenses to initiatives)
+    3. ROI computation (investment vs revenue, auto-calculated)
+
+These three capabilities — initiative tracking, expense attribution, and ROI —
+deliver the core BOS value proposition:
+
+    "Where am I investing? What is it producing? What is the ROI?"
+
+Everything else in this roadmap enhances, automates, and scales these three
+foundational capabilities.
+
+================================================================================
+END OF DOCUMENT 09 — Future Roadmap
+================================================================================

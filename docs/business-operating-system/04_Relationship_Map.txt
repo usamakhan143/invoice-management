@@ -1,0 +1,283 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 04 — Relationship Map
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+This document explains how every BOS module relates to every other module
+and to existing ERP modules. No code. ASCII diagrams only.
+
+================================================================================
+1. MASTER RELATIONSHIP DIAGRAM
+================================================================================
+
+                         ┌──────────────────────┐
+                         │  BUSINESS PORTFOLIO  │
+                         │  (Venture A, B, C…)  │
+                         └──────────┬───────────┘
+                                    │ 1:N
+                         ┌──────────▼───────────┐
+                         │   GROWTH INITIATIVE   │◄──── STRATEGIC CORE
+                         │  (The heart of BOS)   │
+                         └──┬────┬────┬────┬─────┘
+                            │    │    │    │
+              ┌─────────────┘    │    │    └──────────────┐
+              │                  │    │                   │
+              ▼                  ▼    ▼                   ▼
+    ┌─────────────┐   ┌──────────────┐   ┌──────────┐   ┌──────────────┐
+    │ ACQUISITION │   │  COST CENTER │   │EXPERIMENT│   │ STRATEGIC    │
+    │   CHANNEL   │   │              │   │          │   │ GOAL / OKR   │
+    └──────┬──────┘   └──────┬───────┘   └────┬─────┘   └──────────────┘
+           │                 │                │
+           └────────┬────────┘                │
+                    │                         │
+                    ▼                         ▼
+           ┌────────────────┐      ┌─────────────────┐
+           │   ATTRIBUTION  │      │  DECISION LOG   │
+           │    ENGINE      │      │                 │
+           └───────┬────────┘      └─────────────────┘
+                   │
+     ┌─────────────┼─────────────┬──────────────┐
+     │             │             │              │
+     ▼             ▼             ▼              ▼
+┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐
+│ EXPENSE │  │  LEAD   │  │ INVOICE │  │  TIME    │
+│ (ERP)   │  │ (CRM)   │  │ (ERP)   │  │ (Future) │
+└─────────┘  └─────────┘  └─────────┘  └──────────┘
+     │             │             │              │
+     └─────────────┼─────────────┴──────────────┘
+                   │
+                   ▼
+        ┌─────────────────────┐
+        │  INVESTMENT TRACKER │
+        │  REVENUE ATTRIBUTION│
+        │  KPI ENGINE         │
+        │  FUNNEL ANALYTICS   │
+        └──────────┬──────────┘
+                   │
+                   ▼
+        ┌─────────────────────┐
+        │  LESSONS LEARNED    │
+        │  PLAYBOOKS          │
+        │  REPORTS (enriched) │
+        │  DASHBOARD (widgets)│
+        └─────────────────────┘
+
+
+================================================================================
+2. GROWTH INITIATIVE — CENTRAL HUB
+================================================================================
+
+Everything in the BOS orbits the Growth Initiative. It is the single entity
+that connects strategy to execution to measurement to learning.
+
+    Growth Initiative
+    ├── belongs to → Business Portfolio (which venture)
+    ├── aligned with → Strategic Goal / OKR
+    ├── uses → Acquisition Channel(s)
+    ├── spends through → Cost Center(s)
+    ├── contains → Experiment(s)
+    ├── wraps → CRM Campaign(s)
+    ├── receives → Investment(s) via Attribution Engine
+    ├── generates → Lead(s) via Attribution Engine
+    ├── produces → Revenue via Attribution Engine
+    ├── delivers → Project(s)
+    ├── computes → KPI(s)
+    ├── records → Decision(s)
+    └── closes with → Lesson(s) Learned
+
+
+================================================================================
+3. ATTRIBUTION ENGINE — THE CONNECTOR
+================================================================================
+
+The Attribution Engine is not a business module users interact with directly.
+It is the invisible infrastructure that links operational facts to strategic
+context.
+
+    ┌─────────────────────────────────────────────────────────┐
+    │                  ATTRIBUTION ENGINE                      │
+    │                                                         │
+    │  Source Record          Attribution           BOS Context│
+    │  ─────────────          ───────────           ──────────│
+    │  Expense #1234    →    [link]          →   Initiative X │
+    │  Lead #5678       →    [link]          →   Channel Y   │
+    │  Invoice #9012    →    [link]          →   Initiative X │
+    │  Time entry #345  →    [link]          →   Experiment Z  │
+    │                                                         │
+    │  Rules:                                                 │
+    │  • Never modifies source record                         │
+    │  • Optional (source records work without attribution)     │
+    │  • Post-hoc (can be assigned after creation)            │
+    │  • Correctable (can be changed without audit loss)      │
+    │  • Splittable (one expense → multiple initiatives %)    │
+    └─────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. EXISTING ERP MODULES — READ-ONLY RELATIONSHIPS
+================================================================================
+
+The BOS NEVER writes to these modules. It reads and attributes.
+
+    ┌──────────────┐         ┌──────────────────┐
+    │   EXPENSE    │──read──►│                  │
+    │   MODULE     │         │                  │
+    ├──────────────┤         │   ATTRIBUTION    │
+    │   INVOICE    │──read──►│     ENGINE       │
+    │   MODULE     │         │                  │
+    ├──────────────┤         │                  │
+    │   CRM/LEADS  │──read──►│                  │
+    │   MODULE     │         │                  │
+    ├──────────────┤         └────────┬─────────┘
+    │   LOANS      │──read──►         │
+    │   MODULE     │                  │
+    ├──────────────┤                  ▼
+    │   BANK       │──read──►  ┌──────────────┐
+    │   ACCOUNTS   │           │  BOS MODULES │
+    ├──────────────┤           │  (compute)   │
+    │   REPORTS    │◄─enrich──│              │
+    │   ENGINE     │           └──────────────┘
+    ├──────────────┤
+    │  DASHBOARD   │◄─widgets─
+    └──────────────┘
+
+Key rule: Arrows pointing INTO Attribution Engine are READ.
+          Arrows pointing OUT of BOS Modules are ENRICH (additive only).
+
+
+================================================================================
+5. FUNNEL STAGE RELATIONSHIPS
+================================================================================
+
+    Investment                BOS Initiative + Channel
+        │
+        ▼
+    Campaign / Experiment     BOS Experiment + CRM Campaign (linked)
+        │
+        ▼
+    Lead Generated            CRM Lead + BOS Attribution
+        │
+        ▼
+    Meeting Held              CRM Activity + BOS Funnel Stage
+        │
+        ▼
+    Proposal Sent             CRM/Custom Stage + BOS Funnel Stage
+        │
+        ▼
+    Client Closed             CRM Conversion + BOS Revenue Attribution
+        │
+        ▼
+    Revenue Recorded          Invoice Module + BOS Revenue Attribution
+        │
+        ▼
+    ROI Computed              BOS KPI Engine (auto)
+        │
+        ▼
+    Lesson Captured           BOS Lessons Learned Module
+
+
+Each stage transition is tracked but owned by its source module.
+BOS adds the initiative/channel context and computes conversion metrics.
+
+
+================================================================================
+6. MULTI-BUSINESS HIERARCHY
+================================================================================
+
+    Founder
+    └── Business Portfolio
+        ├── Business A: Mobile App Agency
+        │   ├── Initiative: Q1 Client Acquisition
+        │   │   ├── Channel: LinkedIn Outreach
+        │   │   ├── Channel: Google Ads
+        │   │   ├── Experiment: Case Study A/B Test
+        │   │   ├── Investment: $3,200 (attributed expenses)
+        │   │   ├── Leads: 45 (attributed CRM leads)
+        │   │   ├── Revenue: $28,000 (attributed invoices)
+        │   │   └── ROI: 775%
+        │   └── Initiative: Hire Developer #2
+        │       └── Investment: $4,800/month (attributed expenses)
+        │
+        ├── Business B: AI Automation Agency
+        │   └── Initiative: MVP Validation
+        │       ├── Channel: Content Marketing
+        │       └── Experiment: Landing Page Test
+        │
+        └── Business C: SaaS Product (future)
+            └── (empty — not yet launched)
+
+Each business is isolated in data but shares the same BOS architecture.
+
+
+================================================================================
+7. EXTERNAL SYSTEM RELATIONSHIPS
+================================================================================
+
+    ┌──────────────┐
+    │  GoHighLevel  │──adapter──► Attribution Engine ──► BOS Modules
+    └──────────────┘              (leads, contacts,
+    ┌──────────────┐               funnel stages)
+    │  Google Ads   │──adapter──► Attribution Engine
+    └──────────────┘              (spend, impressions,
+    ┌──────────────┐               clicks, conversions)
+    │  Meta Ads     │──adapter──► Attribution Engine
+    └──────────────┘
+    ┌──────────────┐
+    │  Stripe       │──adapter──► Attribution Engine
+    └──────────────┘              (payments, subscriptions)
+    ┌──────────────┐
+    │  Future SaaS  │──adapter──► Attribution Engine
+    └──────────────┘              (product-specific metrics)
+
+Adapters are:
+    • Optional (system works without them)
+    • Replaceable (swap GoHighLevel for HubSpot)
+    • Read-only (never write back to external systems from BOS)
+    • Unidirectional (external → BOS, not BOS → external)
+
+
+================================================================================
+8. PERMISSION & ACCESS RELATIONSHIPS
+================================================================================
+
+    Role                | BOS Access
+    --------------------|--------------------------------------------------
+    Daily Staff         | None (expense form unchanged)
+    Finance User        | View attributions, assign to initiatives
+    Manager             | Create/edit initiatives, view KPIs
+    Founder / Owner     | Full BOS access, all businesses, all decisions
+    Future: Analyst     | Read-only BOS dashboards and reports
+
+BOS permissions are SEPARATE from expense/CRM permissions.
+A user can have expense create access without any BOS access.
+
+
+================================================================================
+9. DATA OWNERSHIP MAP
+================================================================================
+
+    Entity                  | Owner (Write)      | BOS Access
+    ------------------------|--------------------|-----------------
+    Expense amount          | Expense Module     | Read + Attribute
+    Lead contact            | CRM Module         | Read + Attribute
+    Invoice amount          | Invoice Module     | Read + Attribute
+    Bank balance            | Bank Module        | Read only
+    Initiative definition   | BOS                | Own
+    Channel definition      | BOS                | Own
+    Experiment definition   | BOS                | Own
+    Attribution link        | BOS                | Own
+    KPI computed value      | BOS (cached)       | Own (recomputable)
+    Lesson learned          | BOS                | Own
+    Decision record         | BOS                | Own
+    Playbook template       | BOS                | Own
+    CRM Campaign            | CRM Module         | Read + Link
+    Report output           | Reports Engine     | Enrich (additive)
+
+
+================================================================================
+END OF DOCUMENT 04 — Relationship Map
+================================================================================

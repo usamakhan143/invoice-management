@@ -1,0 +1,411 @@
+================================================================================
+BUSINESS OPERATING SYSTEM (BOS)
+Document 08 — KPIs
+================================================================================
+
+Authoring perspective: Principal ERP Architect · Business Systems Consultant
+Status: Business blueprint — pre-implementation
+Version: 1.0
+
+Every KPI listed here should eventually be computed automatically by the
+BOS KPI Engine from attributed data. None are manually entered.
+
+Each KPI includes:
+    • Definition
+    • Formula
+    • Decision it informs
+    • Scope (Initiative / Channel / Business / Portfolio)
+
+================================================================================
+GROUP 1 — INVESTMENT KPIs
+================================================================================
+
+KPI: Total Investment
+    Definition:   Sum of all financial resources allocated to an initiative
+    Formula:      Σ (attributed expense amounts)
+    Decision:     "How much have we spent?"
+    Scope:        Initiative, Channel, Experiment, Business, Portfolio
+
+KPI: Net Investment
+    Definition:   Total investment minus returns/refunds
+    Formula:      Total Investment - Σ (attributed returns)
+    Decision:     "What is our actual net spend?"
+    Scope:        Initiative, Channel, Business
+
+KPI: Budget Utilization
+    Definition:   Percentage of allocated budget consumed
+    Formula:      (Total Investment / Budget Allocated) × 100
+    Decision:     "Are we running out of budget?"
+    Scope:        Initiative, Experiment
+
+KPI: Burn Rate
+    Definition:   Investment consumed per time period
+    Formula:      Total Investment / Days Active × 30 (monthly)
+    Decision:     "How long until budget is exhausted?"
+    Scope:        Initiative, Business
+
+KPI: Investment by Channel
+    Definition:   Investment breakdown per acquisition channel
+    Formula:      Σ (attributed expenses) grouped by channel
+    Decision:     "Where is the money going?"
+    Scope:        Initiative, Business
+
+KPI: Investment by Cost Center
+    Definition:   Investment breakdown per organizational function
+    Formula:      Σ (attributed expenses) grouped by cost center
+    Decision:     "Are we spending on growth or operations?"
+    Scope:        Business, Portfolio
+
+KPI: Average Investment per Initiative
+    Definition:   Mean investment across all initiatives
+    Formula:      Σ (investment) / Count (initiatives)
+    Decision:     "What does a typical initiative cost?"
+    Scope:        Business, Portfolio
+
+
+================================================================================
+GROUP 2 — ACQUISITION KPIs
+================================================================================
+
+KPI: Total Leads Generated
+    Definition:   Count of leads attributed to an initiative
+    Formula:      Count (attributed leads)
+    Decision:     "Is our investment producing leads?"
+    Scope:        Initiative, Channel, Experiment, Business
+
+KPI: Cost Per Lead (CPL)
+    Definition:   Average investment required to generate one lead
+    Formula:      Total Investment / Total Leads
+    Decision:     "How efficient is our lead generation?"
+    Scope:        Initiative, Channel, Experiment
+
+KPI: Lead Generation Rate
+    Definition:   Leads produced per time period
+    Formula:      Total Leads / Days Active × 7 (weekly)
+    Decision:     "Is lead flow increasing or decreasing?"
+    Scope:        Initiative, Channel
+
+KPI: Lead Source Distribution
+    Definition:   Percentage of leads from each channel
+    Formula:      Channel Leads / Total Leads × 100
+    Decision:     "Which channels produce the most leads?"
+    Scope:        Initiative, Business
+
+KPI: Lead Quality Score (future)
+    Definition:   Percentage of leads that reach meeting stage
+    Formula:      Leads → Meetings / Total Leads × 100
+    Decision:     "Which channels produce quality leads?"
+    Scope:        Channel, Experiment
+
+
+================================================================================
+GROUP 3 — CONVERSION / FUNNEL KPIs
+================================================================================
+
+KPI: Meeting Rate
+    Definition:   Percentage of leads that result in a meeting
+    Formula:      Meetings Held / Total Leads × 100
+    Decision:     "Are leads qualified enough to talk?"
+    Scope:        Initiative, Channel, Experiment
+
+KPI: Proposal Rate
+    Definition:   Percentage of meetings that result in a proposal
+    Formula:      Proposals Sent / Meetings Held × 100
+    Decision:     "Are meetings converting to opportunities?"
+    Scope:        Initiative, Channel
+
+KPI: Close Rate
+    Definition:   Percentage of proposals that result in a client
+    Formula:      Clients Closed / Proposals Sent × 100
+    Decision:     "Are we winning deals?"
+    Scope:        Initiative, Channel
+
+KPI: Overall Conversion Rate
+    Definition:   Percentage of leads that become clients
+    Formula:      Clients Closed / Total Leads × 100
+    Decision:     "What is our end-to-end conversion efficiency?"
+    Scope:        Initiative, Channel, Business
+
+KPI: Funnel Drop-off Rate
+    Definition:   Percentage lost at each funnel stage
+    Formula:      1 - (Next Stage Count / Current Stage Count) × 100
+    Decision:     "Where is the funnel leaking?"
+    Scope:        Initiative, Channel
+
+KPI: Sales Cycle Length
+    Definition:   Average days from lead to client close
+    Formula:      Σ (close date - lead date) / Count (clients)
+    Decision:     "How long does it take to win a client?"
+    Scope:        Initiative, Channel, Business
+
+KPI: Pipeline Value
+    Definition:   Total value of open proposals not yet closed
+    Formula:      Σ (proposal amounts where status = open)
+    Decision:     "What revenue is potentially coming?"
+    Scope:        Initiative, Business
+
+
+================================================================================
+GROUP 4 — REVENUE KPIs
+================================================================================
+
+KPI: Total Revenue
+    Definition:   Sum of all revenue attributed to an initiative
+    Formula:      Σ (attributed invoice amounts)
+    Decision:     "How much money did this initiative produce?"
+    Scope:        Initiative, Channel, Business, Portfolio
+
+KPI: Revenue by Channel
+    Definition:   Revenue breakdown per acquisition channel
+    Formula:      Σ (attributed revenue) grouped by channel
+    Decision:     "Which channel generates the most revenue?"
+    Scope:        Initiative, Business
+
+KPI: Average Deal Size
+    Definition:   Mean revenue per closed client
+    Formula:      Total Revenue / Clients Closed
+    Decision:     "What is a typical deal worth?"
+    Scope:        Initiative, Channel, Business
+
+KPI: Revenue per Dollar Invested
+    Definition:   Revenue efficiency ratio
+    Formula:      Total Revenue / Total Investment
+    Decision:     "How much revenue does each dollar of investment produce?"
+    Scope:        Initiative, Channel
+
+KPI: Time to First Revenue
+    Definition:   Days from initiative start to first attributed invoice
+    Formula:      First Invoice Date - Initiative Start Date
+    Decision:     "How long until this initiative pays off?"
+    Scope:        Initiative
+
+KPI: Monthly Recurring Revenue (MRR) — for SaaS businesses
+    Definition:   Sum of monthly subscription revenue
+    Formula:      Σ (monthly subscription amounts)
+    Decision:     "What is our recurring revenue base?"
+    Scope:        Business (SaaS model)
+
+KPI: Annual Recurring Revenue (ARR) — for SaaS businesses
+    Definition:   MRR × 12
+    Formula:      MRR × 12
+    Decision:     "What is our annualized revenue?"
+    Scope:        Business (SaaS model)
+
+
+================================================================================
+GROUP 5 — ROI & PROFITABILITY KPIs
+================================================================================
+
+KPI: Gross ROI
+    Definition:   Return on investment before refunds
+    Formula:      (Total Revenue - Total Investment) / Total Investment × 100
+    Decision:     "Was this initiative profitable?"
+    Scope:        Initiative, Channel, Experiment, Business
+
+KPI: Net ROI
+    Definition:   Return on investment after refunds
+    Formula:      (Total Revenue - Net Investment) / Net Investment × 100
+    Decision:     "What is our true return after refunds?"
+    Scope:        Initiative, Channel, Business
+
+KPI: ROI by Channel
+    Definition:   ROI computed per acquisition channel
+    Formula:      (Channel Revenue - Channel Investment) / Channel Investment × 100
+    Decision:     "Which channel has the best return?"
+    Scope:        Initiative, Business
+
+KPI: Customer Acquisition Cost (CAC)
+    Definition:   Total investment required to acquire one paying client
+    Formula:      Total Investment / Clients Closed
+    Decision:     "How much does each client cost us?"
+    Scope:        Initiative, Channel, Business
+
+KPI: CAC Payback Period
+    Definition:   Time to recover acquisition cost from client revenue
+    Formula:      CAC / (Average Deal Size / Sales Cycle Days) = days
+    Decision:     "How quickly do we recover our acquisition spend?"
+    Scope:        Initiative, Business
+
+KPI: Lifetime Value (LTV) — for recurring/repeat businesses
+    Definition:   Total expected revenue from a client over their lifetime
+    Formula:      Average Deal Size × Average Repeat Purchases (or MRR × Avg Lifespan)
+    Decision:     "What is a client worth long-term?"
+    Scope:        Business
+
+KPI: LTV:CAC Ratio
+    Definition:   Lifetime value relative to acquisition cost
+    Formula:      LTV / CAC
+    Decision:     "Is our unit economics sustainable?" (Target: > 3:1)
+    Scope:        Business
+
+KPI: Profit Margin per Initiative
+    Definition:   Net profit as percentage of revenue
+    Formula:      (Revenue - Net Investment) / Revenue × 100
+    Decision:     "How profitable is this initiative?"
+    Scope:        Initiative, Business
+
+
+================================================================================
+GROUP 6 — CAMPAIGN & EXPERIMENT KPIs
+================================================================================
+
+KPI: Experiment Success Rate
+    Definition:   Percentage of experiments that meet success criteria
+    Formula:      Successful Experiments / Total Completed Experiments × 100
+    Decision:     "Are our hypotheses reliable?"
+    Scope:        Initiative, Business, Portfolio
+
+KPI: Campaign Response Rate
+    Definition:   Percentage of outreach that gets a response
+    Formula:      Responses / Outreach Sent × 100
+    Decision:     "Is our messaging resonating?"
+    Scope:        Campaign, Channel, Experiment
+
+KPI: Campaign Conversion Rate
+    Definition:   Percentage of campaign recipients who become leads
+    Formula:      Leads from Campaign / Campaign Reach × 100
+    Decision:     "Is this campaign effective?"
+    Scope:        Campaign, Experiment
+
+KPI: A/B Test Lift
+    Definition:   Performance improvement of winning variant
+    Formula:      (Variant B Rate - Variant A Rate) / Variant A Rate × 100
+    Decision:     "Should we adopt the winning variant?"
+    Scope:        Experiment
+
+KPI: Channel Efficiency Ranking
+    Definition:   Channels sorted by ROI or CPL (best to worst)
+    Formula:      Rank channels by chosen metric
+    Decision:     "Which channels should get more/less budget?"
+    Scope:        Initiative, Business
+
+
+================================================================================
+GROUP 7 — BUSINESS GROWTH KPIs
+================================================================================
+
+KPI: Initiative Success Rate
+    Definition:   Percentage of initiatives that meet success criteria
+    Formula:      Successful Initiatives / Total Closed Initiatives × 100
+    Decision:     "Are our strategic bets paying off?"
+    Scope:        Business, Portfolio
+
+KPI: Portfolio ROI
+    Definition:   Combined ROI across all active initiatives in a business
+    Formula:      (Total Portfolio Revenue - Total Portfolio Investment) / Investment × 100
+    Decision:     "Is this business venture overall profitable?"
+    Scope:        Business
+
+KPI: Cross-Business ROI Comparison
+    Definition:   ROI comparison across all businesses in portfolio
+    Formula:      ROI computed per business, ranked
+    Decision:     "Which business should get more resources?"
+    Scope:        Portfolio
+
+KPI: Revenue Growth Rate
+    Definition:   Month-over-month or quarter-over-quarter revenue change
+    Formula:      (Current Period Revenue - Previous Period Revenue) / Previous × 100
+    Decision:     "Are we growing?"
+    Scope:        Business, Portfolio
+
+KPI: Investment Growth Rate
+    Definition:   Rate of increase in investment across initiatives
+    Formula:      (Current Period Investment - Previous Period Investment) / Previous × 100
+    Decision:     "Are we investing more or cutting back?"
+    Scope:        Business, Portfolio
+
+KPI: Time to Launch (Business)
+    Definition:   Days from business creation to first revenue
+    Formula:      First Revenue Date - Business Start Date
+    Decision:     "How fast can we launch a new venture?"
+    Scope:        Business, Portfolio (cross-business learning)
+
+
+================================================================================
+GROUP 8 — OPERATIONAL KPIs
+================================================================================
+
+KPI: Attribution Coverage
+    Definition:   Percentage of expenses/leads that have BOS attribution
+    Formula:      Attributed Records / Total Records × 100
+    Decision:     "Is our data complete enough for reliable KPIs?"
+    Scope:        Business
+
+KPI: Average Time to Attribute
+    Definition:   Days between record creation and BOS attribution
+    Formula:      Σ (attribution date - record date) / Count (attributions)
+    Decision:     "Are we keeping up with attribution?"
+    Scope:        Business
+
+KPI: Active Initiatives Count
+    Definition:   Number of currently active initiatives
+    Formula:      Count (initiatives where status = ACTIVE)
+    Decision:     "Are we spread too thin?"
+    Scope:        Business, Portfolio
+
+KPI: Initiative Duration
+    Definition:   Average days from start to close
+    Formula:      Σ (close date - start date) / Count (closed initiatives)
+    Decision:     "How long do initiatives typically run?"
+    Scope:        Business, Portfolio
+
+
+================================================================================
+GROUP 9 — LEARNING & INSTITUTIONAL KPIs
+================================================================================
+
+KPI: Lessons Captured
+    Definition:   Total lessons learned entries in the system
+    Formula:      Count (lessons learned records)
+    Decision:     "Are we building institutional knowledge?"
+    Scope:        Portfolio
+
+KPI: Lesson Reuse Rate
+    Definition:   Percentage of new initiatives that reference past lessons
+    Formula:      Initiatives with Lesson References / Total New Initiatives × 100
+    Decision:     "Are we applying past learnings?"
+    Scope:        Portfolio
+
+KPI: Playbook Usage
+    Definition:   Number of initiatives created from playbooks
+    Formula:      Count (initiatives derived from playbook)
+    Decision:     "Are our playbooks valuable?"
+    Scope:        Portfolio
+
+KPI: Decision Quality Score (future)
+    Definition:   Percentage of decisions that led to positive outcomes
+    Formula:      Positive Outcome Decisions / Total Decisions × 100
+    Decision:     "Are we making good strategic decisions?"
+    Scope:        Portfolio
+
+
+================================================================================
+KPI SUMMARY BY IMPLEMENTATION PHASE
+================================================================================
+
+Phase 1 (Manual attribution, basic computation):
+    Total Investment, Total Leads, Total Revenue, Gross ROI, CPL, CAC,
+    Close Rate, Active Initiatives Count
+
+Phase 2 (Automated attribution, funnel tracking):
+    All Phase 1 + Meeting Rate, Proposal Rate, Sales Cycle, Burn Rate,
+    Budget Utilization, Channel ROI, Funnel Drop-off, Pipeline Value
+
+Phase 3 (Cross-initiative, cross-business):
+    All Phase 2 + LTV, LTV:CAC, Portfolio ROI, Cross-Business Comparison,
+    Experiment Success Rate, Lesson Reuse Rate, Revenue Growth Rate
+
+Phase 4 (Predictive, AI-assisted):
+    All Phase 3 + Decision Quality Score, Lead Quality Score,
+    Predictive ROI, Automated Recommendations
+
+
+Total KPIs defined: 52
+Phase 1 KPIs: 8 (minimum viable measurement)
+Phase 2 KPIs: 20 (full funnel visibility)
+Phase 3 KPIs: 35 (portfolio intelligence)
+Phase 4 KPIs: 52 (full system)
+
+================================================================================
+END OF DOCUMENT 08 — KPIs
+================================================================================

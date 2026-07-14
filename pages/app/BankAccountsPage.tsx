@@ -7,6 +7,7 @@ import { PAGES } from "../../config/permissions";
 import { db, Timestamp } from "../../services/firebase";
 import { BankAccountService } from "../../services/bankAccountService";
 import { BankReconciliationService } from "../../services/bankReconciliationService";
+import { BankDepositService } from "../../services/bankDepositService";
 import { ActivityLogger } from "../../services/activityLogger";
 import { subscribeCompanyExpenseCategories } from "../../services/expenseCategoryService";
 import type {
@@ -14,11 +15,14 @@ import type {
   BankTransfer,
   BankReconciliation,
   BankReconciliationReason,
+  BankDeposit,
+  BankDepositType,
   ExpenseCategory,
 } from "../../types";
 import Spinner from "../../components/Spinner";
 import {
   formatBankAccountListLabel,
+  formatBankAccountSelectLabel,
   getInvoiceBankDisplayName,
   isBankIncludedInInvoicePicker,
 } from "../../utils/bankAccountDisplay";
@@ -45,6 +49,21 @@ function reconciliationReasonLabel(code: string): string {
   return (
     RECONCILIATION_REASON_OPTIONS.find((o) => o.value === code)?.label || code
   );
+}
+
+const DEPOSIT_TYPE_OPTIONS: {
+  value: BankDepositType;
+  label: string;
+}[] = [
+  { value: "owner_contribution", label: "Owner contribution" },
+  { value: "cash_deposit", label: "Cash deposit" },
+  { value: "external_transfer", label: "External transfer" },
+  { value: "refund_non_expense", label: "Refund (not expense-linked)" },
+  { value: "other", label: "Other" },
+];
+
+function depositTypeLabel(code: string): string {
+  return DEPOSIT_TYPE_OPTIONS.find((o) => o.value === code)?.label || code;
 }
 
 function accountStoredBalance(account: BankAccount): number {
@@ -188,8 +207,18 @@ const BankAccountsPage: React.FC = () => {
     canViewBankReconciliations,
     canPostBankReconciliation,
     canReverseBankReconciliation,
+    canViewBankDeposits,
+    canCreateBankDeposit,
+    canReverseBankDeposit,
+    canViewBankPickerBalance,
+    filterBankAccountsForRole,
   } = usePermissions();
+  const showPickerBalance = canViewBankPickerBalance();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const accessibleBankAccounts = useMemo(
+    () => filterBankAccountsForRole(bankAccounts),
+    [bankAccounts, filterBankAccountsForRole],
+  );
   const [transferHistory, setTransferHistory] = useState<BankTransfer[]>([]);
   const [reconciliationHistory, setReconciliationHistory] = useState<
     BankReconciliation[]
@@ -242,6 +271,18 @@ const BankAccountsPage: React.FC = () => {
   });
   const [reconcileError, setReconcileError] = useState("");
   const [reconcileSubmitting, setReconcileSubmitting] = useState(false);
+
+  const [depositHistory, setDepositHistory] = useState<BankDeposit[]>([]);
+  const [depositAccount, setDepositAccount] = useState<BankAccount | null>(null);
+  const [depositForm, setDepositForm] = useState({
+    amount: "",
+    depositDate: todayInput(),
+    depositType: "owner_contribution" as BankDepositType,
+    referenceNumber: "",
+    notes: "",
+  });
+  const [depositError, setDepositError] = useState("");
+  const [depositSubmitting, setDepositSubmitting] = useState(false);
 
   // Stable scalar identities so data effects don't re-run on every `userProfile`
   // object-reference change (the user doc listener emits a fresh object frequently,
@@ -329,10 +370,22 @@ const BankAccountsPage: React.FC = () => {
   }, [bankCompanyId, canViewBankReconciliations]);
 
   useEffect(() => {
-    if (bankAccounts.length < 2) {
+    if (!bankCompanyId || !canViewBankDeposits()) {
+      setDepositHistory([]);
+      return;
+    }
+    return BankDepositService.subscribeForCompany(
+      bankCompanyId,
+      setDepositHistory,
+      () => setDepositHistory([]),
+    );
+  }, [bankCompanyId, canViewBankDeposits]);
+
+  useEffect(() => {
+    if (accessibleBankAccounts.length < 2) {
       setWorkspaceTab("account");
     }
-  }, [bankAccounts.length]);
+  }, [accessibleBankAccounts.length]);
 
   const xferFrom = useMemo(
     () => bankAccounts.find((a) => a.id === xferFromId),
@@ -495,7 +548,9 @@ const BankAccountsPage: React.FC = () => {
       const initialBalance = form.initialBalance
         ? parseFloat(form.initialBalance)
         : 0;
-      const bankAccountFields = {
+      // Metadata only — never includes balance fields, so edits can't overwrite a
+      // ledger balance built up from expenses/invoices/transfers/etc.
+      const metadataFields = {
         userId: user.uid,
         companyId: companyIdRoot,
         accountName: form.accountName,
@@ -504,23 +559,23 @@ const BankAccountsPage: React.FC = () => {
         accountNumber: form.accountNumber,
         currency: form.currency,
         currencySymbol: form.currencySymbol,
-        initialBalance: initialBalance,
-        currentBalance: initialBalance,
         includeInInvoicePicker: form.includeInInvoicePicker,
       };
       if (editingId) {
+        // Update metadata only. initialBalance/currentBalance are intentionally
+        // left untouched on edit to preserve historical balances.
         await db
           .collection("bankAccounts")
           .doc(editingId)
-          .update(bankAccountFields);
+          .update(metadataFields);
       } else {
         const newDocRef = db.collection("bankAccounts").doc();
         await newDocRef.set({
-          ...bankAccountFields,
+          ...metadataFields,
+          initialBalance: initialBalance,
+          currentBalance: initialBalance,
           createdAt: Timestamp.now(),
         });
-        // If initialBalance is provided, create a dummy invoice or transaction?
-        // For now, initialBalance is optional and not tracked in invoices.
       }
       resetForm();
       // Auto refresh data after successful operation
@@ -745,6 +800,123 @@ const BankAccountsPage: React.FC = () => {
       alert(
         err instanceof Error ? err.message : "Failed to reverse reconciliation",
       );
+    }
+  };
+
+  const openDepositModal = (account: BankAccount) => {
+    setDepositAccount(account);
+    setDepositForm({
+      amount: "",
+      depositDate: todayInput(),
+      depositType: "owner_contribution",
+      referenceNumber: "",
+      notes: "",
+    });
+    setDepositError("");
+  };
+
+  const closeDepositModal = () => {
+    setDepositAccount(null);
+    setDepositError("");
+    setDepositSubmitting(false);
+  };
+
+  const handleRecordDeposit = async () => {
+    if (!user || !userProfile || !depositAccount) return;
+    const amount = parseFloat(depositForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setDepositError("Enter a valid deposit amount greater than 0");
+      return;
+    }
+    if (!depositForm.depositDate) {
+      setDepositError("Select the deposit date");
+      return;
+    }
+    setDepositSubmitting(true);
+    setDepositError("");
+    try {
+      const companyId = getExpenseCompanyId(user, userProfile);
+      const { depositId } = await BankDepositService.recordDeposit({
+        companyId,
+        userId: user.uid,
+        createdByDisplayName:
+          userProfile.displayName ||
+          userProfile.companyName ||
+          user.email ||
+          "",
+        bankAccountId: depositAccount.id,
+        bankAccountName: formatBankAccountListLabel(depositAccount),
+        currency: depositAccount.currency,
+        currencySymbol: depositAccount.currencySymbol || "$",
+        amount,
+        depositDate: Timestamp.fromDate(new Date(depositForm.depositDate)),
+        depositType: depositForm.depositType,
+        referenceNumber: depositForm.referenceNumber,
+        notes: depositForm.notes,
+      });
+
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "bank_deposit_recorded",
+        `Deposited ${depositAccount.currencySymbol}${amount.toFixed(2)} into ${formatBankAccountListLabel(depositAccount)} (${depositTypeLabel(depositForm.depositType)})`,
+        {
+          entityId: depositAccount.id,
+          entityType: "bank_account",
+          newValue: {
+            depositId,
+            amount,
+            depositType: depositForm.depositType,
+            referenceNumber: depositForm.referenceNumber || undefined,
+          },
+        },
+      );
+
+      closeDepositModal();
+    } catch (err) {
+      console.error("Deposit failed:", err);
+      setDepositError(
+        err instanceof Error ? err.message : "Failed to record deposit",
+      );
+      setDepositSubmitting(false);
+    }
+  };
+
+  const handleReverseDeposit = async (record: BankDeposit) => {
+    if (!user || !userProfile) return;
+    if (
+      !window.confirm(
+        `Reverse this deposit (${record.currencySymbol}${(record.amount || 0).toFixed(2)})? The bank balance will be debited back.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const companyId = getExpenseCompanyId(user, userProfile);
+      const { depositId } = await BankDepositService.reverseDeposit(record, {
+        companyId,
+        userId: user.uid,
+        createdByDisplayName:
+          userProfile.displayName ||
+          userProfile.companyName ||
+          user.email ||
+          "",
+      });
+      await ActivityLogger.logActivity(
+        user,
+        userProfile,
+        "bank_deposit_reversed",
+        `Reversed deposit for ${record.bankAccountName}`,
+        {
+          entityId: record.bankAccountId,
+          entityType: "bank_account",
+          oldValue: record,
+          newValue: { reversalId: depositId },
+        },
+      );
+    } catch (err) {
+      console.error("Reverse deposit failed:", err);
+      alert(err instanceof Error ? err.message : "Failed to reverse deposit");
     }
   };
 
@@ -1147,6 +1319,15 @@ const BankAccountsPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="mt-3 flex flex-col gap-2">
+                        {canCreateBankDeposit() ? (
+                          <button
+                            type="button"
+                            onClick={() => openDepositModal(account)}
+                            className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900/30"
+                          >
+                            Add deposit
+                          </button>
+                        ) : null}
                         {canPostBankReconciliation() ? (
                           <button
                             type="button"
@@ -1218,12 +1399,12 @@ const BankAccountsPage: React.FC = () => {
                   type="button"
                   role="tab"
                   aria-selected={workspaceTab === "transfer"}
-                  disabled={bankAccounts.length < 2}
+                  disabled={accessibleBankAccounts.length < 2}
                   onClick={() =>
-                    bankAccounts.length >= 2 && setWorkspaceTab("transfer")
+                    accessibleBankAccounts.length >= 2 && setWorkspaceTab("transfer")
                   }
                   title={
-                    bankAccounts.length < 2
+                    accessibleBankAccounts.length < 2
                       ? "Add at least two accounts to transfer"
                       : undefined
                   }
@@ -1441,7 +1622,7 @@ const BankAccountsPage: React.FC = () => {
 
               {canCreate(PAGES.BANK_ACCOUNTS) &&
                 workspaceTab === "transfer" &&
-                (bankAccounts.length >= 2 ? (
+                (accessibleBankAccounts.length >= 2 ? (
                   <form
                     onSubmit={handleTransferSubmit}
                     className="space-y-4"
@@ -1469,15 +1650,9 @@ const BankAccountsPage: React.FC = () => {
                           required
                         >
                           <option value="">Source</option>
-                          {bankAccounts.map((a) => (
+                          {accessibleBankAccounts.map((a) => (
                             <option key={a.id} value={a.id}>
-                              {formatBankAccountListLabel(a)} ({a.currency}) —{" "}
-                              {a.currencySymbol || "$"}
-                              {(
-                                a.currentBalance ??
-                                a.initialBalance ??
-                                0
-                              ).toFixed(2)}
+                              {formatBankAccountSelectLabel(a, showPickerBalance)}
                             </option>
                           ))}
                         </select>
@@ -1494,7 +1669,7 @@ const BankAccountsPage: React.FC = () => {
                           <option value="">
                             {xferFromId ? "Destination" : "Pick source first"}
                           </option>
-                          {bankAccounts
+                          {accessibleBankAccounts
                             .filter((a) => a.id !== xferFromId)
                             .map((a) => (
                               <option key={a.id} value={a.id}>
@@ -1911,6 +2086,110 @@ const BankAccountsPage: React.FC = () => {
               </div>
             </section>
           ) : null}
+
+          {canViewBankDeposits() && depositHistory.length > 0 ? (
+            <section className={sectionCard}>
+              <div className={sectionHead}>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Deposit history
+                </h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Manual deposits (owner contributions, cash, external
+                  transfers) — newest first.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[780px] text-left text-sm">
+                  <thead className="border-b border-gray-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-400">
+                    <tr>
+                      <th className="whitespace-nowrap px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Account</th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Reference / notes</th>
+                      <th className="px-4 py-3 w-24">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-gray-800 dark:text-gray-300">
+                    {depositHistory.map((d) => {
+                      const reversed = depositHistory.some(
+                        (x) => x.reversalOfId === d.id,
+                      );
+                      const showReverse =
+                        canReverseBankDeposit() &&
+                        !d.reversalOfId &&
+                        !reversed &&
+                        (d.amount ?? 0) > 0;
+                      return (
+                        <tr
+                          key={d.id}
+                          className="transition-colors hover:bg-slate-50/80 dark:hover:bg-gray-800/50"
+                        >
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                            {d.depositDate?.toDate?.()?.toLocaleDateString?.() ??
+                              "—"}
+                          </td>
+                          <td className="min-w-0 px-4 py-3 text-xs sm:text-sm">
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {d.bankAccountName}
+                            </span>
+                            {d.reversalOfId ? (
+                              <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-400">
+                                (reversal)
+                              </span>
+                            ) : null}
+                          </td>
+                          <td
+                            className={`whitespace-nowrap px-4 py-3 text-right tabular-nums font-medium ${
+                              (d.amount ?? 0) >= 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {(d.amount ?? 0) >= 0 ? "+" : ""}
+                            {d.currencySymbol}
+                            {(d.amount ?? 0).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            {depositTypeLabel(d.depositType)}
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            {d.referenceNumber ? (
+                              <span className="font-medium text-gray-700 dark:text-gray-300">
+                                {d.referenceNumber}
+                              </span>
+                            ) : null}
+                            {d.notes ? (
+                              <div className="mt-0.5 max-w-xs truncate text-gray-500 dark:text-gray-400">
+                                {d.notes}
+                              </div>
+                            ) : !d.referenceNumber ? (
+                              <span className="text-gray-400">—</span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            {showReverse ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleReverseDeposit(d)}
+                                className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                              >
+                                Reverse
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
         </div>
       </div>
 
@@ -2050,6 +2329,128 @@ const BankAccountsPage: React.FC = () => {
                 className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 {reconcileSubmitting ? "Posting…" : "Post reconciliation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {depositAccount ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white shadow-xl dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                Add deposit
+              </h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {formatBankAccountListLabel(depositAccount)}
+                {showPickerBalance
+                  ? ` — current balance ${depositAccount.currencySymbol}${accountStoredBalance(depositAccount).toFixed(2)}`
+                  : null}
+              </p>
+            </div>
+            <div className="space-y-4 px-6 py-4">
+              <div>
+                <label className={labelClass}>
+                  Amount ({depositAccount.currencySymbol}) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={depositForm.amount}
+                  onChange={(e) =>
+                    setDepositForm({ ...depositForm, amount: e.target.value })
+                  }
+                  placeholder="0.00"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Deposit date *</label>
+                <input
+                  type="date"
+                  value={depositForm.depositDate}
+                  onChange={(e) =>
+                    setDepositForm({
+                      ...depositForm,
+                      depositDate: e.target.value,
+                    })
+                  }
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Source / type *</label>
+                <select
+                  value={depositForm.depositType}
+                  onChange={(e) =>
+                    setDepositForm({
+                      ...depositForm,
+                      depositType: e.target.value as BankDepositType,
+                    })
+                  }
+                  className={fieldClass}
+                >
+                  {DEPOSIT_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>Reference number</label>
+                <input
+                  type="text"
+                  value={depositForm.referenceNumber}
+                  onChange={(e) =>
+                    setDepositForm({
+                      ...depositForm,
+                      referenceNumber: e.target.value,
+                    })
+                  }
+                  placeholder="Optional — slip no., cheque no., txn id"
+                  className={fieldClass}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>Notes</label>
+                <textarea
+                  value={depositForm.notes}
+                  onChange={(e) =>
+                    setDepositForm({ ...depositForm, notes: e.target.value })
+                  }
+                  rows={2}
+                  placeholder="Optional"
+                  className={fieldClass}
+                />
+              </div>
+
+              {depositError ? (
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  {depositError}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={closeDepositModal}
+                className="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={depositSubmitting}
+                onClick={() => void handleRecordDeposit()}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {depositSubmitting ? "Saving…" : "Record deposit"}
               </button>
             </div>
           </div>

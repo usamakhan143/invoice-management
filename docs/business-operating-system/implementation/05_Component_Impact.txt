@@ -1,0 +1,228 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 05 — Component Impact
+================================================================================
+
+Purpose: UI/component-level impact, split recommendations, integration points
+Constraint: Option C — staff expense form unchanged
+
+================================================================================
+1. COMPONENT SIZE AUDIT (SPLIT BEFORE BOS)
+================================================================================
+
+File                          | Lines | BOS impact | Split priority | Recommended extractions
+------------------------------|-------|------------|----------------|---------------------------
+ExpensesPage.tsx              | 3,190 | HIGH       | P0 — BLOCKER   | ExpenseList, ExpenseFormModal,
+                              |       |            |                | ExpenseDetailModal, ExpenseFilters,
+                              |       |            |                | ExpenseReturnsSection, useExpenses hook
+LeadsPage.tsx                 | 2,588 | MEDIUM P2  | P2             | LeadTable, LeadFilters, useLeads
+BankAccountsPage.tsx          | 2,361 | NONE P1    | Defer          | —
+LeadDetailPage.tsx            | 2,128 | LOW P2     | P3             | CallLogsSection, LeadSidebar
+LoansPage.tsx                 | 1,461 | NONE       | Defer          | —
+DashboardPage.tsx             | 1,513 | MEDIUM     | P1             | FinanceSnapshotSection,
+                              |       |            |                | BosSummarySection (new)
+UserManagementPage.tsx        | 1,659 | LOW        | Defer          | RoleManagement already separate
+ReportsPage.tsx               | 1,055 | HIGH       | P1             | CashFlowReport (exists inline),
+                              |       |            |                | ExpenseReportTab, InitiativeSpendTab
+InvoicesListPage.tsx          | 852   | LOW P2     | Defer          | —
+hooks/usePermissions.tsx      | 700+  | MEDIUM     | P1             | useBosPermissions.ts extract
+CampaignsPage.tsx             | 504   | LOW P2     | Defer          | —
+Sidebar.tsx                   | ~200  | MEDIUM     | P1             | BosNavGroup component
+
+
+================================================================================
+2. NEW COMPONENTS (PHASE 1)
+================================================================================
+
+Component                     | Location suggestion           | Used by
+------------------------------|-------------------------------|------------------
+BosVenturesPage               | pages/app/bos/                | Route /bos/ventures
+BosInitiativesPage            | pages/app/bos/                | Route /bos/initiatives
+BosInitiativeDetailPage       | pages/app/bos/                | Route /bos/initiatives/:id
+VentureSelector               | components/bos/               | AttributionModal
+InitiativeSelector            | components/bos/               | AttributionModal
+AttributionModal              | components/bos/               | ExpensesPage (finance)
+InitiativeBadge               | components/bos/               | ExpensesPage, ReportsPage
+AttributionStatusChip         | components/bos/               | Expense row
+BosDecisionForm               | components/bos/               | Initiative detail
+BosDecisionList               | components/bos/               | Initiative detail
+InitiativeSpendTab            | components/bos/reports/       | ReportsPage
+BosNavGroup                   | components/bos/               | Sidebar
+
+
+================================================================================
+3. EXISTING COMPONENTS — MODIFICATION MAP
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 ExpensesPage.tsx
+--------------------------------------------------------------------------------
+    TOUCH:     Row actions area — add "Attribute" icon if canBosAttributionManage()
+    TOUCH:     Expense detail modal — read-only InitiativeBadge if attribution exists
+    DO NOT:    Add venture/initiative fields to create/edit expense form
+    DO NOT:    Change expense validation, return modal, category picker
+    SPLIT FIRST: Extract ExpenseDetailModal before adding attribution UI
+
+    Integration hook point (after split):
+        ExpenseDetailModal receives optional attribution prop from
+        bosAttributionService.getBySourceId('expense', expense.id)
+
+--------------------------------------------------------------------------------
+3.2 ReportsPage.tsx
+--------------------------------------------------------------------------------
+    TOUCH:     Load bosAttributions + bosInitiatives in Promise.all (if permission)
+    TOUCH:     Expenses tab — Initiative column via bosReportJoin
+    TOUCH:     New tab "Initiative spend" (behind bos_reports_view)
+    DO NOT:    Change cashflow, integrity, loan tab calculations
+    SPLIT FIRST: Extract ExpenseReportTab component (~200 lines from page)
+
+--------------------------------------------------------------------------------
+3.3 DashboardPage.tsx
+--------------------------------------------------------------------------------
+    TOUCH:     New section "Strategic snapshot" (3–4 DashboardCards)
+               — active initiatives count
+               — unattributed spend this month (optional)
+               — open decisions count
+    DO NOT:    Remove existing finance snapshot widgets
+    PERMISSION: bos_dashboard_view or bos_initiative_view
+
+--------------------------------------------------------------------------------
+3.4 Sidebar.tsx
+--------------------------------------------------------------------------------
+    TOUCH:     New collapsible group "Strategy" below Finance or above CRM
+               Items: Ventures, Initiatives, Decisions (optional P1)
+    PATTERN:   Mirror Finance group collapse state in localStorage
+    PERMISSION: Show group if any bos_* view permission
+
+--------------------------------------------------------------------------------
+3.5 App.tsx
+--------------------------------------------------------------------------------
+    TOUCH:     Lazy imports for BosVenturesPage, BosInitiativesPage,
+               BosInitiativeDetailPage
+    PATTERN:   Same as /reports route — no layout change
+
+--------------------------------------------------------------------------------
+3.6 RoleManagement.tsx (in UserManagementPage)
+--------------------------------------------------------------------------------
+    TOUCH:     New permission category "Business OS" from config/permissions.ts
+    DO NOT:    Change existing permission checkbox behavior
+
+--------------------------------------------------------------------------------
+3.7 ActivityPage / CompanyActivityPage
+--------------------------------------------------------------------------------
+    TOUCH:     Render labels for new ActivityType bos_* entries
+    DO NOT:    Change activity query logic
+
+--------------------------------------------------------------------------------
+3.8 ProtectedComponent.tsx
+--------------------------------------------------------------------------------
+    REUSE:     As-is — pass bos permission keys
+
+
+================================================================================
+4. COMPONENTS — EXPLICITLY UNTOUCHED (PHASE 1)
+================================================================================
+
+    BankAccountsPage.tsx
+    LoansPage.tsx
+    LoanForm sections
+    InvoiceFormPage.tsx
+    ProductsPage.tsx
+    LeadImportPage.tsx
+    MyAssignedLeadsPage.tsx
+    PerformancePage.tsx
+    DataManagementPage.tsx (until backup v6 ready)
+    OfflineModeIndicator.tsx
+    AuthLayout / login flows
+
+
+================================================================================
+5. UX FLOWS — PHASE 1
+================================================================================
+
+Flow A: Finance attributes expense (Option C)
+    1. User opens ExpensesPage (unchanged list/filter)
+    2. Opens expense detail (existing modal)
+    3. Sees "Not attributed" or InitiativeBadge
+    4. Clicks "Attribute to initiative" (permission gated)
+    5. AttributionModal: VentureSelector → InitiativeSelector → Confirm
+    6. bosAttributionService.create → ActivityLogger
+    7. Badge updates on modal close
+
+Flow B: Owner creates initiative
+    1. Sidebar → Initiatives → New initiative
+    2. Select venture, name, hypothesis, status draft→active
+    3. Initiative detail shows linked attributions (empty initially)
+
+Flow C: Reports enrichment
+    1. User opens Reports → Expenses tab (existing)
+    2. If bos_reports_view: extra "Initiative" column
+    3. Export CSV includes initiative name column
+
+Flow D: Decision log (minimal P1)
+    1. Initiative detail → Decisions tab
+    2. Add decision title + context + outcome
+    3. List on initiative; no scoring engine in P1
+
+
+================================================================================
+6. STATE MANAGEMENT IMPACT
+================================================================================
+
+    No Redux/Zustand introduction required.
+    BOS pages: local useState + service subscribe callbacks (match CampaignsPage).
+    Reports join: useMemo over expenses + attributions map.
+
+
+================================================================================
+7. ROUTING ADDITIONS (App.tsx)
+================================================================================
+
+    /bos/ventures              → BosVenturesPage
+    /bos/initiatives           → BosInitiativesPage
+    /bos/initiatives/:id       → BosInitiativeDetailPage
+
+    Optional P1:
+    /bos/decisions             → BosDecisionsPage (or only on initiative detail)
+
+    HashRouter paths — no server config change.
+
+
+================================================================================
+8. MOBILE / RESPONSIVE
+================================================================================
+
+    BOS pages: follow ReportsPage card + table overflow-x-auto pattern
+    AttributionModal: full-screen on mobile (match existing modals in ExpensesPage)
+    Sidebar: BosNavGroup inside collapsible — test mobile drawer
+
+
+================================================================================
+9. TESTING SURFACE (FOR IMPLEMENTATION PHASE — NOT EXECUTED NOW)
+================================================================================
+
+    Manual test matrix:
+        • Staff without bos_* cannot see Strategy nav or attribute button
+        • Staff can still create/edit expenses identically
+        • Finance can attribute; expense document unchanged in Firestore console
+        • Reports column blank for unattributed expenses
+        • Owner bypass sees all BOS features
+        • Custom role with bos_initiative_view only — read no write
+
+
+================================================================================
+10. SPLIT SEQUENCE (RECOMMENDED ORDER)
+================================================================================
+
+    Step 1: Extract useExpenses hook + ExpenseDetailModal from ExpensesPage
+    Step 2: Extract ExpenseReportTab from ReportsPage
+    Step 3: Extract useBosPermissions from usePermissions (optional)
+    Step 4: Build BOS pages standalone (no ExpensesPage touch)
+    Step 5: Integrate AttributionModal into ExpenseDetailModal
+    Step 6: Integrate Reports enrichment
+    Step 7: Dashboard widgets last
+
+
+================================================================================
+END OF DOCUMENT 05 — Component Impact
+================================================================================

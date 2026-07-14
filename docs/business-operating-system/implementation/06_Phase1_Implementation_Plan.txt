@@ -1,0 +1,183 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 06 — Phase 1 Implementation Plan
+================================================================================
+
+Purpose: Safe introduction of BOS into production React + Firebase app
+Scope lock: Phase 1 only — no GHL, no metric snapshots, no experiment module
+Prerequisite: Docs 01–05 validated; architecture docs 01–13 frozen
+
+================================================================================
+1. PHASE 1 GOALS
+================================================================================
+
+    G1. Register ventures and initiatives without touching ERP schemas
+    G2. Attribute expenses to initiatives post-hoc (Option C UX)
+    G3. Enrich reports with initiative dimension (read join)
+    G4. Minimal decision log per initiative
+    G5. bos_* permissions integrated with existing role system
+    G6. Backup/restore includes BOS collections
+    G7. Zero regression on staff expense, loan, bank, invoice workflows
+
+
+================================================================================
+2. PHASE 1 OUT OF SCOPE (EXPLICIT)
+================================================================================
+
+    • GoHighLevel / webhook adapters
+    • BosMetricSnapshot / scheduled KPI engine
+    • BosExperiment module
+    • Invoice revenue attribution
+    • BosFunnelStageEvent automation
+    • BosCampaignLink UI
+    • Expense form initiative dropdowns for all users
+    • Cloud Functions / server-side aggregation
+    • Renaming CRM businesses or campaigns
+    • Doc 14/15/18 architecture docs (user frozen architecture — implement P1 only)
+
+
+================================================================================
+3. IMPLEMENTATION STREAMS
+================================================================================
+
+Stream A — Foundation (Week 1)
+    A1. Add Bos* types to types.ts (or types/bos.ts)
+    A2. Add bos_* permissions to config/permissions.ts
+    A3. Extend usePermissions with canBos* helpers (default deny)
+    A4. Add firestore.rules blocks for bosVentures, bosInitiatives,
+        bosAttributions, bosDecisions (companyId tenancy)
+    A5. Add firestore.indexes.json composite indexes
+    A6. Deploy rules + indexes to staging Firebase project
+
+Stream B — Core services (Week 1–2)
+    B1. bosVentureService.ts — CRUD + subscribe
+    B2. bosInitiativeService.ts — CRUD + status transitions
+    B3. bosAttributionService.ts — create, getBySource, listByInitiative
+    B4. bosDecisionService.ts — minimal CRUD
+    B5. ActivityLogger — add bos_venture_created, bos_initiative_*,
+        bos_attribution_created types
+    B6. Unit-test attribution uniqueness logic (if tests exist in repo)
+
+Stream C — BOS UI shell (Week 2)
+    C1. BosVenturesPage — list + create + archive
+    C2. BosInitiativesPage — list + filter by venture/status
+    C3. BosInitiativeDetailPage — tabs: Overview, Attributions, Decisions
+    C4. Sidebar BosNavGroup + App.tsx routes
+    C5. RoleManagement — BOS permission category
+
+Stream D — Expense integration (Week 3) — AFTER SPLIT
+    D0. PREREQUISITE: Split ExpenseDetailModal from ExpensesPage
+    D1. AttributionModal component
+    D2. Wire into ExpenseDetailModal (finance permission only)
+    D3. InitiativeBadge on attributed expenses in list (optional read query batch)
+    D4. Verify expense documents unchanged in Firestore console
+
+Stream E — Reports enrichment (Week 3–4)
+    E1. bosReportJoin.ts utility
+    E2. ReportsPage — load attributions + initiatives when permitted
+    E3. Expenses tab — Initiative column
+    E4. New InitiativeSpendTab — aggregate spend by initiative
+    E5. CSV export columns for initiative name
+
+Stream F — Dashboard + backup (Week 4)
+    F1. Dashboard BOS summary cards (behind permission)
+    F2. databaseMigrationService — backup v6 with BOS collections
+    F3. DataManagementPage — note version bump in UI if shown
+    F4. Staging E2E smoke test full matrix
+
+
+================================================================================
+4. DEPLOYMENT SEQUENCE
+================================================================================
+
+    1. Deploy firestore indexes (async build — wait for READY)
+    2. Deploy firestore.rules (bos collections)
+    3. Deploy app build (BOS routes hidden without permissions)
+    4. Owner assigns bos_* to finance role via Role Management
+    5. Owner creates first venture + initiative
+    6. Finance attributes sample expenses
+    7. Verify Reports enrichment
+    8. Enable backup v6 before production attributions at scale
+
+
+================================================================================
+5. PERMISSION ROLLOUT (PHASE 1 SUBSET FROM DOC 12)
+================================================================================
+
+    Key                         | Default owner | Suggested finance | Suggested staff
+    ----------------------------|---------------|-------------------|------------------
+    bos_venture_view            | yes           | yes               | no
+    bos_venture_manage          | yes           | no                | no
+    bos_initiative_view         | yes           | yes               | no
+    bos_initiative_manage       | yes           | no                | no
+    bos_initiative_close        | yes           | no                | no
+    bos_attribution_view        | yes           | yes               | no
+    bos_attribution_manage      | yes           | yes               | no
+    bos_attribution_lock        | yes           | yes               | no
+    bos_decision_view           | yes           | yes               | no
+    bos_decision_manage         | yes           | no                | no
+    bos_reports_view            | yes           | yes               | no
+    bos_dashboard_view          | yes           | yes               | no
+
+
+================================================================================
+6. DEFINITION OF DONE — PHASE 1
+================================================================================
+
+    [ ] Venture and initiative CRUD works for permitted users
+    [ ] Expense attribution creates bosAttributions doc only — expense doc identical
+    [ ] Staff expense workflow byte-identical (no new form fields)
+    [ ] Reports show initiative column; CSV export includes it
+    [ ] Initiative spend tab aggregates correctly with returns (net optional P1)
+    [ ] Decisions creatable on initiative detail
+    [ ] Activity log records BOS events
+    [ ] Backup v6 exports and restores BOS collections
+    [ ] No console errors on pages without BOS permissions
+    [ ] firestore.rules deny cross-company access on bos* collections
+    [ ] Architecture validation report signed off (Doc 10)
+
+
+================================================================================
+7. PHASE 2 PREVIEW (NOT IMPLEMENTED IN P1)
+================================================================================
+
+    • BosCampaignLink + CampaignsPage badge
+    • Invoice revenue attribution
+    • BosFunnelStageEvent on lead status change
+    • BosAcquisitionChannel registry
+    • BosLessonLearned on initiative close
+    • BosMetricSnapshot + dashboard KPI engine
+    • GHL adapter
+
+
+================================================================================
+8. TEAM ROLES (SUGGESTED)
+================================================================================
+
+    Role              | Responsibility
+    ------------------|--------------------------------------------------
+    Implementer       | Streams B–E code
+    Reviewer          | Enforce sidecar law, no expense schema changes
+    Firebase admin    | Rules, indexes, staging deploy
+    Product owner     | Permission rollout, first venture/initiative seed
+    QA                | BC checklist (Doc 08) execution
+
+
+================================================================================
+9. ESTIMATED EFFORT (IMPLEMENTATION — FOR PLANNING ONLY)
+================================================================================
+
+    Stream A Foundation:        2–3 dev days
+    Stream B Services:          3–4 dev days
+    Stream C BOS UI:            4–5 dev days
+    Stream D Expense (post-split): 3–4 dev days (+ 2 days split PR)
+    Stream E Reports:           2–3 dev days
+    Stream F Dashboard/backup:  2 dev days
+    QA + staging:               2–3 days
+
+    Total: ~18–24 dev days (one developer, excluding review cycles)
+
+
+================================================================================
+END OF DOCUMENT 06 — Phase 1 Implementation Plan
+================================================================================

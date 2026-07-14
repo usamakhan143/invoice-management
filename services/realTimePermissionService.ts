@@ -1,5 +1,6 @@
 import { db } from "./firebase";
 import type { UserProfile } from "../types";
+import { normalizeRestrictedBankAccountIds } from "../utils/bankAccountAccess";
 
 export class RealTimePermissionService {
   private static roleUnsubscribe: (() => void) | null = null;
@@ -59,9 +60,13 @@ export class RealTimePermissionService {
       .onSnapshot(async (snapshot) => {
         if (snapshot.empty) return;
         const companyUserData = snapshot.docs[0].data();
+        const restrictedBankAccountIds = normalizeRestrictedBankAccountIds(
+          companyUserData.restrictedBankAccountIds,
+        );
         const key = JSON.stringify({
           role: companyUserData.role ?? "",
           perms: companyUserData.granularPermissions || [],
+          banks: restrictedBankAccountIds,
         });
         if (this.lastCompanyUserKeyByUid.get(uid) === key) {
           return;
@@ -72,12 +77,14 @@ export class RealTimePermissionService {
           ...userProfile,
           role: companyUserData.role,
           granularPermissions: companyUserData.granularPermissions || [],
+          restrictedBankAccountIds,
         };
 
         try {
           await db.collection("users").doc(uid).update({
             role: companyUserData.role,
             granularPermissions: companyUserData.granularPermissions || [],
+            restrictedBankAccountIds,
           });
         } catch (error) {
           console.error("Error syncing user document:", error);
@@ -96,9 +103,13 @@ export class RealTimePermissionService {
           if (snapshot.empty) return;
           const roleData = snapshot.docs[0].data();
           const newPermissions = roleData.granularPermissions || [];
+          const restrictedBankAccountIds = normalizeRestrictedBankAccountIds(
+            roleData.restrictedBankAccountIds,
+          );
           const nextJson = JSON.stringify({
             role: userProfile.role ?? "",
             perms: newPermissions,
+            banks: restrictedBankAccountIds,
           });
           if (this.lastRolePermissionsJsonByUid.get(uid) === nextJson) {
             return;
@@ -108,12 +119,14 @@ export class RealTimePermissionService {
           const updatedProfile: UserProfile = {
             ...userProfile,
             granularPermissions: newPermissions,
+            restrictedBankAccountIds,
           };
 
           try {
             await Promise.all([
               db.collection("users").doc(uid).update({
                 granularPermissions: newPermissions,
+                restrictedBankAccountIds,
               }),
               db
                 .collection("companyUsers")
@@ -123,6 +136,7 @@ export class RealTimePermissionService {
                   if (!cuSnap.empty) {
                     return cuSnap.docs[0].ref.update({
                       granularPermissions: newPermissions,
+                      restrictedBankAccountIds,
                     });
                   }
                 }),

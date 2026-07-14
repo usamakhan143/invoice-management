@@ -33,7 +33,10 @@ import {
   backfillExpenseCompanyIdsIfNeeded,
   getExpenseCompanyId,
 } from "../../utils/expenseCompanyScope";
-import { formatBankAccountListLabel } from "../../utils/bankAccountDisplay";
+import {
+  formatBankAccountListLabel,
+  formatBankAccountSelectLabel,
+} from "../../utils/bankAccountDisplay";
 
 /** Expense form: directory payee or one-time payee (this sentinel value). */
 const OTHER_PAYEE_VALUE = "__other__";
@@ -51,6 +54,11 @@ function expenseReturnTypeLabel(type: string): string {
   return (
     EXPENSE_RETURN_TYPE_OPTIONS.find((o) => o.value === type)?.label || "Return"
   );
+}
+
+/** Only expenses explicitly marked for expected return may receive refunds/cashbacks. */
+function expenseAllowsReturnRecording(expense: Expense): boolean {
+  return expense.expectedReturnAvailable === true;
 }
 
 /** Distinct badge colors per category name (stable hash → palette index). */
@@ -144,8 +152,12 @@ const ExpensesPage: React.FC = () => {
     canDeleteExpenseCategory,
     canViewExpenseReturns,
     canReceiveExpenseReturns,
+    canViewExpenseUsdTotal,
+    canViewBankPickerBalance,
+    filterBankAccountsForRole,
     isOwner,
   } = usePermissions();
+  const showPickerBalance = canViewBankPickerBalance();
   const navigate = useNavigate();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -153,6 +165,10 @@ const ExpensesPage: React.FC = () => {
     [],
   );
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const accessibleBankAccounts = useMemo(
+    () => filterBankAccountsForRole(bankAccounts),
+    [bankAccounts, filterBankAccountsForRole],
+  );
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
     "expenses" | "vendors" | "categories"
@@ -184,12 +200,52 @@ const ExpensesPage: React.FC = () => {
     {},
   );
   const [filter, setFilter] = useState({
-    period: "month", // month, week, year, all
+    period: "month", // month, week, year, all, custom
+    dateFrom: "",
+    dateTo: "",
     bankAccountId: "",
     category: "",
+    payee: "",
     search: "",
     monthly: "all" as "all" | "monthly" | "non-monthly",
+    returnStatus: "all" as "all" | "none" | "partial" | "full",
+    amountMin: "",
+    amountMax: "",
   });
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+
+  const hasAdvancedFilters = useMemo(
+    () =>
+      Boolean(
+        filter.bankAccountId ||
+          filter.category ||
+          filter.payee ||
+          filter.monthly !== "all" ||
+          filter.returnStatus !== "all" ||
+          filter.amountMin ||
+          filter.amountMax,
+      ),
+    [filter],
+  );
+
+  const showAdvancedFilters = filtersExpanded || hasAdvancedFilters;
+
+  const resetExpenseFilters = () => {
+    setFilter({
+      period: "month",
+      dateFrom: "",
+      dateTo: "",
+      bankAccountId: "",
+      category: "",
+      payee: "",
+      search: "",
+      monthly: "all",
+      returnStatus: "all",
+      amountMin: "",
+      amountMax: "",
+    });
+    setFiltersExpanded(false);
+  };
   const allowBulkRowSelect = canBulkDeleteExpenses();
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
   const [bulkDeletingExpenses, setBulkDeletingExpenses] = useState(false);
@@ -255,6 +311,12 @@ const ExpensesPage: React.FC = () => {
 
   const showPayeesTab = canViewExpensePayeesTab();
   const showCategoriesTab = canViewExpenseCategoriesTab();
+  const canManageExpensePayees =
+    canCreateExpensePayee() || canEditExpensePayee() || canDeleteExpensePayee();
+  const canManageExpenseCategories =
+    canCreateExpenseCategory() ||
+    canEditExpenseCategory() ||
+    canDeleteExpenseCategory();
 
   useEffect(() => {
     if (activeTab === "vendors" && !showPayeesTab) setActiveTab("expenses");
@@ -384,19 +446,87 @@ const ExpensesPage: React.FC = () => {
   }, [user, userProfile]);
 
   const filterCategoryOptions = useMemo(() => {
-    const fromDb = expenseCategories.map((c) => c.name);
-    const fromExpenses = [
-      ...new Set(
-        expenses
-          .map((e) => e.category)
-          .filter((c): c is string => Boolean(c && String(c).trim())),
-      ),
-    ];
-    const merged = new Set([...fromDb, ...fromExpenses]);
-    return [...merged].sort((a, b) =>
+    const names = expenses
+      .map((e) => (e.category || "").trim())
+      .filter(Boolean);
+    const unique = [...new Set(names)];
+    if (filter.category && !unique.includes(filter.category)) {
+      unique.push(filter.category);
+    }
+    return unique.sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" }),
     );
-  }, [expenseCategories, expenses]);
+  }, [expenses, filter.category]);
+
+  const filterPayeeOptions = useMemo(() => {
+    const names = expenses
+      .map((e) => (e.vendorName || "").trim())
+      .filter(Boolean);
+    const unique = [...new Set(names)];
+    if (filter.payee && !unique.includes(filter.payee)) {
+      unique.push(filter.payee);
+    }
+    return unique.sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [expenses, filter.payee]);
+
+  const filterBankAccountOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const e of expenses) {
+      if (!e.bankAccountId || byId.has(e.bankAccountId)) continue;
+      const bank = bankAccounts.find((b) => b.id === e.bankAccountId);
+      const label = bank
+        ? `${formatBankAccountListLabel(bank)} (${bank.currencySymbol})`
+        : e.bankAccountName || e.bankAccountId;
+      byId.set(e.bankAccountId, label);
+    }
+    if (filter.bankAccountId && !byId.has(filter.bankAccountId)) {
+      const bank = bankAccounts.find((b) => b.id === filter.bankAccountId);
+      byId.set(
+        filter.bankAccountId,
+        bank
+          ? `${formatBankAccountListLabel(bank)} (${bank.currencySymbol})`
+          : filter.bankAccountId,
+      );
+    }
+    return [...byId.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) =>
+        a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+      );
+  }, [expenses, bankAccounts, filter.bankAccountId]);
+
+  const filterMonthlyOptions = useMemo(() => {
+    let hasMonthly = false;
+    let hasNonMonthly = false;
+    for (const e of expenses) {
+      if (e.isMonthlyExpense) hasMonthly = true;
+      else hasNonMonthly = true;
+    }
+    const opts: { value: "monthly" | "non-monthly"; label: string }[] = [];
+    if (hasMonthly) opts.push({ value: "monthly", label: "Monthly" });
+    if (hasNonMonthly) opts.push({ value: "non-monthly", label: "Non-monthly" });
+    return opts;
+  }, [expenses]);
+
+  const filterReturnStatusOptions = useMemo(() => {
+    let hasNone = false;
+    let hasPartial = false;
+    let hasFull = false;
+    for (const e of expenses) {
+      const returned = returnedAmountForExpense(e);
+      const gross = e.amount || 0;
+      if (returned <= 0.0001) hasNone = true;
+      else if (returned >= gross - 0.0001) hasFull = true;
+      else hasPartial = true;
+    }
+    const opts: { value: "none" | "partial" | "full"; label: string }[] = [];
+    if (hasNone) opts.push({ value: "none", label: "None" });
+    if (hasPartial) opts.push({ value: "partial", label: "Partial" });
+    if (hasFull) opts.push({ value: "full", label: "Full" });
+    return opts;
+  }, [expenses, returnedAmountForExpense]);
 
   const expenseFormCategoryNames = useMemo(() => {
     const names = expenseCategories.map((c) => c.name);
@@ -632,16 +762,43 @@ const ExpensesPage: React.FC = () => {
     let filtered = expenses;
 
     // Period filter
-    if (filter.period !== "all") {
+    if (filter.period === "custom") {
+      // Custom date range (inclusive). Either bound is optional.
+      if (filter.dateFrom) {
+        const from = new Date(filter.dateFrom);
+        from.setHours(0, 0, 0, 0);
+        filtered = filtered.filter((expense) => expense.date.toDate() >= from);
+      }
+      if (filter.dateTo) {
+        const to = new Date(filter.dateTo);
+        to.setHours(23, 59, 59, 999);
+        filtered = filtered.filter((expense) => expense.date.toDate() <= to);
+      }
+    } else if (filter.period !== "all") {
       const now = new Date();
       let startDate: Date;
+      let endDate: Date | null = null;
 
       switch (filter.period) {
         case "week":
-          startDate = new Date(now.setDate(now.getDate() - 7));
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 7);
+          startDate.setHours(0, 0, 0, 0);
           break;
         case "month":
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case "last_month":
+          startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          endDate = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            0,
+            23,
+            59,
+            59,
+            999,
+          );
           break;
         case "year":
           startDate = new Date(now.getFullYear(), 0, 1);
@@ -650,9 +807,12 @@ const ExpensesPage: React.FC = () => {
           startDate = new Date(0);
       }
 
-      filtered = filtered.filter(
-        (expense) => expense.date.toDate() >= startDate,
-      );
+      filtered = filtered.filter((expense) => {
+        const d = expense.date.toDate();
+        if (d < startDate) return false;
+        if (endDate && d > endDate) return false;
+        return true;
+      });
     }
 
     // Bank account filter
@@ -669,11 +829,41 @@ const ExpensesPage: React.FC = () => {
       );
     }
 
+    // Payee filter
+    if (filter.payee) {
+      filtered = filtered.filter(
+        (expense) => (expense.vendorName || "") === filter.payee,
+      );
+    }
+
     // Monthly expense tag filter
     if (filter.monthly === "monthly") {
       filtered = filtered.filter((expense) => expense.isMonthlyExpense === true);
     } else if (filter.monthly === "non-monthly") {
       filtered = filtered.filter((expense) => !expense.isMonthlyExpense);
+    }
+
+    // Return status filter
+    if (filter.returnStatus !== "all") {
+      filtered = filtered.filter((expense) => {
+        const returned = returnedAmountForExpense(expense);
+        const gross = expense.amount || 0;
+        if (filter.returnStatus === "none") return returned <= 0.0001;
+        if (filter.returnStatus === "partial")
+          return returned > 0.0001 && returned + 0.0001 < gross;
+        // full
+        return returned > 0.0001 && returned + 0.0001 >= gross;
+      });
+    }
+
+    // Amount range filter (on gross expense amount, in its own currency)
+    const min = parseFloat(filter.amountMin);
+    if (Number.isFinite(min)) {
+      filtered = filtered.filter((expense) => (expense.amount || 0) >= min);
+    }
+    const max = parseFloat(filter.amountMax);
+    if (Number.isFinite(max)) {
+      filtered = filtered.filter((expense) => (expense.amount || 0) <= max);
     }
 
     // Search filter
@@ -711,6 +901,31 @@ const ExpensesPage: React.FC = () => {
 
     const netAmount = totalAmount - returnsAmount;
 
+    const currencyTotals = filteredExpenses.reduce(
+      (acc, expense) => {
+        const cur = expense.currency || "USD";
+        const row =
+          acc[cur] ??
+          ({
+            symbol: expense.currencySymbol || "$",
+            gross: 0,
+            returns: 0,
+            net: 0,
+          } as { symbol: string; gross: number; returns: number; net: number });
+        const returned = returnedAmountForExpense(expense);
+        row.gross += expense.amount || 0;
+        row.returns += returned;
+        row.net += Math.max(0, (expense.amount || 0) - returned);
+        if (expense.currencySymbol) row.symbol = expense.currencySymbol;
+        acc[cur] = row;
+        return acc;
+      },
+      {} as Record<
+        string,
+        { symbol: string; gross: number; returns: number; net: number }
+      >,
+    );
+
     const categoryTotals = filteredExpenses.reduce(
       (acc, expense) => {
         const rate = exchangeRates[expense.currency || "USD"] || 1;
@@ -740,6 +955,7 @@ const ExpensesPage: React.FC = () => {
       totalCount: filteredExpenses.length,
       categoryTotals,
       bankTotals,
+      currencyTotals,
     };
   };
 
@@ -806,7 +1022,11 @@ const ExpensesPage: React.FC = () => {
         availableBalance += editSnap.amount;
       }
       if (amount > availableBalance) {
-        setAmountError(`Insufficient balance. Available: ${selectedBank.currencySymbol}${availableBalance.toFixed(2)}`);
+        setAmountError(
+          showPickerBalance
+            ? `Insufficient balance. Available: ${selectedBank.currencySymbol}${availableBalance.toFixed(2)}`
+            : "Insufficient balance in the selected account.",
+        );
         return false;
       }
     }
@@ -872,6 +1092,20 @@ const ExpensesPage: React.FC = () => {
     }
     if (!validateAmount(currentExpense.amount || 0, currentExpense.bankAccountId)) {
       return;
+    }
+    if (currentExpense.expectedReturnAvailable) {
+      const expenseAmount = currentExpense.amount || 0;
+      const expectedReturn = currentExpense.expectedReturnAmount;
+      if (
+        expectedReturn != null &&
+        Number.isFinite(expectedReturn) &&
+        expectedReturn > expenseAmount + 0.0001
+      ) {
+        alert(
+          "Expected return amount cannot exceed the expense amount.",
+        );
+        return;
+      }
     }
 
     let resolvedVendorId: string | null = null;
@@ -977,18 +1211,20 @@ const ExpensesPage: React.FC = () => {
           id?: string;
         };
         void _omitId2;
-        const docRef = await db.collection("expenses").add(createPayload);
-
-        // Update bank account balance
-        await db
-          .collection("bankAccounts")
-          .doc(selectedBank.id)
-          .update({
-            currentBalance:
-              (selectedBank.currentBalance ||
-                selectedBank.initialBalance ||
-                0) - (currentExpense.amount || 0),
-          });
+        const newExpenseAmount = currentExpense.amount || 0;
+        const expenseRef = db.collection("expenses").doc();
+        // Create the expense and debit the bank in one atomic, concurrency-safe step.
+        await db.runTransaction(async (transaction) => {
+          const bankRef = db.collection("bankAccounts").doc(selectedBank.id);
+          transaction.set(expenseRef, createPayload);
+          if (newExpenseAmount > 0) {
+            transaction.update(bankRef, {
+              currentBalance:
+                firebase.firestore.FieldValue.increment(-newExpenseAmount),
+            });
+          }
+        });
+        const docRef = expenseRef;
 
         // Log create activity
         const payeeNoteCreate = expenseData.vendorName
@@ -1067,6 +1303,18 @@ const ExpensesPage: React.FC = () => {
 
   const stats = getExpenseStats();
   const filteredExpenses = getFilteredExpenses();
+  const showUsdTotals = canViewExpenseUsdTotal();
+  const currencyBreakdown = Object.entries(stats.currencyTotals).sort(
+    ([a], [b]) => a.localeCompare(b),
+  );
+  const showCurrencyBreakdown = currencyBreakdown.length >= 2;
+  const showUsdReturnCards =
+    showUsdTotals && canViewExpenseReturns() && stats.returnsAmount > 0;
+  const statsGridCols = showUsdReturnCards
+    ? "md:grid-cols-3 lg:grid-cols-6"
+    : showUsdTotals
+      ? "md:grid-cols-4"
+      : "md:grid-cols-3";
 
   const selectedExpenseSet = useMemo(
     () => new Set(selectedExpenseIds),
@@ -1185,6 +1433,12 @@ const ExpensesPage: React.FC = () => {
   const handleReceiveReturn = async () => {
     if (!user || !userProfile || !returnModalExpense) return;
     const expense = returnModalExpense;
+    if (!expenseAllowsReturnRecording(expense)) {
+      setReturnError(
+        "This expense is not marked for expected return. Enable “Expected return available” on the expense first.",
+      );
+      return;
+    }
     const amount = parseFloat(returnForm.amount) || 0;
     if (amount <= 0) {
       setReturnError("Enter a valid amount greater than 0");
@@ -1198,11 +1452,12 @@ const ExpensesPage: React.FC = () => {
       setReturnError("Select the received date");
       return;
     }
+    const expenseAmount = expense.amount || 0;
     const alreadyReturned = returnedAmountForExpense(expense);
-    const remaining = Math.round(((expense.amount || 0) - alreadyReturned) * 100) / 100;
+    const remaining = Math.round((expenseAmount - alreadyReturned) * 100) / 100;
     if (amount > remaining + 0.0001) {
       setReturnError(
-        `Return exceeds remaining amount (${expense.currencySymbol}${remaining.toFixed(2)}).`,
+        `Return cannot exceed the expense amount (${expense.currencySymbol}${expenseAmount.toFixed(2)}). Remaining: ${expense.currencySymbol}${remaining.toFixed(2)}.`,
       );
       return;
     }
@@ -1302,7 +1557,7 @@ const ExpensesPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
+    <div className="w-full">
       {/* Header */}
       <div className="page-header mb-6">
         <div>
@@ -1406,124 +1661,267 @@ const ExpensesPage: React.FC = () => {
 
       {activeTab === "expenses" ? (
       <>
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-          Filters
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      {/* Filters — compact toolbar + collapsible advanced row */}
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white px-3 py-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[8.5rem] flex-1 sm:flex-none">
+            <label className="mb-0.5 block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Period
             </label>
             <select
               value={filter.period}
               onChange={(e) => setFilter({ ...filter, period: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
             >
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="year">This Year</option>
-              <option value="all">All Time</option>
+              <option value="week">This week</option>
+              <option value="month">This month</option>
+              <option value="last_month">Last month</option>
+              <option value="year">This year</option>
+              <option value="all">All time</option>
+              <option value="custom">Custom</option>
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Bank Account
-            </label>
-            <select
-              value={filter.bankAccountId}
-              onChange={(e) =>
-                setFilter({ ...filter, bankAccountId: e.target.value })
-              }
-              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            >
-              <option value="">All Accounts</option>
-              {bankAccounts.map((bank) => (
-                <option key={bank.id} value={bank.id}>
-                  {formatBankAccountListLabel(bank)} ({bank.currencySymbol})
-                </option>
-              ))}
-            </select>
-          </div>
+          {filter.period === "custom" ? (
+            <>
+              <div className="min-w-[9rem] flex-1 sm:flex-none">
+                <label className="mb-0.5 block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  From
+                </label>
+                <input
+                  type="date"
+                  value={filter.dateFrom}
+                  max={filter.dateTo || undefined}
+                  onChange={(e) =>
+                    setFilter({ ...filter, dateFrom: e.target.value })
+                  }
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div className="min-w-[9rem] flex-1 sm:flex-none">
+                <label className="mb-0.5 block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  To
+                </label>
+                <input
+                  type="date"
+                  value={filter.dateTo}
+                  min={filter.dateFrom || undefined}
+                  onChange={(e) =>
+                    setFilter({ ...filter, dateTo: e.target.value })
+                  }
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </>
+          ) : null}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Category
-            </label>
-            <select
-              value={filter.category}
-              onChange={(e) =>
-                setFilter({ ...filter, category: e.target.value })
-              }
-              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            >
-              <option value="">All Categories</option>
-              {filterCategoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Monthly tag
-            </label>
-            <select
-              value={filter.monthly}
-              onChange={(e) =>
-                setFilter({
-                  ...filter,
-                  monthly: e.target.value as "all" | "monthly" | "non-monthly",
-                })
-              }
-              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            >
-              <option value="all">All expenses</option>
-              <option value="monthly">Monthly only</option>
-              <option value="non-monthly">Non-monthly only</option>
-            </select>
-          </div>
-
-          <div className="lg:col-span-1 md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <div className="min-w-[10rem] flex-[2] sm:min-w-[12rem]">
+            <label className="mb-0.5 block text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Search
             </label>
             <input
               type="text"
-              placeholder="Search expenses..."
+              placeholder="Title, payee, category…"
               value={filter.search}
               onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
             />
           </div>
+
+          <div className="flex shrink-0 items-center gap-1.5 pb-0.5">
+            <button
+              type="button"
+              onClick={() => setFiltersExpanded((o) => !o)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                showAdvancedFilters
+                  ? "border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-200"
+                  : "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              }`}
+              aria-expanded={showAdvancedFilters}
+            >
+              More
+              {hasAdvancedFilters ? (
+                <span className="rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white dark:bg-primary-500">
+                  on
+                </span>
+              ) : null}
+              <span aria-hidden className="text-[10px] opacity-60">
+                {showAdvancedFilters ? "▲" : "▼"}
+              </span>
+            </button>
+            {(hasAdvancedFilters ||
+              filter.period !== "month" ||
+              filter.search ||
+              filter.period === "custom") ? (
+              <button
+                type="button"
+                onClick={resetExpenseFilters}
+                className="rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Reset
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+          {filteredExpenses.length} of {expenses.length} expenses
+        </p>
+
+        {showAdvancedFilters ? (
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-gray-100 pt-2 dark:border-gray-700 sm:grid-cols-3 lg:grid-cols-6">
+            <div>
+              <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                Account
+              </label>
+              <select
+                value={filter.bankAccountId}
+                onChange={(e) =>
+                  setFilter({ ...filter, bankAccountId: e.target.value })
+                }
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="">All</option>
+                {filterBankAccountOptions.map((bank) => (
+                  <option key={bank.id} value={bank.id}>
+                    {bank.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                Category
+              </label>
+              <select
+                value={filter.category}
+                onChange={(e) =>
+                  setFilter({ ...filter, category: e.target.value })
+                }
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="">All</option>
+                {filterCategoryOptions.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                Payee
+              </label>
+              <select
+                value={filter.payee}
+                onChange={(e) => setFilter({ ...filter, payee: e.target.value })}
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="">All</option>
+                {filterPayeeOptions.map((payee) => (
+                  <option key={payee} value={payee}>
+                    {payee}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                Monthly
+              </label>
+              <select
+                value={filter.monthly}
+                onChange={(e) =>
+                  setFilter({
+                    ...filter,
+                    monthly: e.target.value as "all" | "monthly" | "non-monthly",
+                  })
+                }
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="all">All</option>
+                {filterMonthlyOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {canViewExpenseReturns() ? (
+              <div>
+                <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                  Returns
+                </label>
+                <select
+                  value={filter.returnStatus}
+                  onChange={(e) =>
+                    setFilter({
+                      ...filter,
+                      returnStatus: e.target.value as
+                        | "all"
+                        | "none"
+                        | "partial"
+                        | "full",
+                    })
+                  }
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="all">All</option>
+                  {filterReturnStatusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className={canViewExpenseReturns() ? "" : "col-span-2"}>
+              <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                Amount
+              </label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Min"
+                  value={filter.amountMin}
+                  onChange={(e) =>
+                    setFilter({ ...filter, amountMin: e.target.value })
+                  }
+                  className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+                <span className="text-xs text-gray-400">–</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Max"
+                  value={filter.amountMax}
+                  onChange={(e) =>
+                    setFilter({ ...filter, amountMax: e.target.value })
+                  }
+                  className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Stats Overview */}
-      <div
-        className={`grid grid-cols-1 gap-4 mb-6 ${
-          canViewExpenseReturns() && stats.returnsAmount > 0
-            ? "md:grid-cols-3 lg:grid-cols-6"
-            : "md:grid-cols-4"
-        }`}
-      >
+      <div className={`grid grid-cols-1 gap-4 mb-6 ${statsGridCols}`}>
         <div className="bg-gradient-to-r from-red-500 to-red-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Total Expenses</h3>
           <p className="text-2xl font-bold">{stats.totalCount}</p>
         </div>
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-lg text-white">
-          <h3 className="text-sm font-medium">
-            {canViewExpenseReturns() && stats.returnsAmount > 0
-              ? "Gross (USD)"
-              : "Total Amount (USD)"}
-          </h3>
-          <p className="text-2xl font-bold">${stats.totalAmount.toFixed(2)}</p>
-        </div>
-        {canViewExpenseReturns() && stats.returnsAmount > 0 ? (
+        {showUsdTotals ? (
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-lg text-white">
+            <h3 className="text-sm font-medium">
+              {showUsdReturnCards ? "Gross (USD)" : "Total Amount (USD)"}
+            </h3>
+            <p className="text-2xl font-bold">${stats.totalAmount.toFixed(2)}</p>
+          </div>
+        ) : null}
+        {showUsdReturnCards ? (
           <>
             <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-6 rounded-lg text-white">
               <h3 className="text-sm font-medium">Returns (USD)</h3>
@@ -1549,9 +1947,74 @@ const ExpensesPage: React.FC = () => {
         </div>
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6 rounded-lg text-white">
           <h3 className="text-sm font-medium">Period</h3>
-          <p className="text-lg font-bold capitalize">{filter.period}</p>
+          <p className="text-lg font-bold capitalize">
+            {filter.period.replace(/_/g, " ")}
+          </p>
         </div>
       </div>
+
+      {showCurrencyBreakdown ? (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+            Totals by currency
+          </h3>
+          <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+            Native-currency totals for the current filters (not converted to USD).
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {currencyBreakdown.map(([currency, row]) => (
+              <div
+                key={currency}
+                className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-600 dark:bg-gray-900/40"
+              >
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  {currency}
+                </div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-gray-600 dark:text-gray-400">Gross</span>
+                    <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
+                      {row.symbol}
+                      {row.gross.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  {canViewExpenseReturns() && row.returns > 0 ? (
+                    <>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Returns
+                        </span>
+                        <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                          -{row.symbol}
+                          {row.returns.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2 border-t border-gray-200 pt-1 dark:border-gray-600">
+                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                          Net
+                        </span>
+                        <span className="font-bold tabular-nums text-gray-900 dark:text-white">
+                          {row.symbol}
+                          {row.net.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Expenses List */}
       {allowBulkRowSelect && selectedExpenseIds.length > 0 ? (
@@ -1608,7 +2071,7 @@ const ExpensesPage: React.FC = () => {
           </div>
         ) : (
           <>
-            <p className="px-6 pt-3 text-xs text-gray-500 dark:text-gray-400">
+            <p className="px-6 pt-3 pb-3 text-xs text-gray-500 dark:text-gray-400">
               Click a row to view full expense details.
             </p>
           <div className="overflow-x-auto">
@@ -1643,6 +2106,7 @@ const ExpensesPage: React.FC = () => {
                   const hasReturns = returned > 0;
                   const canRecordReturn =
                     canReceiveExpenseReturns() &&
+                    expenseAllowsReturnRecording(expense) &&
                     (expense.amount || 0) - returned > 0.0001;
                   const canOpenReturnHistory =
                     !canRecordReturn &&
@@ -1796,7 +2260,9 @@ const ExpensesPage: React.FC = () => {
                     <tr>
                       <th className="px-6 py-3">Name</th>
                       <th className="px-6 py-3">Notes</th>
-                      <th className="px-6 py-3 w-40">Actions</th>
+                      {canManageExpensePayees ? (
+                        <th className="px-6 py-3 w-40">Actions</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -1811,26 +2277,28 @@ const ExpensesPage: React.FC = () => {
                         <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
                           {v.notes || "—"}
                         </td>
-                        <td className="px-6 py-4 space-x-2">
-                          {canEditExpensePayee() ? (
-                            <button
-                              type="button"
-                              onClick={() => openVendorModal(v)}
-                              className="text-amber-600 hover:underline dark:text-amber-400"
-                            >
-                              Edit
-                            </button>
-                          ) : null}
-                          {canDeleteExpensePayee() ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteVendor(v)}
-                              className="text-red-600 hover:underline dark:text-red-400"
-                            >
-                              Delete
-                            </button>
-                          ) : null}
-                        </td>
+                        {canManageExpensePayees ? (
+                          <td className="px-6 py-4 space-x-2">
+                            {canEditExpensePayee() ? (
+                              <button
+                                type="button"
+                                onClick={() => openVendorModal(v)}
+                                className="text-amber-600 hover:underline dark:text-amber-400"
+                              >
+                                Edit
+                              </button>
+                            ) : null}
+                            {canDeleteExpensePayee() ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteVendor(v)}
+                                className="text-red-600 hover:underline dark:text-red-400"
+                              >
+                                Delete
+                              </button>
+                            ) : null}
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -1877,7 +2345,9 @@ const ExpensesPage: React.FC = () => {
                     <tr>
                       <th className="px-6 py-3">Name</th>
                       <th className="px-6 py-3">Notes</th>
-                      <th className="px-6 py-3 w-40">Actions</th>
+                      {canManageExpenseCategories ? (
+                        <th className="px-6 py-3 w-40">Actions</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -1892,26 +2362,28 @@ const ExpensesPage: React.FC = () => {
                         <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
                           {c.notes || "—"}
                         </td>
-                        <td className="px-6 py-4 space-x-2">
-                          {canEditExpenseCategory() ? (
-                            <button
-                              type="button"
-                              onClick={() => openCategoryModal(c)}
-                              className="text-amber-600 hover:underline dark:text-amber-400"
-                            >
-                              Edit
-                            </button>
-                          ) : null}
-                          {canDeleteExpenseCategory() ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteCategory(c)}
-                              className="text-red-600 hover:underline dark:text-red-400"
-                            >
-                              Delete
-                            </button>
-                          ) : null}
-                        </td>
+                        {canManageExpenseCategories ? (
+                          <td className="px-6 py-4 space-x-2">
+                            {canEditExpenseCategory() ? (
+                              <button
+                                type="button"
+                                onClick={() => openCategoryModal(c)}
+                                className="text-amber-600 hover:underline dark:text-amber-400"
+                              >
+                                Edit
+                              </button>
+                            ) : null}
+                            {canDeleteExpenseCategory() ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteCategory(c)}
+                                className="text-red-600 hover:underline dark:text-red-400"
+                              >
+                                Delete
+                              </button>
+                            ) : null}
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
@@ -2252,6 +2724,7 @@ const ExpensesPage: React.FC = () => {
 
                   <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex flex-wrap justify-end gap-2">
                     {canReceiveExpenseReturns() &&
+                    expenseAllowsReturnRecording(expense) &&
                     (expense.amount || 0) - returned > 0.0001 ? (
                       <button
                         type="button"
@@ -2393,14 +2866,11 @@ const ExpensesPage: React.FC = () => {
                   required
                 >
                   <option value="">Select Bank Account</option>
-                  {bankAccounts.map((bank) => {
-                    const balance = bank.currentBalance || bank.initialBalance || 0;
-                    return (
-                      <option key={bank.id} value={bank.id}>
-                        {formatBankAccountListLabel(bank)} ({bank.currencySymbol}) — Balance: {bank.currencySymbol}{balance.toFixed(2)}
-                      </option>
-                    );
-                  })}
+                  {accessibleBankAccounts.map((bank) => (
+                    <option key={bank.id} value={bank.id}>
+                      {formatBankAccountSelectLabel(bank, showPickerBalance)}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -2437,14 +2907,19 @@ const ExpensesPage: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Amount *
-                    {currentExpense.bankAccountId && (() => {
-                      const selectedBank = bankAccounts.find(b => b.id === currentExpense.bankAccountId);
-                      return selectedBank ? (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                          (Available: {selectedBank.currencySymbol}{(selectedBank.currentBalance || selectedBank.initialBalance || 0).toFixed(2)})
-                        </span>
-                      ) : null;
-                    })()}
+                    {showPickerBalance && currentExpense.bankAccountId
+                      ? (() => {
+                          const selectedBank = bankAccounts.find(
+                            (b) => b.id === currentExpense.bankAccountId,
+                          );
+                          return selectedBank ? (
+                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                              (Available: {selectedBank.currencySymbol}
+                              {bankStoredBalance(selectedBank).toFixed(2)})
+                            </span>
+                          ) : null;
+                        })()
+                      : null}
                   </label>
                   <input
                     type="number"
@@ -2724,6 +3199,7 @@ const ExpensesPage: React.FC = () => {
 
             {/* New return form */}
             {canReceiveExpenseReturns() &&
+            expenseAllowsReturnRecording(returnModalExpense) &&
             (returnModalExpense.amount || 0) -
               returnedAmountForExpense(returnModalExpense) >
               0.0001 ? (
@@ -2736,6 +3212,12 @@ const ExpensesPage: React.FC = () => {
                     <input
                       type="number"
                       step="0.01"
+                      min="0.01"
+                      max={Math.max(
+                        0,
+                        (returnModalExpense.amount || 0) -
+                          returnedAmountForExpense(returnModalExpense),
+                      )}
                       value={returnForm.amount}
                       onChange={(e) =>
                         setReturnForm({ ...returnForm, amount: e.target.value })
@@ -2795,9 +3277,9 @@ const ExpensesPage: React.FC = () => {
                       className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     >
                       <option value="">Select account</option>
-                      {bankAccounts.map((bank) => (
+                      {accessibleBankAccounts.map((bank) => (
                         <option key={bank.id} value={bank.id}>
-                          {formatBankAccountListLabel(bank)} ({bank.currencySymbol})
+                          {formatBankAccountSelectLabel(bank, showPickerBalance)}
                         </option>
                       ))}
                     </select>
@@ -2824,12 +3306,14 @@ const ExpensesPage: React.FC = () => {
               </div>
             ) : (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {returnedAmountForExpense(returnModalExpense) > 0 &&
-                (returnModalExpense.amount || 0) -
-                  returnedAmountForExpense(returnModalExpense) <=
-                  0.0001
-                  ? "This expense has been fully returned."
-                  : "No remaining amount to return."}
+                {!expenseAllowsReturnRecording(returnModalExpense)
+                  ? "Returns can only be recorded for expenses marked with “Expected return available (refund / cashback)”."
+                  : returnedAmountForExpense(returnModalExpense) > 0 &&
+                      (returnModalExpense.amount || 0) -
+                        returnedAmountForExpense(returnModalExpense) <=
+                        0.0001
+                    ? "This expense has been fully returned."
+                    : "No remaining amount to return."}
               </p>
             )}
 
@@ -2841,6 +3325,7 @@ const ExpensesPage: React.FC = () => {
                 Close
               </button>
               {canReceiveExpenseReturns() &&
+              expenseAllowsReturnRecording(returnModalExpense) &&
               (returnModalExpense.amount || 0) -
                 returnedAmountForExpense(returnModalExpense) >
                 0.0001 ? (

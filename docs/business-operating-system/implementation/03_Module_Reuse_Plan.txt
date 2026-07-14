@@ -1,0 +1,201 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 03 — Module Reuse Plan
+================================================================================
+
+Purpose: Specify what to reuse, extend, or leave untouched when introducing BOS
+Constraint: No ERP redesign; sidecar attribution; Option C UX for expenses
+
+================================================================================
+1. REUSE WITHOUT MODIFICATION
+================================================================================
+
+Module / file                         | BOS usage
+--------------------------------------|------------------------------------------
+services/firebase.ts                  | All BOS Firestore access
+services/companyId.ts                 | Tenancy resolution for bos* queries
+utils/expenseCompanyScope.ts          | Same companyId pattern for BOS services
+utils/csvExport.ts                    | BOS report exports
+utils/financeCurrencyDisplay.tsx      | Initiative KPI currency formatting
+components/Spinner.tsx                | BOS pages loading states
+components/ProtectedComponent.tsx     | Route and action gating
+components/DashboardCard.tsx          | Venture/initiative summary cards
+components/RowIconButton.tsx          | Attribution action buttons
+layouts/AppLayout.tsx                 | Shell for new BOS routes
+hooks/useAuth.tsx                     | User context for attribution actor
+services/activityLogger.ts            | Log structure (add new types only)
+config/permissions.ts                 | Add keys only — do not change existing keys
+firestore.rules canAccessCompanyData  | Pattern for bos collection rules
+
+
+================================================================================
+2. REUSE AS READ-ONLY DATA SOURCES (NEVER WRITE BOS FIELDS HERE)
+================================================================================
+
+Module / collection                   | BOS reads
+--------------------------------------|------------------------------------------
+expenses                              | amount, date, currency, companyId, id
+expenseReturns                        | Net investment calculation
+invoices                              | Revenue attribution (Phase 2)
+leads + lead status                   | Funnel stage derivation
+leads/{id}/callLogs                   | Activity volume metrics (Phase 2)
+campaigns                             | BosCampaignLink target validation
+customers / businesses                | CRM context only — not venture registry
+bankAccounts / loans                  | Unrelated to Phase 1 BOS
+
+
+================================================================================
+3. EXTEND (ADDITIVE ONLY)
+================================================================================
+
+Module                                | Extension                          | Guardrails
+--------------------------------------|------------------------------------|---------------------------
+config/permissions.ts                 | bos_* permission constants         | New category "Business OS"
+hooks/usePermissions.tsx              | canBosVentureView(), etc.          | Default deny for non-owners
+components/Sidebar.tsx                | "Strategy" or "BOS" nav group      | Permission-gated items
+components/RoleManagement.tsx         | BOS permission checkboxes          | Mirror Doc 12 matrix subset
+types.ts                              | BosVenture, BosInitiative, etc.    | Prefix Bos* per Doc 10
+services/activityLogger.ts            | bos_* ActivityType values          | Do not change existing types
+firestore.rules                       | bos* collection match blocks       | Deploy before client
+services/databaseMigrationService.ts  | Backup stages for bos collections  | Version bump v5 → v6
+pages/app/DashboardPage.tsx           | Optional BOS summary widgets       | Behind bos_dashboard_view
+pages/app/ReportsPage.tsx             | Initiative column / tab            | Unattributed = blank
+pages/app/ExpensesPage.tsx            | Post-hoc attribution action only   | NOT form fields for staff
+App.tsx                               | Lazy routes for BOS pages          | ProtectedComponent wrapper
+
+
+================================================================================
+4. LEAVE UNTOUCHED (PHASE 1)
+================================================================================
+
+Module                                | Reason
+--------------------------------------|------------------------------------------
+pages/app/BankAccountsPage.tsx        | Unrelated finance domain
+pages/app/LoansPage.tsx               | Unrelated finance domain
+services/loanService.ts               | No BOS coupling
+services/bankAccountService.ts        | No BOS coupling
+services/balanceIntegrityService.ts   | Reports integrity independent
+services/expenseCategoryService.ts    | Operational categories ≠ BOS
+services/vendorService.ts             | Payee management independent
+pages/app/InvoicesListPage.tsx        | Revenue attribution is Phase 2
+pages/app/InvoiceFormPage.tsx         | No initiative fields on invoice
+pages/app/ProductsPage.tsx            | Catalog independent
+pages/app/PerformancePage.tsx         | CRM performance — defer BOS overlay
+ScreenLockContext / PIN flows         | Security unrelated
+SuperAdminDashboard                   | Platform admin unrelated
+
+
+================================================================================
+5. NEVER MODIFY (INVARIANTS)
+================================================================================
+
+Invariant                                    | Rationale
+---------------------------------------------|----------------------------------
+expenses document schema                     | Sidecar law — BosAttribution only
+Expense create/edit form for standard staff  | Option C UX (Doc 06)
+expenseReturnService validation rules        | Production finance integrity
+resolveCompanyIdForUser() return semantics   | Tenancy breaks all companies
+CRM businesses collection meaning            | Doc 10 naming collision prevention
+campaignService Campaign interface           | ERP outreach ≠ BosInitiative
+Lead.source / Lead.campaignId fields         | CRM data — link via sidecar
+Owner isOwner bypass                         | Existing admin model
+HashRouter base                              | Deployment compatibility
+
+
+================================================================================
+6. NEW MODULES TO CREATE (PHASE 1 MINIMUM)
+================================================================================
+
+Path                                      | Responsibility
+------------------------------------------|----------------------------------
+types/bos.ts (or section in types.ts)     | BosVenture, BosInitiative, BosAttribution,
+                                          | BosDecision, enums, lifecycle states
+services/bosVentureService.ts             | CRUD + subscribe for bosVentures
+services/bosInitiativeService.ts          | CRUD + lifecycle transitions
+services/bosAttributionService.ts         | Create/update attribution sidecar,
+                                          | link expenseId → initiativeId
+services/bosDecisionService.ts            | Minimal decision CRUD (Phase 1)
+services/bosAcquisitionChannelService.ts  | Channel registry (optional P1)
+utils/bosReportJoin.ts                    | In-memory join expenses + attributions
+hooks/useBosPermissions.ts                | Optional thin wrapper over usePermissions
+pages/app/bos/BosVenturesPage.tsx         | Venture list + create
+pages/app/bos/BosInitiativesPage.tsx      | Initiative list + lifecycle
+pages/app/bos/BosInitiativeDetailPage.tsx | Detail + attributions + decisions
+components/bos/AttributionModal.tsx       | Post-hoc expense attribution UI
+components/bos/InitiativeBadge.tsx        | Reusable initiative label
+components/bos/VentureSelector.tsx        | Finance attribution picker
+
+
+================================================================================
+7. EXISTING MODULES THAT BECOME BOS-AWARE
+================================================================================
+
+Module                    | Awareness type              | Phase
+--------------------------|-----------------------------|-------
+ExpensesPage              | Row action + read badge     | P1
+ReportsPage                 | Join + export column        | P1
+DashboardPage               | Summary widgets             | P1
+Sidebar                     | Navigation entries          | P1
+ActivityPage                | Display bos_* activity types| P1
+LeadDetailPage              | Read-only channel link      | P2
+CampaignsPage               | Linked initiative count     | P2
+InvoicesListPage            | Revenue attribution badge   | P2
+databaseMigrationService    | Backup includes bos*        | P1 (before prod data)
+
+
+================================================================================
+8. SERVICE PATTERN TO COPY
+================================================================================
+
+    Primary template: services/expenseReturnService.ts
+        • Class-based service with static methods
+        • FieldValue.increment / Timestamp.now()
+        • companyId on every document
+        • ActivityLogger.log after successful write
+        • Validation before Firestore write
+
+    Secondary template: services/campaignService.ts
+        • subscribeXxx(callback) for real-time lists
+        • companyId-scoped queries
+
+    Do NOT copy: ExpensesPage inline Firestore (anti-pattern for BOS)
+
+
+================================================================================
+9. REPORTS ENRICHMENT VS REBUILD
+================================================================================
+
+    ENRICH (do not rebuild):
+        • ReportsPage Expenses tab — add "Initiative" column via bosReportJoin
+        • ReportsPage — new "Initiative spend" tab (aggregated by initiativeId)
+        • DashboardPage — "Top initiatives by spend" card (reuse totalsByCurrency)
+        • CSV exports — append initiativeName, ventureName columns
+
+    DO NOT REBUILD:
+        • Cashflow, loans, deposits, integrity tabs
+        • balanceIntegrityService
+        • Existing expense/return calculations
+
+    NEW (not replacement):
+        • BosDecisions list export (Phase 1 minimal)
+        • BosMetricSnapshot dashboard (Phase 2 — do not start in P1)
+
+
+================================================================================
+10. DEPENDENCY ORDER FOR NEW MODULES
+================================================================================
+
+    1. types + permissions + firestore.rules (bosVentures, bosInitiatives)
+    2. bosVentureService + BosVenturesPage
+    3. bosInitiativeService + BosInitiativesPage
+    4. bosAttributionService + AttributionModal
+    5. ExpensesPage integration (post split)
+    6. bosReportJoin + ReportsPage enrichment
+    7. bosDecisionService + initiative detail decisions tab
+    8. databaseMigrationService backup extension
+    9. Dashboard widgets
+
+
+================================================================================
+END OF DOCUMENT 03 — Module Reuse Plan
+================================================================================

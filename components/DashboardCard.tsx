@@ -30,11 +30,13 @@ const variantConfig: Record<
 
 interface DashboardCardProps {
   title: string;
-  value: string;
+  value: React.ReactNode;
   icon: React.ReactNode;
   variant: DashboardStatVariant;
   /** When true, the value is visually blurred (revenue privacy). */
   blurValue?: boolean;
+  /** Optional muted line below the main value (e.g. native currency breakdown). */
+  footer?: React.ReactNode;
 }
 
 const DashboardCard: React.FC<DashboardCardProps> = ({
@@ -43,6 +45,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
   icon,
   variant,
   blurValue = false,
+  footer,
 }) => {
   const { iconWrap, accentBar } = variantConfig[variant];
 
@@ -53,7 +56,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
       aria-label={
         blurValue
           ? `${title}: hidden — use the dashboard PIN to view`
-          : `${title}: ${value}`
+          : `${title}${typeof value === "string" ? `: ${value}` : ""}`
       }
     >
       <div
@@ -81,6 +84,11 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
               {value}
             </span>
           </p>
+          {footer && !blurValue ? (
+            <div className="mt-1.5 text-xs font-medium leading-snug tabular-nums text-gray-500 dark:text-gray-400">
+              {footer}
+            </div>
+          ) : null}
         </div>
         <div
           className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-visible rounded-2xl ${iconWrap} transition-transform duration-200 group-hover:scale-[1.03]`}
@@ -99,12 +107,14 @@ export default DashboardCard;
 /** Compact metric tile for analytics grids (lead stats, etc.). */
 export const DashboardMiniStat: React.FC<{
   label: string;
-  value: string | number;
+  value: React.ReactNode;
   hint?: string;
   /** Accent: subtle left border + tint for agent dashboard metrics. */
   tone?: "default" | "violet" | "emerald" | "amber" | "sky";
+  /** Smaller secondary line under the main value. */
+  subvalue?: React.ReactNode;
   className?: string;
-}> = ({ label, value, hint, tone = "default", className = "" }) => {
+}> = ({ label, value, hint, subvalue, tone = "default", className = "" }) => {
   const toneClass =
     tone === "violet"
       ? "border-l-[3px] border-l-violet-500 bg-gradient-to-br from-violet-50/90 to-white/70 dark:border-l-violet-400 dark:from-violet-950/30 dark:to-gray-900/50"
@@ -126,6 +136,11 @@ export const DashboardMiniStat: React.FC<{
       <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-gray-900 dark:text-white">
         {value}
       </p>
+      {subvalue ? (
+        <div className="mt-1 text-xs font-medium leading-snug tabular-nums text-gray-500 dark:text-gray-400">
+          {subvalue}
+        </div>
+      ) : null}
       {hint ? (
         <p className="mt-1 text-xs leading-snug text-gray-500 dark:text-gray-400">{hint}</p>
       ) : null}

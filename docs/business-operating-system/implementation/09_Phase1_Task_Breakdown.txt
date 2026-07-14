@@ -1,0 +1,221 @@
+================================================================================
+BOS IMPLEMENTATION VALIDATION
+Document 09 — Phase 1 Task Breakdown
+================================================================================
+
+Purpose: Actionable task list for implementation (post-validation)
+Format: ID | Task | Depends on | Files / artifacts | Estimate
+
+================================================================================
+EPIC 0 — PREREQUISITE REFACTOR (BLOCKER FOR EXPENSE INTEGRATION)
+================================================================================
+
+T-000 | Audit ExpensesPage sections and mark extraction boundaries
+      | — | ExpensesPage.tsx | 2h
+
+T-001 | Extract useExpenses hook (load, filter, CRUD handlers)
+      | T-000 | hooks/useExpenses.ts, ExpensesPage.tsx | 4h
+
+T-002 | Extract ExpenseDetailModal component
+      | T-001 | components/expenses/ExpenseDetailModal.tsx | 4h
+
+T-003 | Extract ExpenseFormModal (create/edit) — no BOS fields
+      | T-001 | components/expenses/ExpenseFormModal.tsx | 4h
+
+T-004 | Smoke test expense CRUD after split — BC checklist E-01–E-09
+      | T-002, T-003 | — | 2h
+
+
+================================================================================
+EPIC 1 — FOUNDATION
+================================================================================
+
+T-101 | Define BosVenture, BosInitiative, BosAttribution, BosDecision interfaces
+      | — | types.ts or types/bos.ts | 2h
+
+T-102 | Define lifecycle enums (initiative status, attribution status)
+      | T-101 | types/bos.ts | 1h
+
+T-103 | Add GRANULAR_PERMISSIONS bos_* constants + category
+      | — | config/permissions.ts | 2h
+
+T-104 | Add canBosVentureView/Manage, canBosInitiative*, canBosAttribution*,
+        canBosDecision*, canBosReportsView, canBosDashboardView
+      | T-103 | hooks/usePermissions.tsx | 3h
+
+T-105 | Optional: extract useBosPermissions.ts
+      | T-104 | hooks/useBosPermissions.ts | 2h
+
+T-106 | Add firestore.rules for bosVentures
+      | T-103 | firestore.rules | 1h
+
+T-107 | Add firestore.rules for bosInitiatives, bosAttributions, bosDecisions
+      | T-106 | firestore.rules | 2h
+
+T-108 | Add composite indexes to firestore.indexes.json
+      | T-106 | firestore.indexes.json | 1h
+
+T-109 | Deploy rules + indexes to staging
+      | T-107, T-108 | Firebase console / CLI | 1h
+
+
+================================================================================
+EPIC 2 — SERVICES
+================================================================================
+
+T-201 | Implement bosVentureService — create, update, archive, subscribe
+      | T-101, T-109 | services/bosVentureService.ts | 4h
+
+T-202 | Implement bosInitiativeService — CRUD + status transitions
+      | T-201 | services/bosInitiativeService.ts | 5h
+
+T-203 | Implement bosAttributionService — create, getBySourceId,
+        listByInitiative, duplicate guard
+      | T-202 | services/bosAttributionService.ts | 5h
+
+T-204 | Implement bosDecisionService — CRUD list by initiative
+      | T-202 | services/bosDecisionService.ts | 3h
+
+T-205 | Add ActivityType values + ActivityLogger calls in all BOS services
+      | T-201–T-204 | types.ts, services/*.ts | 2h
+
+
+================================================================================
+EPIC 3 — BOS UI SHELL
+================================================================================
+
+T-301 | Create BosVenturesPage — list, create modal, archive action
+      | T-201, T-104 | pages/app/bos/BosVenturesPage.tsx | 5h
+
+T-302 | Create BosInitiativesPage — list, filters, create
+      | T-202, T-104 | pages/app/bos/BosInitiativesPage.tsx | 5h
+
+T-303 | Create BosInitiativeDetailPage — overview, attributions list, decisions tab
+      | T-202, T-203, T-204 | pages/app/bos/BosInitiativeDetailPage.tsx | 6h
+
+T-304 | Create VentureSelector + InitiativeSelector components
+      | T-201, T-202 | components/bos/*.tsx | 3h
+
+T-305 | Create InitiativeBadge + AttributionStatusChip
+      | T-101 | components/bos/*.tsx | 2h
+
+T-306 | Add BosNavGroup to Sidebar
+      | T-104 | components/Sidebar.tsx | 2h
+
+T-307 | Add lazy routes in App.tsx for /bos/*
+      | T-301–T-303 | App.tsx | 1h
+
+T-308 | Add BOS permission category to RoleManagement
+      | T-103 | components/RoleManagement.tsx | 2h
+
+
+================================================================================
+EPIC 4 — EXPENSE ATTRIBUTION (OPTION C)
+================================================================================
+
+T-401 | Create AttributionModal — venture/initiative pick, notes, confirm
+      | T-203, T-304 | components/bos/AttributionModal.tsx | 4h
+
+T-402 | Integrate AttributionModal into ExpenseDetailModal
+      | T-004, T-401 | ExpenseDetailModal.tsx | 3h
+
+T-403 | Show InitiativeBadge in expense list rows (batch attribution fetch)
+      | T-203, T-305 | ExpensesPage / ExpenseList | 3h
+
+T-404 | Firestore console verification — expense docs unchanged (BC E-04)
+      | T-402 | Manual QA | 1h
+
+
+================================================================================
+EPIC 5 — REPORTS ENRICHMENT
+================================================================================
+
+T-501 | Implement bosReportJoin.ts — map expenses to initiative names
+      | T-203 | utils/bosReportJoin.ts | 3h
+
+T-502 | Extract ExpenseReportTab from ReportsPage (if not done)
+      | — | components/reports/ExpenseReportTab.tsx | 3h
+
+T-503 | Add attribution + initiative queries to ReportsPage load (gated)
+      | T-501, T-104 | ReportsPage.tsx | 3h
+
+T-504 | Add Initiative column to Expenses tab + CSV export
+      | T-503 | ReportsPage / ExpenseReportTab | 2h
+
+T-505 | Create InitiativeSpendTab — aggregate by initiativeId
+      | T-501 | components/bos/reports/InitiativeSpendTab.tsx | 4h
+
+T-506 | Wire InitiativeSpendTab into ReportsPage tab bar
+      | T-505 | ReportsPage.tsx | 1h
+
+
+================================================================================
+EPIC 6 — DASHBOARD + BACKUP
+================================================================================
+
+T-601 | Add BOS summary section to DashboardPage (3 cards)
+      | T-202, T-204, T-104 | DashboardPage.tsx | 3h
+
+T-602 | Add bos collections to databaseMigrationService export stages
+      | T-201–T-204 | databaseMigrationService.ts | 4h
+
+T-603 | Bump FLAT_BACKUP_FORMAT_VERSION to 6; update restore
+      | T-602 | databaseMigrationService.ts | 3h
+
+T-604 | Update ActivityPage labels for bos_* activity types
+      | T-205 | ActivityPage.tsx, CompanyActivityPage.tsx | 2h
+
+
+================================================================================
+EPIC 7 — QA & RELEASE
+================================================================================
+
+T-701 | Execute full BC checklist (Doc 08) on staging
+      | All epics | — | 4h
+
+T-702 | Fix FAIL items from checklist
+      | T-701 | — | variable
+
+T-703 | Owner permission rollout — assign bos_* to finance role
+      | T-308 | Production Role Management | 1h
+
+T-704 | Seed first venture + initiative in production
+      | T-703 | Manual | 0.5h
+
+T-705 | Production deploy app + verify K-01–K-04
+      | T-702 | — | 2h
+
+T-706 | Post-deploy monitoring week 1 — risks R-007, R-009
+      | T-705 | — | ongoing
+
+
+================================================================================
+TASK DEPENDENCY GRAPH (SUMMARY)
+================================================================================
+
+    T-000 → T-001 → T-002/T-003 → T-004
+    T-101 → T-103 → T-104 → T-106 → T-109
+    T-109 → T-201 → T-202 → T-203 → T-301/302/303
+    T-004 + T-401 → T-402 → T-404
+    T-203 + T-501 → T-503 → T-504/T-505
+    T-602 → T-603
+    All → T-701 → T-705
+
+
+================================================================================
+PARALLELIZATION OPPORTUNITIES
+================================================================================
+
+    • Epic 1 (foundation) and Epic 0 (split) can start in parallel
+    • Epic 3 UI can start after T-201/T-202 without waiting for Epic 4
+    • Epic 5 can start after T-203 without waiting for Epic 4 UI integration
+    • Epic 6 backup (T-602) can start after services stable
+
+
+================================================================================
+TOTAL TASK COUNT: 47 tasks
+ESTIMATED SUM: ~120–140 hours (includes QA)
+================================================================================
+
+END OF DOCUMENT 09 — Phase 1 Task Breakdown
+================================================================================

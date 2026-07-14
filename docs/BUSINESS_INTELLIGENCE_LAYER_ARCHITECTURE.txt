@@ -1,0 +1,996 @@
+================================================================================
+SOFTWARE ARCHITECTURE DESIGN DOCUMENT
+Business Intelligence Layer for Invoicer Pro ERP
+================================================================================
+
+Prepared as: Principal Software Architect review
+Scope: Existing Expense Management module + proposed BI overlay
+Constraint: Production system — zero disruption to daily staff workflows
+
+Document generated from architecture analysis session.
+No code, Firestore implementation, or React implementation included.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+STEP 1 — Understanding the Existing Expense Management Module
+STEP 2 — Architecture Review
+PROJECT GOAL
+Business Intelligence Examples
+UX Analysis (Options A, B, C)
+STEP 3 — Design the Business Intelligence Layer
+STEP 4 — Entity Design
+STEP 5 — Reporting Integration
+STEP 6 — Future Scalability (10 Years)
+STEP 7 — React + Firebase Considerations
+Complete Architecture Diagram (ASCII)
+Phased Implementation Roadmap
+Final Recommendations Summary
+
+================================================================================
+STEP 1 — UNDERSTANDING THE EXISTING EXPENSE MANAGEMENT MODULE
+================================================================================
+
+1.1 HIGH-LEVEL SYSTEM CONTEXT
+--------------------------------------------------------------------------------
+
+Invoicer Pro is a React + Firebase (Firestore) multi-tenant SaaS ERP with:
+
+- Routing: HashRouter → AppLayout (Sidebar + scrollable main) → lazy-loaded page
+  components (App.tsx)
+- Auth: useAuth hook + UserProfile (owner/team, granular permissions, company scoping)
+- Permissions: config/permissions.ts + hooks/usePermissions.tsx + Firestore-backed roles
+- State: Local React state + real-time Firestore onSnapshot listeners (no Redux/Zustand
+  for expenses)
+- Finance group in sidebar: Bank Accounts, Expenses, Loans, Reports
+
+The Expense module is NOT a separate micro-frontend. It is a large page component
+(ExpensesPage.tsx, ~3,300 lines) that owns UI, filtering, stats, CRUD, returns,
+payees, and categories.
+
+
+1.2 REACT COMPONENT STRUCTURE (EXPENSES)
+--------------------------------------------------------------------------------
+
+AppLayout
+ └── ExpensesPage (single monolithic component)
+      ├── Tab: Expenses (default)
+      │    ├── Filter toolbar (period, search, advanced filters)
+      │    ├── Summary stat cards (count, USD totals, returns, net, top category)
+      │    ├── Multi-currency breakdown box
+      │    ├── Bulk delete bar (permission-gated)
+      │    ├── Expense table (row click → detail panel)
+      │    ├── Add/Edit expense modal
+      │    ├── Expense detail modal
+      │    └── Return/refund/cashback modal
+      ├── Tab: Payees (vendors directory)
+      └── Tab: Categories (expense category directory)
+
+Supporting shared components: Spinner, RowIconButton, FloatingFieldTooltip (indirect
+via finance utils elsewhere).
+
+No dedicated expense-specific React context. All state lives in ExpensesPage local
+useState / useMemo / useCallback.
+
+
+1.3 FOLDER & SERVICE STRUCTURE
+--------------------------------------------------------------------------------
+
+Layer                    | Location                          | Role
+-------------------------|-----------------------------------|----------------------------------
+Page UI                  | pages/app/ExpensesPage.tsx        | Everything expense-related
+Return service           | services/expenseReturnService.ts  | Append-only returns, transactions
+Category service         | services/expenseCategoryService.ts| Subscribe, seed, rename propagation
+Payee service            | services/vendorService.ts         | Real-time vendor subscription
+Bank accounts            | services/bankAccountService.ts    | Shared across finance modules
+Company scope            | utils/expenseCompanyScope.ts      | companyId resolution, backfill
+Currency display         | utils/financeCurrencyDisplay.tsx  | Shared dashboard/loans/expense UX
+CSV export               | utils/csvExport.ts                | RFC 4180 CSV for Reports
+Permissions              | config/permissions.ts,            | Granular expense permissions
+                         | hooks/usePermissions.tsx          |
+Types                    | types.ts                          | Expense, ExpenseReturn, Vendor, etc.
+
+Notable absence: There is NO expenseService.ts. Create/update/delete go through inline
+Firestore calls inside ExpensesPage.
+
+
+1.4 ROUTING & ACCESS CONTROL
+--------------------------------------------------------------------------------
+
+- Route: /expenses → ExpensesPage
+- Gate: canViewExpenses() — redirects to / if denied
+- Sub-tabs gated independently:
+  - Payees: EXPENSES_PAYEES_VIEW / EXPENSES_PAYEES_MANAGE
+  - Categories: EXPENSES_CATEGORIES_VIEW / EXPENSES_CATEGORIES_MANAGE
+- Company-wide vs own-only query:
+  - Owner or EXPENSES_COMPANY_MANAGE → expenses.where("companyId", "==", companyId)
+  - Otherwise → expenses.where("userId", "==", uid)
+
+
+1.5 FIRESTORE COLLECTIONS & DOCUMENT MODEL
+--------------------------------------------------------------------------------
+
+Primary collections (Expense domain):
+
+Collection            | Purpose
+----------------------|------------------------------------------
+expenses              | Core expense documents
+expenseReturns        | Append-only refund/cashback events
+vendors               | Payee directory (Vendor)
+expenseCategories     | Category directory (ExpenseCategory)
+expenseCategoryInit   | One-time default category seed marker
+bankAccounts          | Source of funds; balance updated on expense CRUD
+
+Related finance collections (cross-module):
+
+Collection                  | Relationship to expenses
+----------------------------|------------------------------------------
+bankTransfers               | May reference expenseId
+bankDeposits,               | Reports/cashflow only
+bankReconciliations         |
+loans, loanRepayments       | Separate receivable model (NOT expenses)
+invoices                    | Revenue side; Reports cashflow context
+activity                    | Audit log for expense CRUD/returns
+
+Expense document structure (current):
+
+Core fields (always used by staff):
+- Identity: id, userId, companyId
+- Financial: amount, currency, currencySymbol, bankAccountId, bankAccountName
+  (denormalized)
+- Operational: title, description, category (STRING, not FK), date, createdAt
+- Payee: vendorId?, vendorName, oneTimeVendor?
+- Tagging: isMonthlyExpense? (filter-only recurring marker)
+
+Returns (optional, backward compatible):
+- Planning: expectedReturnAvailable, expectedReturnAmount, expectedReturnDate,
+  expectedReturnNotes
+- Cached aggregates: totalReturnedAmount, returnStatus (recomputable from expenseReturns)
+
+ExpenseReturn document structure:
+
+Append-only money-in event:
+- Links: expenseId, companyId, userId
+- Financial: amount, returnType, receivedDate, destination bank fields
+- Denormalized: expenseTitle, destinationBankAccountName
+- Original expense amount is NEVER reduced — net is computed at read time
+
+
+1.6 EXISTING RELATIONSHIPS & BUSINESS LOGIC
+--------------------------------------------------------------------------------
+
+┌─────────────┐     debits      ┌──────────────┐
+│ bankAccounts│◄────────────────│   expenses   │
+└─────────────┘                 └──────┬───────┘
+       ▲                               │
+       │ credits                       │ 1:N
+       │                               ▼
+┌─────────────┐                 ┌──────────────┐
+│expenseReturns│◄──linked───────│ expenseId    │
+└─────────────┘                 └──────────────┘
+
+vendors ──(optional FK)──► expenses.vendorId
+expenseCategories ──(name only)──► expenses.category (string copy)
+
+Critical invariants (production):
+1. Expense create = Firestore transaction: write expense + decrement bank balance
+2. Expense edit = transaction adjusting bank balance delta (same or different account)
+3. Expense delete = restore bank balance
+4. Returns only if expectedReturnAvailable === true; cumulative returns ≤ expense amount
+5. Edit cannot reduce amount below already-returned total
+6. Category rename propagates to expenses via renameCategoryOnExpenses
+7. Payee delete does NOT cascade to expenses (stored vendorName preserved)
+
+
+1.7 EXPENSE CREATION & EDITING FLOW (STAFF WORKFLOW)
+--------------------------------------------------------------------------------
+
+Create:
+1. Title, category (from directory), bank account, payee (directory or one-time),
+   amount, date, description
+2. Optional: isMonthlyExpense, expected return block (planning only)
+3. Validates bank balance (optional picker balance permission)
+4. Atomic transaction: expense doc + bank debit
+5. Activity log: expense_created
+
+Edit:
+1. Same form; bank balance adjusted via applyExpenseEditBankBalanceUpdates
+2. Return aggregates stripped from update payload (owned by return service)
+3. Activity log: expense_updated
+
+Daily staff mental model: "Record money out from a bank account to a payee for a
+category." Simple, fast, no business dimensions.
+
+
+1.8 RECURRING, REFUNDS, MONTHLY TRACKING
+--------------------------------------------------------------------------------
+
+Feature              | Implementation              | Effect on money
+---------------------|-----------------------------|------------------
+isMonthlyExpense     | Boolean tag                 | None — filter/stat only
+Expected return      | Planning fields on expense  | None until return recorded
+Record return        | expenseReturns + bank credit| Real money movement
+Return gating        | expectedReturnAvailable     | Business rule
+
+
+1.9 PAYEE & CATEGORY MANAGEMENT
+--------------------------------------------------------------------------------
+
+- Payees (vendors): Company-scoped directory; CRUD in Expenses tab; VIEW/MANAGE permissions
+- Categories (expenseCategories): Company-scoped; auto-seeded defaults once; sort order;
+  rename updates expense rows
+- Important: Expenses store category as plain STRING, not categoryId — decoupled for
+  legacy compatibility
+
+
+1.10 FILTERING, SEARCH & STATISTICS (EXPENSES PAGE)
+--------------------------------------------------------------------------------
+
+Filters (client-side on loaded snapshot):
+- Period: week, month, last month, year, all, custom
+- Bank account, category, payee, monthly tag, return status, amount min/max
+- Full-text search: title, description, category, payee
+- Filter dropdown options derived from loaded expense list only (no orphan DB values)
+
+Statistics (computed in-page, not persisted):
+- Count, USD gross (via live exchange rates API), returns, net
+- Per-currency breakdown
+- Top category (USD-weighted)
+- NO charts on Expenses page — gradient stat cards only
+
+
+1.11 DASHBOARD INTEGRATION
+--------------------------------------------------------------------------------
+
+DashboardPage independently:
+- Subscribes to same expense query pattern (company vs user scope)
+- Subscribes to expenseReturns when permitted
+- Computes "This month expenses" via aggregateExpensesByCurrency + buildFinanceStatDisplay
+- Permissions: DASHBOARD_VIEW_MONTHLY_EXPENSES, EXPENSES_VIEW_USD_TOTAL,
+  EXPENSES_RETURNS_VIEW
+- Finance snapshot section includes loans/returns/spend alongside expenses
+
+
+1.12 REPORTING ENGINE INTEGRATION (EXISTING)
+--------------------------------------------------------------------------------
+
+ReportsPage:
+- Loads ALL company-scoped documents for: expenses, returns, loans, repayments,
+  deposits, reconciliations, accounts, invoices, transfers
+- Filters by date range IN MEMORY
+- Tabs: cashflow, expenses, returns, loans, deposits, reconciliations, accounts, integrity
+- Export: downloadCsv() — permission canExportReports
+- Expense export columns: date, title, category, payee, amount, currency, account, etc.
+- Cashflow aggregation combines expenses as "money out"
+- NO BI dimensions today
+- NO server-side aggregation — full collection load per company
+
+
+1.13 EXCEL/CSV EXPORT
+--------------------------------------------------------------------------------
+
+- Utility: utils/csvExport.ts (UTF-8 BOM for Excel)
+- Used by Reports page per tab
+- Extensible pattern: headers array + rows array — BI can add columns without changing
+  export engine
+
+
+1.14 CHARTS
+--------------------------------------------------------------------------------
+
+- Expenses module: NO charts
+- Dashboard: stat cards, call activity, lead widgets — not expense charts
+- Reports: tabular summaries, not chart library
+- BI charts would be net-new capability, not a redesign of existing chart system
+
+
+1.15 EXISTING "BUSINESS" & "CAMPAIGN" CONCEPTS (DO NOT CONFUSE)
+--------------------------------------------------------------------------------
+
+Entity       | Collection  | Meaning today
+-------------|-------------|--------------------------------------------------
+Business     | businesses  | CRM sub-entity under a Customer (linked from leads)
+Campaign     | campaigns   | Sales/marketing campaign for leads/outreach
+CampaignTag  | campaign tags | Lead tagging
+
+These are CRM/sales concepts, NOT financial cost-center / project accounting.
+A BI layer must NOT overload these without explicit bridging.
+
+
+1.16 SECURITY MODEL (FIRESTORE RULES)
+--------------------------------------------------------------------------------
+
+- Expenses: read if own row OR company scope (owner / expenses_company_manage)
+- Create: authenticated, userId == auth.uid, valid companyId
+- Update: cannot change userId; same read access
+- Returns: append-only (no update rule)
+- Vendors/categories: company-scoped via canAccessCompanyData
+- App enforces granular permissions; rules enforce tenant isolation
+
+
+1.17 STATE MANAGEMENT PATTERN SUMMARY
+--------------------------------------------------------------------------------
+
+Firebase onSnapshot ──► React useState ──► useMemo (filters/stats) ──► UI
+                              │
+                              └──► Firestore transactions (writes)
+
+No global expense store. Dashboard and Reports duplicate expense loading logic
+independently.
+
+
+================================================================================
+STEP 2 — ARCHITECTURE REVIEW
+================================================================================
+
+2.1 STRENGTHS
+--------------------------------------------------------------------------------
+
+1. Financial integrity first — bank balance changes are transactional; returns are
+   append-only events. Correct foundation for an ERP.
+2. Backward compatibility discipline — optional fields, cached aggregates with
+   recompute path, legacy companyId backfill.
+3. Mature permission model — granular, role-based, split between daily ops vs finance admin.
+4. Clear separation: Loans ≠ Expenses — prevents accounting corruption.
+5. Denormalization for UX — bank names, payee names, currency on documents reduce reads.
+6. Shared finance utilities — financeCurrencyDisplay abstracts multi-currency presentation.
+7. Reporting export pipeline — simple, reusable CSV layer.
+8. Company tenancy pattern — companyId on documents is consistent and extensible.
+
+
+2.2 WEAKNESSES
+--------------------------------------------------------------------------------
+
+1. God component — ExpensesPage.tsx mixes UI, validation, Firestore I/O, stats, permissions.
+2. No expense domain service — business rules scattered in page + ExpenseReturnService only.
+3. Duplicated data loading — Expenses, Dashboard, Reports each load expenses independently.
+4. Client-side aggregation at company scale — Reports loads entire collections; will degrade.
+5. Category as string — flexible for staff, weak for BI joins and rename edge cases at scale.
+6. No attribution model — cannot answer "spend by project/campaign/cost center".
+7. CRM "Business" naming collision — semantic risk when introducing BI or business unit.
+8. No materialized rollups — every report recomputes from raw documents.
+
+
+2.3 SCALABILITY ASSESSMENT (CURRENT)
+--------------------------------------------------------------------------------
+
+Dimension              | Current limit      | Bottleneck
+-----------------------|--------------------|----------------------------------
+Expenses per company   | Low thousands OK   | Full snapshot listeners
+Reports                | Low thousands OK   | Load-all + in-memory filter
+Real-time UX           | Good for SMB       | Listener fan-out
+Multi-company SaaS     | Supported          | Per-company isolation works
+BI queries             | Not supported      | No dimension index path
+
+
+2.4 EXTENSIBILITY ASSESSMENT
+--------------------------------------------------------------------------------
+
+Easy to extend without breaking:
+- Optional fields on Expense (already proven pattern)
+- New collections linked by expenseId
+- New Reports tabs/columns via client join
+- New permissions in existing matrix
+
+Hard to extend without migration:
+- Normalized category FK
+- Multi-dimensional splits on one expense
+- Cross-module ROI at transaction level
+
+
+2.5 FUTURE LIMITATIONS (IF UNCHANGED)
+--------------------------------------------------------------------------------
+
+- Cannot do initiative-level P&L
+- Cannot allocate one expense across multiple projects
+- Cannot tie expense to CRM campaign ROI without bridge layer
+- Reports will hit memory/time limits at ~50k–100k+ rows per company
+- Dashboard widgets cannot filter by business dimension
+
+
+2.6 WHAT MUST NEVER CHANGE (PRODUCTION CONTRACTS)
+--------------------------------------------------------------------------------
+
+1. Expense create/edit/delete bank transaction semantics
+2. expenseReturns append-only event model
+3. Existing expense document fields and their meaning for legacy rows
+4. Default expense form fields for staff without BI permission
+5. Loans remaining separate from expenses
+6. Permission defaults for existing roles (BI must be opt-in)
+7. CSV export of core expense columns (BI columns may be additive only)
+
+
+2.7 WHAT MUST REMAIN BACKWARD COMPATIBLE
+--------------------------------------------------------------------------------
+
+- All expenses without BI attribution continue to work and report as today
+- Category/payee string model stays valid
+- Return logic unchanged
+- Dashboard "This month expenses" unchanged unless user opts into BI views
+- Firestore rules for expenses unchanged in meaning (BI in separate collections)
+
+
+================================================================================
+PROJECT GOAL
+================================================================================
+
+Introduce a new Business Intelligence Layer that:
+
+- Does NOT redesign the Expense module
+- Sits ON TOP of the existing architecture
+- Lets current users continue using Expenses exactly as today
+- Gives business users advanced tracking capabilities
+
+
+================================================================================
+BUSINESS INTELLIGENCE EXAMPLES (TARGET CAPABILITIES)
+================================================================================
+
+- Projects
+- Business Initiatives
+- Marketing Campaigns
+- Client Acquisition
+- Cost Centers
+- Stages
+- Revenue Attribution
+- ROI Tracking
+- Tags
+- Investment Tracking
+- Future Business Units
+
+
+================================================================================
+UX ANALYSIS — KEEPING THE EXPENSE FORM SIMPLE
+================================================================================
+
+VERY IMPORTANT: Current staff use the expense form daily. UI must remain simple.
+Business-related fields should only appear when required.
+
+
+OPTION A — Expense Type: Personal / Business
+--------------------------------------------------------------------------------
+
+Pros:
+- Simple binary
+- One click
+
+Cons:
+- Too coarse for Projects, Campaigns, Cost Centers, ROI
+- Forces every user to classify every expense
+- "Personal" meaningless in B2B company context
+- Becomes required field → staff friction
+
+Verdict: INSUFFICIENT for stated BI goals; adds daily friction.
+
+
+OPTION B — Collapsible "Advanced Business Tracking"
+--------------------------------------------------------------------------------
+
+Pros:
+- Keeps default form clean
+- Can hold many fields
+- Familiar pattern
+
+Cons:
+- Still visible/teased to all users
+- Collapsed sections often become required by policy creep
+- Easy to overload with 10+ dropdowns over time
+
+Verdict: Acceptable as Phase 3 for BI-permitted users only, not default for all staff.
+
+
+OPTION C — RECOMMENDED: Progressive Attribution Model (Hybrid)
+--------------------------------------------------------------------------------
+
+Three tiers of UX — same architecture underneath:
+
+Tier C1 — Silent default
+  Who: Staff
+  When: Every expense
+  UX: ZERO change to current form
+
+Tier C2 — Post-hoc attribution
+  Who: Finance / managers
+  When: After expense exists
+  UX: "Assign to business tracking" on detail view or separate BI workspace
+
+Tier C3 — Inline optional
+  Who: BI-enabled creators
+  When: At create time (optional)
+  UX: Single checkbox "Track for business" → reveals ONE primary dimension picker;
+      advanced splits in BI module
+
+Why Option C is best:
+- Preserves daily staff speed (#1 constraint)
+- Business users get depth without complicating the default path
+- Matches existing pattern: expectedReturnAvailable, isMonthlyExpense
+- Attribution can be corrected later (important for ERP accuracy)
+- Supports multi-module reuse (invoices, payroll later) via same attribution layer
+
+RECOMMENDATION: Option C — not A, not B alone.
+
+
+================================================================================
+STEP 3 — DESIGN THE BUSINESS INTELLIGENCE LAYER
+================================================================================
+
+3.1 WHAT THE BI LAYER SHOULD BE
+--------------------------------------------------------------------------------
+
+Answer: Shared infrastructure + separate admin/analytics module — NOT part of the
+Expense module core.
+
+Approach comparison:
+
+Part of Expenses module          → REJECT: Couples AP workflow to strategic analytics
+Separate module only             → PARTIAL: Good UX but needs shared data model
+Shared infrastructure + BI UI    → RECOMMENDED: One attribution model for all ERP money
+Pure tags on expense doc         → REJECT: Doesn't scale to splits, ROI, cross-module
+
+
+3.2 BI LAYER RESPONSIBILITIES
+--------------------------------------------------------------------------------
+
+Owns:
+- Dimension definitions (Project, Initiative, Cost Center, etc.)
+- Dimension instances (Project Alpha, Q1 Acquisition)
+- Attributions linking source records → dimensions (with optional % split)
+- BI-specific permissions
+- BI dashboards/reports views (or extends Reports via join)
+- Optional aggregate caches
+
+Does NOT own:
+- Expense amount, bank debit, payee, category
+- Return/refund mechanics
+- Bank balance integrity
+
+
+3.3 INTEGRATION PATTERN: SIDECAR ATTRIBUTION
+--------------------------------------------------------------------------------
+
+expenses/{expenseId}          biAttributions/{attributionId}
+     │                              │
+     │                              ├── sourceModule: "expense"
+     │                              ├── sourceId: expenseId
+     │                              ├── companyId
+     │                              ├── dimensionType: "project"
+     │                              ├── dimensionId: "..."
+     │                              ├── allocationPct: 100
+     │                              └── effectiveAmount: (cached optional)
+     │
+     └── (no required BI fields)
+
+Staff never need to touch this for normal expenses.
+
+
+================================================================================
+STEP 4 — ENTITY DESIGN (CONCEPTUAL)
+================================================================================
+
+4.1 CORE ENTITIES
+--------------------------------------------------------------------------------
+
+1. BiDimensionType (configuration)
+   Why: Companies define which axes matter (Project, Campaign, Cost Center, etc.)
+   Reusable: Yes — ERP-wide
+   Example: code, label, moduleScope[], allowSplit, isRequiredForModule, sortOrder, status
+
+2. BiDimension (instance / directory entry)
+   Why: Actual trackable objects ("Website Redesign", "Google Ads Q1", "Engineering OPEX")
+   Reusable: Yes
+   Relations: companyId; optional parentDimensionId for hierarchy
+   Note: Distinct from CRM Business and sales Campaign — may link via externalRef
+
+3. BiAttribution (junction — heart of BI)
+   Why: Links any financial source row to dimensions without polluting source documents
+   Reusable: Yes — same shape for expense, invoice, loan, payroll
+   Key fields (conceptual):
+   - sourceModule (enum: expense, invoice, loan, ...)
+   - sourceId
+   - companyId
+   - dimensionType + dimensionId
+   - allocationPct (default 100; enables split)
+   - allocatedAmount + currency (optional cache)
+   - attributedBy, createdAt, notes
+   - status (active, superseded) for audit trail
+
+4. BiInitiative (program container — optional but recommended)
+   Why: Groups projects/campaigns for executive view ("Client Acquisition 2026")
+   Reusable: Yes
+   Relations: 1:N to BiDimension; optional budget/target fields
+
+5. BiTag (lightweight cross-cutting labels)
+   Why: Flexible classification without full hierarchy
+   Reusable: Yes
+   Relations: M:N via BiTagAssignment (sourceModule + sourceId + tagId)
+
+6. BiBudget / BiTarget (future-facing)
+   Why: ROI and variance reporting (spend vs budget vs attributed revenue)
+   Reusable: Yes
+   Relations: Linked to BiDimension or BiInitiative; not required for Phase 1
+
+7. BiRevenueLink (attribution to revenue — future)
+   Why: ROI = attributed cost vs attributed revenue
+   Reusable: Yes
+   Relations: Links BiDimension to invoice/payment records
+
+8. BiAggregateDaily / BiAggregateMonthly (scale entity — later)
+   Why: Pre-computed rollups for millions of rows
+   Reusable: Yes
+   Relations: companyId + dimensionId + period + currency + sourceModule
+   Note: Optional; raw attributions remain source of truth
+
+
+4.2 ENTITY RELATIONSHIP (CONCEPTUAL)
+--------------------------------------------------------------------------------
+
+BiInitiative
+    │
+    └──► BiDimension (type=project, campaign, cost_center, ...)
+              │
+              ▲
+              │ M:N via allocation
+              │
+BiAttribution ◄──── Source Record (Expense, Invoice, Loan, ...)
+    │
+    └──► BiDimensionType (defines axis)
+
+BiTag ──► BiTagAssignment ──► Source Record
+
+
+4.3 MAPPING BI EXAMPLES → ENTITIES
+--------------------------------------------------------------------------------
+
+Business concept        | Entity
+------------------------|--------------------------------------------------
+Projects                | BiDimension (type=project)
+Business Initiatives    | BiInitiative + linked dimensions
+Marketing Campaigns     | BiDimension (type=marketing_campaign) + CRM Campaign link
+Client Acquisition      | BiInitiative or top-level BiDimension
+Cost Centers            | BiDimension (type=cost_center)
+Stages                  | BiDimension (type=stage) or hierarchical child
+Revenue Attribution     | BiRevenueLink (future)
+ROI Tracking            | Computed from attributions + revenue links + budgets
+Tags                    | BiTag
+Investment Tracking     | BiDimension (type=investment) or Assets module link
+Future Business Units   | BiDimension (type=business_unit) with hierarchy
+
+
+================================================================================
+STEP 5 — REPORTING INTEGRATION (NO REDESIGN)
+================================================================================
+
+5.1 PRINCIPLE: EXTEND, DON'T REPLACE
+--------------------------------------------------------------------------------
+
+Existing pipeline stays:
+
+Load raw docs → filter inRange() → aggregate in memory → table UI → downloadCsv()
+
+BI integration adds a join layer:
+
+expenses[] + biAttributions[] + biDimensions[]
+         ↓
+   enrichedExpenseRows (for display/export only)
+
+
+5.2 REPORTS PAGE — ADDITIVE CHANGES ONLY
+--------------------------------------------------------------------------------
+
+Existing tab          | BI enhancement
+----------------------|--------------------------------------------------
+Expenses              | Optional columns: Project, Initiative, Cost Center, Tags
+Cashflow              | Optional filter: by dimension
+New tab: BI           | Pivot-style summaries by dimension (tables first)
+CSV export            | Add BI columns at end (backward compatible)
+
+
+5.3 DASHBOARD — ADDITIVE WIDGETS
+--------------------------------------------------------------------------------
+
+- Do NOT change "This month expenses" card behavior
+- Add optional cards: "Spend by Project (month)", "Initiative burn rate"
+- Permission-gated, separate from staff dashboard
+
+
+5.4 FILTERING — REUSE PATTERN
+--------------------------------------------------------------------------------
+
+Expenses page filter model (client-side on loaded set) can be mirrored in BI views:
+- BI workspace loads attributions + dimensions once
+- Joins to expenses in memory (Phase 1)
+- Same "options from loaded data" pattern used for category/payee filters
+
+
+5.5 EXCEL EXPORT
+--------------------------------------------------------------------------------
+
+downloadCsv(headers, rows) accepts new headers without engine change:
+- Core columns unchanged
+- BI columns appended: Project, Initiative, Cost Center, Allocation %, Tags
+
+
+================================================================================
+STEP 6 — 10-YEAR SCALABILITY DESIGN
+================================================================================
+
+6.1 GROWTH SCENARIOS
+--------------------------------------------------------------------------------
+
+- Millions of expense records
+- Thousands of projects/campaigns
+- Hundreds of companies (multi-tenant SaaS)
+- Multiple business units per company
+- Full ERP (payroll, assets, subscriptions)
+
+
+6.2 SCALING STRATEGY (PHASED)
+--------------------------------------------------------------------------------
+
+Years 0–2 (< 25k expenses/company):
+  Sidecar attributions; client-side join in Reports/BI views
+
+Years 2–5 (25k–250k):
+  Materialized BiAggregateMonthly; paginated expense queries by date;
+  attribution loaded by range
+
+Years 5–10 (250k–millions):
+  Export pipeline to analytics warehouse (BigQuery); Firestore holds operational +
+  recent aggregates; heavy BI queries off OLAP
+
+
+6.3 FIRESTORE-SPECIFIC SCALE TACTICS
+--------------------------------------------------------------------------------
+
+1. Never require BI fields on expense queries — keeps existing indexes valid
+2. Query attributions by companyId + sourceModule + dateRange
+3. Denormalize lightly on attribution: sourceDate, sourceAmount, sourceCurrency
+4. Composite indexes only on BI collections — don't touch expense indexes
+5. Partition by time in aggregates for rollup writes
+6. Read cost control: BI users load attributions; staff load expenses only (unchanged)
+7. Offline: BI attribution is non-critical path for field staff; optional lazy load
+
+
+6.4 MULTI-COMPANY / MULTI-BU
+--------------------------------------------------------------------------------
+
+- All BI entities carry companyId (same as today)
+- BiDimension hierarchy encodes business units
+- Super-admin analytics patterns exist in adminAnalyticsService — BI stays company-scoped
+
+
+================================================================================
+STEP 7 — REACT + FIREBASE CONSIDERATIONS
+================================================================================
+
+7.1 REACT STRUCTURE (FUTURE — GUIDANCE ONLY)
+--------------------------------------------------------------------------------
+
+pages/app/expenses/ExpensesPage.tsx     ← slim orchestrator (eventual refactor)
+services/expenseService.ts              ← extract write rules from page
+services/bi/
+  biDimensionService.ts
+  biAttributionService.ts
+  biJoinUtils.ts                          ← enrich sources with attributions
+pages/app/business-intelligence/          ← new module UI
+hooks/useBiAttributions.ts
+
+Do NOT refactor ExpensesPage in Phase 1. Add BI as parallel module first.
+
+
+7.2 FIRESTORE DOCUMENT MODEL PRINCIPLES
+--------------------------------------------------------------------------------
+
+- Flat documents, explicit IDs, companyId on everything
+- Append-only attribution history (supersede, don't delete) for audit
+- Optional denormalized caches on attributions for reporting
+- No arrays of unbounded dimension IDs on expense doc
+
+
+7.3 QUERY LIMITATIONS — DESIGN AROUND THEM
+--------------------------------------------------------------------------------
+
+- Max 30 disjunction on in queries — batch source ID lookups
+- Inequality filters require composite indexes — prefer equality on companyId +
+  filter date in client initially
+- Avoid cross-collection joins in Firestore — join in application layer (already done)
+
+
+7.4 SECURITY RULES STRATEGY
+--------------------------------------------------------------------------------
+
+- BI collections: same canAccessCompanyData(companyId) pattern
+- Attribution write: separate permission (bi_attributions_manage) — not tied to
+  expenses_create
+- Staff with expense create but no BI permission: can create expenses, cannot create
+  attributions
+
+
+7.5 MAINTAINABILITY
+--------------------------------------------------------------------------------
+
+- Single attribution schema for all modules — one join utility, one export enricher,
+  one aggregate job (future)
+- Naming: use Bi* prefix to avoid collision with CRM Business and sales Campaign
+
+
+================================================================================
+COMPLETE ARCHITECTURE DIAGRAM (ASCII)
+================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         PRODUCTION ERP (TODAY)                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  React App (HashRouter + AppLayout + Permissions + useAuth)                   │
+│                                                                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │  Dashboard  │  │  Expenses   │  │   Loans     │  │   Reports   │         │
+│  │  (widgets)  │  │  Page ~3k   │  │   Page      │  │  (CSV/tabs) │         │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
+│         │                │                │                │                 │
+│         └────────────────┴────────────────┴────────────────┘                 │
+│                                   │                                           │
+│                    Real-time Firestore listeners + transactions               │
+└───────────────────────────────────┼──────────────────────────────────────────┘
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         FIRESTORE (FINANCE CORE)                              │
+│                                                                               │
+│  expenses ──────► bankAccounts (debit/credit via transactions)                │
+│     │                                                                         │
+│     └──► expenseReturns (append-only refunds)                                │
+│                                                                               │
+│  vendors | expenseCategories | loans | loanRepayments | invoices | ...       │
+└───────────────────────────────────┬──────────────────────────────────────────┘
+                                    │
+                    optional sidecar links (sourceModule + sourceId)
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│              BUSINESS INTELLIGENCE LAYER (PROPOSED — ON TOP)                  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐        │
+│  │ BiDimensionType  │───►│   BiDimension    │◄───│   BiInitiative   │        │
+│  │ (project, CC,    │    │ (instances)      │    │ (programs)       │        │
+│  │  campaign, ...)  │    └────────▲─────────┘    └──────────────────┘        │
+│  └──────────────────┘             │                                          │
+│                                   │                                          │
+│                          ┌────────┴─────────┐                                │
+│                          │  BiAttribution   │◄─── BiTag / BiTagAssignment   │
+│                          │  (junction)      │                                │
+│                          └────────┬─────────┘                                │
+│                                   │                                          │
+│  ┌────────────────────────────────┴────────────────────────────────────┐  │
+│  │ BI Module UI (admin + finance)                                         │  │
+│  │  • Dimension CRUD                                                        │  │
+│  │  • Post-hoc assignment on expense detail                                 │  │
+│  │  • Initiative dashboards                                                 │  │
+│  │  • Optional inline "Track for business" (permission-gated)               │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                                                                               │
+│  Future: BiAggregateMonthly | BiRevenueLink | BiBudget                       │
+└───────────────────────────────────┬──────────────────────────────────────────┘
+                                    │ enrich rows (join only)
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    EXISTING REPORTING ENGINE (UNCHANGED CORE)                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  ReportsPage: load → filter inRange → aggregate → tables → downloadCsv()       │
+│  Dashboard: stat cards + financeCurrencyDisplay (additive BI widgets later)  │
+│  + NEW: optional BI columns / BI tab / dimension filters                     │
+└───────────────────────────────────┬──────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      FUTURE ERP MODULES (SAME BI LAYER)                       │
+│                                                                               │
+│   Invoices ──► BiAttribution    Payroll ──► BiAttribution                    │
+│   Subscriptions ──► BiAttribution    Assets ──► BiAttribution                │
+│   CRM Deals ──► BiRevenueLink     Investments ──► BiDimension                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+SIMPLIFIED FLOW:
+
+Current Expense Module
+        ↓
+Business Intelligence Layer (sidecar attributions)
+        ↓
+Reporting Engine (join + additive columns)
+        ↓
+Future ERP Modules (same BiAttribution schema)
+
+
+================================================================================
+PHASED IMPLEMENTATION ROADMAP (SAFEST ORDER)
+================================================================================
+
+Phase 0 — Architecture & Governance (No user-facing change)
+  - Finalize entity names (Bi* vs CRM Business)
+  - Define permission keys (bi_view, bi_dimensions_manage, bi_attributions_manage)
+  - Document invariants and backward-compatibility contract
+  Risk: None
+
+Phase 1 — BI Infrastructure + Admin Module (No expense form change)
+  - Dimension types + dimension directory CRUD
+  - Initiative/program containers
+  - BI sidebar section (Finance group or separate "Business Intelligence")
+  Staff expense workflow: UNCHANGED
+  Risk: Low — new collections only
+
+Phase 2 — Post-Hoc Attribution (Finance users)
+  - On expense detail view (not create form): "Assign business tracking"
+  - Create/read/update BiAttribution sidecar records
+  - Activity log for attribution changes
+  Staff expense workflow: UNCHANGED
+  Risk: Low — optional UI on detail modal only
+
+Phase 3 — Reporting Integration (Additive)
+  - Load attributions in Reports alongside expenses
+  - Append BI columns to expense CSV export
+  - New "Business Intelligence" report tab (tables first)
+  Risk: Low — export columns additive; core columns unchanged
+
+Phase 4 — Optional Inline UX (Permission-gated only)
+  - For users with bi_attributions_manage: checkbox "Track for business" on create/edit
+  - Reveals ONE primary dimension picker; advanced splits in BI module
+  Staff without permission: still zero change
+  Risk: Medium — requires careful UX guardrails
+
+Phase 5 — Dashboard BI Widgets (Opt-in)
+  - New cards: spend by project/initiative
+  - Do not alter existing monthly expense card
+  Risk: Low if separate widgets
+
+Phase 6 — Cross-Module Attribution
+  - Invoices, then loans, deposits, payroll, etc. using same BiAttribution schema
+  Risk: Medium — module-by-module rollout
+
+Phase 7 — Scale Layer (When data demands it)
+  - BiAggregateMonthly materialized rollups
+  - Paginated date-range queries
+  - Optional analytics warehouse export
+  Risk: Low to existing users if aggregates are derived/cache only
+
+Recommended first implementation: Phase 1 + Phase 2
+
+
+================================================================================
+FINAL RECOMMENDATIONS SUMMARY
+================================================================================
+
+Decision              | Recommendation
+----------------------|--------------------------------------------------
+BI placement          | Shared infrastructure + separate module
+Expense form          | No change for default staff (Option C)
+Data model            | Sidecar BiAttribution, not embedded expense fields
+CRM Business/Campaign | Bridge via reference, do not merge
+Reporting             | Join + additive CSV columns, no engine redesign
+Scale path            | Client join → monthly aggregates → warehouse
+First implementation  | Phase 1–2 (dimensions + post-hoc assignment)
+
+
+================================================================================
+KEY SOURCE FILES REFERENCED IN ANALYSIS
+================================================================================
+
+pages/app/ExpensesPage.tsx          — Main expense UI and business logic
+pages/app/ReportsPage.tsx           — Reporting engine
+pages/app/DashboardPage.tsx         — Dashboard expense widgets
+services/expenseReturnService.ts    — Returns/refunds
+services/expenseCategoryService.ts  — Categories
+services/vendorService.ts           — Payees
+services/businessService.ts         — CRM Business (NOT financial BI)
+utils/expenseCompanyScope.ts        — Company scoping
+utils/financeCurrencyDisplay.tsx    — Multi-currency display
+utils/csvExport.ts                  — CSV/Excel export
+config/permissions.ts               — Granular permissions
+types.ts                            — Expense, ExpenseReturn, Vendor, etc.
+firestore.rules                     — Security rules for expenses domain
+layouts/AppLayout.tsx               — App shell
+App.tsx                             — Routing
+
+================================================================================
+END OF DOCUMENT
+================================================================================
