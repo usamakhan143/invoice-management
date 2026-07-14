@@ -4,6 +4,7 @@ import { DECISION_STATUS_LABELS, DECISION_TYPE } from "../../../../bos/constants
 import { formatBosDate } from "../../../../utils/bosFormat";
 import { BOS_FIELD_CLASS } from "../../../../utils/bosFormat";
 import BosFormFieldLabel from "../BosFormFieldLabel";
+import { BOS_GHOST_BTN, BOS_PRIMARY_BTN_SM } from "./bosButtonClasses";
 import type { DecisionType } from "../../../../bos/constants/decisionStatus";
 
 interface BosDecisionTimelineProps {
@@ -109,8 +110,8 @@ const BosDecisionTimeline: React.FC<BosDecisionTimelineProps> = ({
                     </label>
                   </div>
                   <div className="mt-3 flex justify-end gap-2">
-                    <button type="button" onClick={onCancelEdit} className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
-                    <button type="submit" disabled={actionLoading} className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-gray-900">Save</button>
+                    <button type="button" onClick={onCancelEdit} className={BOS_GHOST_BTN}>Cancel</button>
+                    <button type="submit" disabled={actionLoading} className={BOS_PRIMARY_BTN_SM}>Save</button>
                   </div>
                 </form>
               ) : (

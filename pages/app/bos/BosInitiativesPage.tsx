@@ -15,7 +15,7 @@ import { buildInitiativeDetailPath } from "../../../bos/config/routes";
 import { BOS_FIELD_CLASS, formatBosDate, parseBosPlannedDate } from "../../../utils/bosFormat";
 import { INITIATIVE_STATUS_LABELS } from "../../../bos/constants/initiativeStatus";
 import Spinner from "../../../components/Spinner";
-import BosAccessDenied from "./BosAccessDenied";
+import { BOS_SECONDARY_BTN } from "./initiativeDetail/bosButtonClasses";
 import BosFormFieldLabel from "./BosFormFieldLabel";
 import BosMilestoneDraftEditor from "./initiativeDetail/BosMilestoneDraftEditor";
 
@@ -209,7 +209,7 @@ const BosInitiativesPage: React.FC = () => {
           {canViewTemplates ? (
             <Link
               to="/bos/milestone-templates"
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+              className={BOS_SECONDARY_BTN}
             >
               Milestone templates
             </Link>

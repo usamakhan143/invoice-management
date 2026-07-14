@@ -1,34 +1,78 @@
 import type { BosMilestone } from "../domain/entities/milestone";
 import { MILESTONE_STATUS } from "../constants/milestoneStatus";
+import { milestoneReferenceLabel } from "../domain/milestoneNumbering";
+import { formatBosDate } from "../../utils/bosFormat";
 
 export interface MilestoneSituationRow {
   label: string;
   value: string;
+  emphasis?: "default" | "action" | "warning";
 }
 
 export interface MilestoneSituationSnapshot {
   completed: BosMilestone[];
-  active: BosMilestone | null;
+  inProgress: BosMilestone[];
+  planned: BosMilestone[];
+  ready: BosMilestone[];
   blocked: BosMilestone[];
+  skipped: BosMilestone[];
+  active: BosMilestone | null;
   next: BosMilestone | null;
-  overallProgressPercent: number;
   totalCount: number;
-  completedCount: number;
-  skippedCount: number;
+  upcomingDeadline: BosMilestone | null;
+  currentBlocker: string | null;
 }
 
-export interface MilestoneTimelineEvent {
+export type MilestoneExecutionEventKind =
+  | "milestone_started"
+  | "milestone_blocked"
+  | "milestone_completed"
+  | "milestone_skipped"
+  | "milestone_reopened";
+
+export interface MilestoneExecutionEvent {
   id: string;
-  kind: "milestone_created" | "milestone_started" | "milestone_completed" | "milestone_blocked" | "milestone_skipped";
-  businessDateMs: number;
-  title: string;
-  detail?: string;
+  kind: MilestoneExecutionEventKind;
+  /** Execution date — when the state change occurred in the business record. */
+  executionDateMs: number;
   milestoneId: string;
+  milestoneNumber?: string;
+  milestoneTitle: string;
+  actionLabel: string;
+  performedByUserId?: string;
+  notes?: string;
+  /** @deprecated Use structured fields */
+  title?: string;
+  /** @deprecated Use notes */
+  detail?: string;
   recordedAtMs?: number;
+}
+
+const EXECUTION_ACTION_LABELS: Record<MilestoneExecutionEventKind, string> = {
+  milestone_started: "Started",
+  milestone_blocked: "Blocked",
+  milestone_completed: "Completed",
+  milestone_skipped: "Skipped",
+  milestone_reopened: "Reopened",
+};
+
+function pushExecutionEvent(
+  events: MilestoneExecutionEvent[],
+  params: Omit<MilestoneExecutionEvent, "title" | "detail">,
+): void {
+  events.push({
+    ...params,
+    title: `${params.actionLabel}: ${params.milestoneTitle}`,
+  });
 }
 
 function sortBySequence(milestones: BosMilestone[]): BosMilestone[] {
   return [...milestones].sort((a, b) => a.sequence - b.sequence);
+}
+
+function formatMilestoneList(items: BosMilestone[]): string {
+  if (!items.length) return "None";
+  return items.map((m) => milestoneReferenceLabel(m)).join(", ");
 }
 
 export function computeMilestoneSituation(milestones: BosMilestone[]): MilestoneSituationSnapshot {
@@ -37,10 +81,11 @@ export function computeMilestoneSituation(milestones: BosMilestone[]): Milestone
   const completed = sorted.filter((m) => m.status === MILESTONE_STATUS.COMPLETED);
   const skipped = sorted.filter((m) => m.status === MILESTONE_STATUS.SKIPPED);
   const blocked = sorted.filter((m) => m.status === MILESTONE_STATUS.BLOCKED);
-  const active =
-    sorted.find((m) => m.status === MILESTONE_STATUS.IN_PROGRESS) ??
-    sorted.find((m) => m.status === MILESTONE_STATUS.READY) ??
-    null;
+  const inProgress = sorted.filter((m) => m.status === MILESTONE_STATUS.IN_PROGRESS);
+  const ready = sorted.filter((m) => m.status === MILESTONE_STATUS.READY);
+  const planned = sorted.filter((m) => m.status === MILESTONE_STATUS.PLANNED);
+
+  const active = inProgress[0] ?? ready[0] ?? null;
 
   const next =
     sorted.find(
@@ -50,119 +95,199 @@ export function computeMilestoneSituation(milestones: BosMilestone[]): Milestone
         m.status === MILESTONE_STATUS.IN_PROGRESS,
     ) ?? null;
 
-  const completedCount = completed.length + skipped.length;
-  const overallProgressPercent =
-    totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const withTargetDates = sorted.filter(
+    (m) =>
+      m.plannedEndDate !== undefined &&
+      m.status !== MILESTONE_STATUS.COMPLETED &&
+      m.status !== MILESTONE_STATUS.SKIPPED,
+  );
+  const upcomingDeadline =
+    withTargetDates.length > 0
+      ? [...withTargetDates].sort((a, b) => (a.plannedEndDate ?? 0) - (b.plannedEndDate ?? 0))[0]
+      : null;
+
+  const currentBlocker = blocked[0]?.blockedReason?.trim() || null;
 
   return {
     completed,
-    active,
+    inProgress,
+    planned,
+    ready,
     blocked,
+    skipped,
+    active,
     next,
-    overallProgressPercent,
     totalCount,
-    completedCount: completed.length,
-    skippedCount: skipped.length,
+    upcomingDeadline,
+    currentBlocker,
   };
 }
 
-export function buildMilestoneSituationRows(snapshot: MilestoneSituationSnapshot): MilestoneSituationRow[] {
-  const formatList = (items: BosMilestone[]) =>
-    items.length ? items.map((m) => m.title).join(", ") : "None";
-
-  return [
-    {
-      label: "Completed milestones",
-      value: snapshot.completed.length
-        ? formatList(snapshot.completed)
-        : snapshot.skippedCount > 0
-          ? "None (some skipped)"
-          : "None",
-    },
-    {
-      label: "Current active milestone",
-      value: snapshot.active?.title ?? "None",
-    },
-    {
-      label: "Blocked milestones",
-      value: formatList(snapshot.blocked),
-    },
-    {
-      label: "Next milestone",
-      value: snapshot.next?.title ?? "None",
-    },
-    {
-      label: "Overall progress",
-      value: snapshot.totalCount > 0 ? `${snapshot.overallProgressPercent}%` : "No milestones defined",
-    },
-  ];
+/** Action-oriented founder guidance from stored milestone states only. */
+export function buildNextFounderAction(
+  snapshot: MilestoneSituationSnapshot,
+  options?: { canManage?: boolean; initiativeClosed?: boolean },
+): string | null {
+  if (options?.initiativeClosed) return null;
+  if (snapshot.blocked.length > 0) {
+    return `Resolve blocker on:\n${milestoneReferenceLabel(snapshot.blocked[0])}`;
+  }
+  if (snapshot.inProgress.length > 0) {
+    return `Complete milestone:\n${milestoneReferenceLabel(snapshot.inProgress[0])}`;
+  }
+  if (snapshot.ready.length > 0) {
+    return `Start milestone:\n${milestoneReferenceLabel(snapshot.ready[0])}`;
+  }
+  if (snapshot.planned.length > 0) {
+    return `Start milestone:\n${milestoneReferenceLabel(snapshot.planned[0])}`;
+  }
+  if (snapshot.totalCount === 0) {
+    return options?.canManage ? "Define your first milestone" : null;
+  }
+  return "All milestones complete or skipped";
 }
 
-export function buildMilestoneTimelineEvents(milestones: BosMilestone[]): MilestoneTimelineEvent[] {
-  const events: MilestoneTimelineEvent[] = [];
+export function buildMilestoneSituationRows(
+  snapshot: MilestoneSituationSnapshot,
+  nextAction: string | null,
+): MilestoneSituationRow[] {
+  const rows: MilestoneSituationRow[] = [
+    {
+      label: "Completed",
+      value: formatMilestoneList(snapshot.completed),
+    },
+    {
+      label: "In progress",
+      value: formatMilestoneList(snapshot.inProgress),
+    },
+    {
+      label: "Planned",
+      value: formatMilestoneList([...snapshot.planned, ...snapshot.ready]),
+    },
+    {
+      label: "Blocked",
+      value: formatMilestoneList(snapshot.blocked),
+      emphasis: snapshot.blocked.length > 0 ? "warning" : "default",
+    },
+    {
+      label: "Next action",
+      value: nextAction ?? (snapshot.totalCount === 0 ? "Define your first milestone" : "None"),
+      emphasis: "action",
+    },
+  ];
+
+  if (snapshot.upcomingDeadline?.plannedEndDate) {
+    rows.push({
+      label: "Upcoming deadline",
+      value: `${milestoneReferenceLabel(snapshot.upcomingDeadline)} — ${formatBosDate(snapshot.upcomingDeadline.plannedEndDate)}`,
+    });
+  }
+
+  if (snapshot.currentBlocker) {
+    rows.push({
+      label: "Current blocker",
+      value: snapshot.currentBlocker,
+      emphasis: "warning",
+    });
+  }
+
+  return rows;
+}
+
+export function buildExecutionHistoryEvents(milestones: BosMilestone[]): MilestoneExecutionEvent[] {
+  const events: MilestoneExecutionEvent[] = [];
 
   for (const milestone of milestones) {
-    if (milestone.createdAt) {
-      events.push({
-        id: `${milestone.id}-created`,
-        kind: "milestone_created",
-        businessDateMs: milestone.createdAt,
-        title: `Milestone created: ${milestone.title}`,
+    if (milestone.reopenedAt !== undefined) {
+      pushExecutionEvent(events, {
+        id: `${milestone.id}-reopened`,
+        kind: "milestone_reopened",
+        executionDateMs: milestone.reopenedAt,
         milestoneId: milestone.id,
-        recordedAtMs: milestone.createdAt,
-      });
-    }
-
-    if (milestone.startedAt !== undefined) {
-      events.push({
-        id: `${milestone.id}-started`,
-        kind: "milestone_started",
-        businessDateMs: milestone.startedAt,
-        title: `Milestone started: ${milestone.title}`,
-        milestoneId: milestone.id,
+        milestoneNumber: milestone.milestoneNumber,
+        milestoneTitle: milestone.title,
+        actionLabel: EXECUTION_ACTION_LABELS.milestone_reopened,
+        performedByUserId: milestone.updatedById,
         recordedAtMs: milestone.updatedAt,
       });
     }
 
-    if (milestone.completedDate !== undefined) {
-      events.push({
-        id: `${milestone.id}-completed`,
-        kind: "milestone_completed",
-        businessDateMs: milestone.completedDate,
-        title: `Milestone completed: ${milestone.title}`,
+    if (milestone.startedAt !== undefined) {
+      pushExecutionEvent(events, {
+        id: `${milestone.id}-started`,
+        kind: "milestone_started",
+        executionDateMs: milestone.startedAt,
         milestoneId: milestone.id,
+        milestoneNumber: milestone.milestoneNumber,
+        milestoneTitle: milestone.title,
+        actionLabel: EXECUTION_ACTION_LABELS.milestone_started,
+        performedByUserId: milestone.startedByUserId ?? milestone.updatedById,
+        notes: milestone.startedNotes?.trim() || undefined,
         recordedAtMs: milestone.updatedAt,
       });
     }
 
     if (milestone.blockedAt !== undefined) {
-      events.push({
+      pushExecutionEvent(events, {
         id: `${milestone.id}-blocked`,
         kind: "milestone_blocked",
-        businessDateMs: milestone.blockedAt,
-        title: `Milestone blocked: ${milestone.title}`,
-        detail: milestone.blockedReason,
+        executionDateMs: milestone.blockedAt,
         milestoneId: milestone.id,
+        milestoneNumber: milestone.milestoneNumber,
+        milestoneTitle: milestone.title,
+        actionLabel: EXECUTION_ACTION_LABELS.milestone_blocked,
+        performedByUserId: milestone.updatedById,
+        notes: milestone.blockedReason,
+        recordedAtMs: milestone.updatedAt,
+      });
+    }
+
+    if (milestone.completedDate !== undefined) {
+      const noteParts = [
+        milestone.completionNotes?.trim(),
+        milestone.lessonsLearned?.trim()
+          ? `Lessons: ${milestone.lessonsLearned.trim()}`
+          : undefined,
+      ].filter(Boolean);
+      pushExecutionEvent(events, {
+        id: `${milestone.id}-completed`,
+        kind: "milestone_completed",
+        executionDateMs: milestone.completedDate,
+        milestoneId: milestone.id,
+        milestoneNumber: milestone.milestoneNumber,
+        milestoneTitle: milestone.title,
+        actionLabel: EXECUTION_ACTION_LABELS.milestone_completed,
+        performedByUserId: milestone.updatedById,
+        notes: noteParts.length ? noteParts.join("\n") : undefined,
         recordedAtMs: milestone.updatedAt,
       });
     }
 
     if (milestone.skippedAt !== undefined) {
-      events.push({
+      pushExecutionEvent(events, {
         id: `${milestone.id}-skipped`,
         kind: "milestone_skipped",
-        businessDateMs: milestone.skippedAt,
-        title: `Milestone skipped: ${milestone.title}`,
-        detail: milestone.skippedReason,
+        executionDateMs: milestone.skippedAt,
         milestoneId: milestone.id,
+        milestoneNumber: milestone.milestoneNumber,
+        milestoneTitle: milestone.title,
+        actionLabel: EXECUTION_ACTION_LABELS.milestone_skipped,
+        performedByUserId: milestone.updatedById,
+        notes: milestone.skippedReason,
         recordedAtMs: milestone.updatedAt,
       });
     }
   }
 
-  return events.sort((a, b) => a.businessDateMs - b.businessDateMs);
+  return events.sort((a, b) => b.executionDateMs - a.executionDateMs);
 }
 
+/** @deprecated Use buildExecutionHistoryEvents. */
+export function buildMilestoneTimelineEvents(milestones: BosMilestone[]): MilestoneExecutionEvent[] {
+  return buildExecutionHistoryEvents(milestones);
+}
+
+/** @deprecated Use stored milestone status labels instead of estimated percentages. */
 export function computeMilestoneProgressPercent(milestone: BosMilestone): number {
   switch (milestone.status) {
     case MILESTONE_STATUS.COMPLETED:

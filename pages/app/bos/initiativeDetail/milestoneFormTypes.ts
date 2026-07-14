@@ -5,6 +5,7 @@ import type { MilestoneCompletionRequirements } from "../../../../bos/constants/
 import { EMPTY_MILESTONE_COMPLETION_REQUIREMENTS } from "../../../../bos/constants/milestoneCompletionRequirement";
 import type { MilestoneDurationUnit } from "../../../../bos/constants/milestoneDurationUnit";
 import type { MilestoneBusinessImpact } from "../../../../bos/constants/milestoneBusinessImpact";
+import type { MilestoneRiskLevel } from "../../../../bos/constants/milestoneRiskLevel";
 import {
   isKnownMilestoneTypePreset,
   MILESTONE_TYPE_PRESET,
@@ -18,6 +19,7 @@ export interface MilestoneFormValues {
   customPhase: string;
   priority: MilestonePriority | "";
   businessImpact: MilestoneBusinessImpact | "";
+  riskLevel: MilestoneRiskLevel | "";
   estimatedDuration: string;
   estimatedDurationUnit: MilestoneDurationUnit | "";
   estimatedCostAmount: string;
@@ -26,11 +28,10 @@ export interface MilestoneFormValues {
   ownerUserId: string;
   successCriteria: string;
   completionRequirements: MilestoneCompletionRequirements;
-  dependencyId: string;
+  dependencyIds: string[];
   milestoneTypePreset: string;
   customMilestoneType: string;
   tags: string[];
-  saveAsTemplate: boolean;
 }
 
 export interface MilestoneFormSubmitPayload {
@@ -40,6 +41,7 @@ export interface MilestoneFormSubmitPayload {
   phase?: string;
   priority?: MilestonePriority;
   businessImpact?: MilestoneBusinessImpact;
+  riskLevel?: MilestoneRiskLevel;
   estimatedDuration?: number;
   estimatedDurationUnit?: MilestoneDurationUnit;
   estimatedCostAmount?: number;
@@ -50,7 +52,6 @@ export interface MilestoneFormSubmitPayload {
   completionRequirements?: MilestoneCompletionRequirements;
   dependencyIds?: string[];
   tags?: string[];
-  saveAsTemplate?: boolean;
 }
 
 export interface UserOption {
@@ -68,6 +69,25 @@ export const TAG_SUGGESTIONS = [
   "HR",
 ] as const;
 
+export function formatTagsForInput(tags: string[]): string {
+  return tags.join(", ");
+}
+
+/** Parses a comma-separated tag string; trims, dedupes case-insensitively, preserves first casing. */
+export function parseCommaSeparatedTags(raw: string): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const part of raw.split(",")) {
+    const tag = part.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
+}
+
 export function emptyMilestoneFormValues(defaultCurrency = "USD"): MilestoneFormValues {
   return {
     title: "",
@@ -76,6 +96,7 @@ export function emptyMilestoneFormValues(defaultCurrency = "USD"): MilestoneForm
     customPhase: "",
     priority: "",
     businessImpact: "",
+    riskLevel: "",
     estimatedDuration: "",
     estimatedDurationUnit: "",
     estimatedCostAmount: "",
@@ -84,11 +105,10 @@ export function emptyMilestoneFormValues(defaultCurrency = "USD"): MilestoneForm
     ownerUserId: "",
     successCriteria: "",
     completionRequirements: { ...EMPTY_MILESTONE_COMPLETION_REQUIREMENTS },
-    dependencyId: "",
+    dependencyIds: [],
     milestoneTypePreset: "",
     customMilestoneType: "",
     tags: [],
-    saveAsTemplate: false,
   };
 }
 
@@ -111,6 +131,7 @@ export function milestoneToFormValues(
     customPhase: isPreset ? "" : phase,
     priority: milestone.priority ?? "",
     businessImpact: milestone.businessImpact ?? "",
+    riskLevel: milestone.riskLevel ?? "",
     estimatedDuration:
       milestone.estimatedDuration !== undefined ? String(milestone.estimatedDuration) : "",
     estimatedDurationUnit: milestone.estimatedDurationUnit ?? "",
@@ -122,14 +143,14 @@ export function milestoneToFormValues(
       : "",
     ownerUserId: milestone.ownerUserId ?? "",
     successCriteria: milestone.successCriteria ?? "",
-    completionRequirements: milestone.completionRequirements
-      ? { ...milestone.completionRequirements }
-      : { ...EMPTY_MILESTONE_COMPLETION_REQUIREMENTS },
-    dependencyId: milestone.dependencyIds?.[0] ?? "",
+    completionRequirements: {
+      ...EMPTY_MILESTONE_COMPLETION_REQUIREMENTS,
+      ...milestone.completionRequirements,
+    },
+    dependencyIds: milestone.dependencyIds ? [...milestone.dependencyIds] : [],
     milestoneTypePreset: isTypePreset ? milestoneType : milestoneType ? MILESTONE_TYPE_PRESET.CUSTOM : "",
     customMilestoneType: isTypePreset ? "" : milestoneType,
     tags: milestone.tags ? [...milestone.tags] : [],
-    saveAsTemplate: false,
   };
 }
 
@@ -185,6 +206,7 @@ export function formValuesToSubmitPayload(
     phase,
     priority: values.priority || undefined,
     businessImpact: values.businessImpact || undefined,
+    riskLevel: values.riskLevel || undefined,
     estimatedDuration,
     estimatedDurationUnit:
       estimatedDuration && values.estimatedDurationUnit
@@ -199,9 +221,8 @@ export function formValuesToSubmitPayload(
     ownerUserId: values.ownerUserId || undefined,
     successCriteria: values.successCriteria.trim(),
     completionRequirements: hasRequirements ? values.completionRequirements : undefined,
-    dependencyIds: values.dependencyId ? [values.dependencyId] : undefined,
+    dependencyIds: values.dependencyIds.length ? values.dependencyIds : undefined,
     tags: values.tags.length ? values.tags : undefined,
-    saveAsTemplate: values.saveAsTemplate,
   };
 }
 
@@ -220,6 +241,7 @@ export function milestoneToTemplateStepFromForm(
     priority: payload.priority,
     milestoneType: payload.milestoneType,
     businessImpact: payload.businessImpact,
+    riskLevel: payload.riskLevel,
     estimatedDuration: payload.estimatedDuration,
     estimatedDurationUnit: payload.estimatedDurationUnit,
     estimatedCostAmount: payload.estimatedCostAmount,

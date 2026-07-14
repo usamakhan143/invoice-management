@@ -1,15 +1,21 @@
 import React from "react";
 import type { BosInitiative } from "../../../../bos/domain/entities/initiative";
+import type { MilestoneSituationSnapshot } from "../../../../bos/application/milestoneSituation";
 import { INITIATIVE_STATUS, INITIATIVE_STATUS_LABELS } from "../../../../bos/constants/initiativeStatus";
+import { formatBosDate } from "../../../../utils/bosFormat";
 
 interface BosInitiativeHeroProps {
   initiative: BosInitiative;
   statusLabel: string;
   budgetDisplay: string;
   investedDisplay: string;
+  remainingBudgetDisplay: string;
   revenueDisplay: string;
   roiDisplay: string;
   nextAction: string | null;
+  ownerLabel: string;
+  budgetUtilizationPercent: number | null;
+  milestoneSnapshot: MilestoneSituationSnapshot;
   toolbar?: React.ReactNode;
 }
 
@@ -28,15 +34,46 @@ function statusTone(status: string): string {
   }
 }
 
-const Metric: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
-  <div className="min-w-0">
-    <dt className="text-[11px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
+const metricCardClass =
+  "min-w-0 w-full self-start rounded-xl border border-gray-200/80 px-3 py-2.5 dark:border-gray-800";
+
+const Metric: React.FC<{
+  label: string;
+  value: React.ReactNode;
+  highlight?: boolean;
+  primary?: boolean;
+  className?: string;
+}> = ({ label, value, highlight, primary, className }) => (
+  <div
+    className={`${metricCardClass} ${
+      highlight
+        ? "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/20"
+        : primary
+          ? "border-gray-200/90 bg-gray-50 ring-1 ring-gray-900/5 dark:border-gray-700 dark:bg-gray-950/50 dark:ring-white/10"
+          : "bg-white/60 dark:bg-gray-900/30"
+    } ${className ?? ""}`}
+  >
+    <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
       {label}
     </dt>
-    <dd className="mt-1 truncate text-sm font-semibold tracking-tight text-gray-900 dark:text-white">
+    <dd
+      className={`mt-1 font-semibold tracking-tight ${
+        primary
+          ? "line-clamp-3 text-sm leading-snug text-gray-900 dark:text-white"
+          : "truncate text-sm text-gray-900 dark:text-white"
+      }`}
+      title={typeof value === "string" ? value : undefined}
+    >
       {value}
     </dd>
   </div>
+);
+
+const CountPill: React.FC<{ label: string; count: number }> = ({ label, count }) => (
+  <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+    <span className="tabular-nums">{count}</span>
+    <span className="text-gray-500 dark:text-gray-400">{label}</span>
+  </span>
 );
 
 const BosInitiativeHero: React.FC<BosInitiativeHeroProps> = ({
@@ -44,9 +81,13 @@ const BosInitiativeHero: React.FC<BosInitiativeHeroProps> = ({
   statusLabel,
   budgetDisplay,
   investedDisplay,
+  remainingBudgetDisplay,
   revenueDisplay,
   roiDisplay,
   nextAction,
+  ownerLabel,
+  budgetUtilizationPercent,
+  milestoneSnapshot,
   toolbar,
 }) => (
   <header className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/60">
@@ -61,18 +102,54 @@ const BosInitiativeHero: React.FC<BosInitiativeHeroProps> = ({
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
             {initiative.name}
           </h1>
+          <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
+            <div>
+              <dt className="inline font-medium text-gray-400">Owner: </dt>
+              <dd className="inline text-gray-700 dark:text-gray-200">{ownerLabel}</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium text-gray-400">Planned: </dt>
+              <dd className="inline text-gray-700 dark:text-gray-200">
+                {initiative.startDate ? formatBosDate(initiative.startDate) : "—"}
+                {" → "}
+                {initiative.endDate ? formatBosDate(initiative.endDate) : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline font-medium text-gray-400">Utilization: </dt>
+              <dd className="inline text-gray-700 dark:text-gray-200">
+                {budgetUtilizationPercent !== null ? `${budgetUtilizationPercent.toFixed(1)}%` : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline font-medium text-gray-400">Created: </dt>
+              <dd className="inline text-gray-700 dark:text-gray-200">{formatBosDate(initiative.createdAt)}</dd>
+            </div>
+          </dl>
         </div>
         {toolbar ? <div className="flex flex-wrap items-center gap-2">{toolbar}</div> : null}
       </div>
     </div>
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-5 px-6 py-6 sm:grid-cols-3 lg:grid-cols-6 sm:px-8">
-      <Metric label="Status" value={INITIATIVE_STATUS_LABELS[initiative.status] ?? initiative.status} />
+
+    <dl className="grid grid-cols-2 items-start gap-4 border-b border-gray-100 px-6 py-6 dark:border-gray-800 sm:grid-cols-3 lg:grid-cols-6 sm:px-8">
       <Metric label="Budget" value={budgetDisplay} />
       <Metric label="Invested" value={investedDisplay} />
+      <Metric label="Remaining budget" value={remainingBudgetDisplay} highlight />
       <Metric label="Revenue" value={revenueDisplay} />
       <Metric label="ROI" value={roiDisplay} />
-      <Metric label="Next action" value={nextAction ?? "—"} />
+      <Metric label="Next action" value={nextAction ?? "—"} primary />
     </dl>
+
+    <div className="flex flex-wrap items-center gap-2 px-6 py-4 sm:px-8">
+      <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Milestones</span>
+      <CountPill label="Completed" count={milestoneSnapshot.completed.length} />
+      <CountPill label="In progress" count={milestoneSnapshot.inProgress.length} />
+      <CountPill label="Blocked" count={milestoneSnapshot.blocked.length} />
+      <CountPill
+        label="Planned"
+        count={milestoneSnapshot.planned.length + milestoneSnapshot.ready.length}
+      />
+    </div>
   </header>
 );
 

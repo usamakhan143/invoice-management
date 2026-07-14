@@ -1,31 +1,42 @@
 import React, { useMemo, useState } from "react";
 import type { BosMilestone } from "../../../../bos/domain/entities/milestone";
-import type { BosMilestoneTemplate } from "../../../../bos/domain/entities/milestoneTemplate";
+import type { CompleteBosMilestoneInput } from "../../../../bos/domain/entities/milestone";
 import {
-  MILESTONE_EVIDENCE_TYPE,
-  type MilestoneEvidenceType,
-} from "../../../../bos/constants/milestoneEvidenceType";
-import {
-  MILESTONE_STATUS,
-  MILESTONE_STATUS_LABELS,
-  type MilestoneStatus,
-} from "../../../../bos/constants/milestoneStatus";
+  getMilestoneDisplayStatusBadgeClass,
+  getMilestoneDisplayStatusLabel,
+} from "../../../../utils/bosMilestoneDisplay";
 import { MILESTONE_PRIORITY_LABELS } from "../../../../bos/constants/milestonePriority";
 import { MILESTONE_BUSINESS_IMPACT_LABELS } from "../../../../bos/constants/milestoneBusinessImpact";
+import { MILESTONE_RISK_LEVEL_LABELS } from "../../../../bos/constants/milestoneRiskLevel";
 import { MILESTONE_DURATION_UNIT_LABELS } from "../../../../bos/constants/milestoneDurationUnit";
-import { formatBosMoney } from "../../../../utils/bosFormat";
-import { MILESTONE_TEMPLATE_VISIBILITY } from "../../../../bos/constants/milestoneTemplateVisibility";
-import { computeMilestoneProgressPercent } from "../../../../bos/application/milestoneSituation";
+import { MILESTONE_COMPLETION_REQUIREMENT_LABELS } from "../../../../bos/constants/milestoneCompletionRequirement";
+import { MILESTONE_EVIDENCE_SOURCE_LABELS } from "../../../../bos/constants/milestoneEvidenceType";
+import { MILESTONE_RESULT_LABELS } from "../../../../bos/constants/milestoneResult";
+import { MILESTONE_DELAY_REASON_LABELS } from "../../../../bos/constants/milestoneDelayReason";
+import { MILESTONE_FAILURE_ROOT_CAUSE_LABELS } from "../../../../bos/constants/milestoneFailureRootCause";
+import { MILESTONE_COMPLETION_NEXT_ACTION_LABELS } from "../../../../bos/constants/milestoneCompletionNextAction";
+import type { MilestoneLinkOption } from "../../../../bos/application/milestoneCompletionForm";
 import {
   BOS_FIELD_CLASS,
   formatBosDate,
+  formatBosMoney,
   formatBosPlannedDateInput,
   parseBosPlannedDate,
 } from "../../../../utils/bosFormat";
+import {
+  BOS_AMBER_BTN,
+  BOS_BLUE_BTN,
+  BOS_ICON_BTN,
+  BOS_PRIMARY_BTN_SM,
+  BOS_SECONDARY_BTN_SM,
+  BOS_TEXT_BTN_SM,
+} from "./bosButtonClasses";
 import BosModal from "./BosModal";
 import BosFormFieldLabel from "../BosFormFieldLabel";
 import BosMilestoneForm from "./BosMilestoneForm";
+import BosMilestoneCompleteModal from "./BosMilestoneCompleteModal";
 import type { MilestoneFormSubmitPayload, UserOption } from "./milestoneFormTypes";
+import { MILESTONE_STATUS } from "../../../../bos/constants/milestoneStatus";
 
 export type { MilestoneFormSubmitPayload };
 
@@ -35,62 +46,262 @@ export interface BosMilestoneListProps {
   canManageTemplates?: boolean;
   userOptions: UserOption[];
   defaultCurrency?: string;
-  availableTemplates?: BosMilestoneTemplate[];
+  decisionOptions?: MilestoneLinkOption[];
+  expenseOptions?: MilestoneLinkOption[];
+  invoiceOptions?: MilestoneLinkOption[];
   ownerLabelByUserId: (userId: string) => string;
+  milestoneLabelById?: (id: string) => string;
   actionLoading: boolean;
   onCreate: (input: MilestoneFormSubmitPayload) => Promise<void>;
   onUpdate: (id: string, input: MilestoneFormSubmitPayload) => Promise<void>;
-  onSaveTemplateStep?: (input: {
-    action: "create" | "append";
-    step: MilestoneFormSubmitPayload;
-    templateName?: string;
-    templateId?: string;
-    visibility?: string;
-  }) => Promise<void>;
-  onStart: (id: string) => Promise<void>;
+  onSaveInitiativeAsTemplate?: () => void;
+  actorUserId?: string;
+  actorLabel?: string;
+  onStart: (
+    id: string,
+    input: { startedAt: number; startedNotes?: string; startedByUserId?: string },
+  ) => Promise<void>;
   onComplete: (
     id: string,
-    input: { completedDate: number; evidenceType: MilestoneEvidenceType; notes?: string; sourceId?: string },
+    input: Omit<CompleteBosMilestoneInput, "updatedById">,
   ) => Promise<void>;
   onBlock: (id: string, reason: string) => Promise<void>;
   onSkip: (id: string, reason?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onMoveUp: (id: string) => Promise<void>;
   onMoveDown: (id: string) => Promise<void>;
+  requestOpenCreate?: boolean;
+  onRequestOpenCreateHandled?: () => void;
 }
 
-function statusIcon(status: MilestoneStatus): string {
-  switch (status) {
-    case MILESTONE_STATUS.COMPLETED:
-      return "✓";
-    case MILESTONE_STATUS.IN_PROGRESS:
-      return "●";
-    case MILESTONE_STATUS.BLOCKED:
-      return "!";
-    case MILESTONE_STATUS.SKIPPED:
-      return "—";
-    case MILESTONE_STATUS.READY:
-      return "○";
-    default:
-      return "·";
-  }
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        {title}
+      </p>
+      <div className="space-y-1 text-xs text-gray-600 dark:text-gray-300">{children}</div>
+    </div>
+  );
 }
 
-function statusColorClass(status: MilestoneStatus): string {
-  switch (status) {
-    case MILESTONE_STATUS.COMPLETED:
-      return "bg-emerald-600 text-white dark:bg-emerald-500";
-    case MILESTONE_STATUS.IN_PROGRESS:
-      return "bg-blue-600 text-white dark:bg-blue-500";
-    case MILESTONE_STATUS.BLOCKED:
-      return "bg-amber-500 text-white";
-    case MILESTONE_STATUS.SKIPPED:
-      return "bg-gray-400 text-white";
-    case MILESTONE_STATUS.READY:
-      return "border-2 border-blue-500 text-blue-600 dark:text-blue-400";
-    default:
-      return "border border-gray-300 text-gray-400 dark:border-gray-600";
-  }
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  if (value === null || value === undefined || value === "" || value === "—") return null;
+  return (
+    <p>
+      <span className="font-medium text-gray-500">{label}: </span>
+      {value}
+    </p>
+  );
+}
+
+function MilestoneDetails({
+  milestone,
+  defaultCurrency,
+  ownerLabel,
+  startedByLabel,
+  dependencyLabels,
+}: {
+  milestone: BosMilestone;
+  defaultCurrency: string;
+  ownerLabel: string;
+  startedByLabel?: string;
+  dependencyLabels: string[];
+}) {
+  const requirementKeys = milestone.completionRequirements
+    ? Object.entries(milestone.completionRequirements)
+        .filter(([, v]) => v)
+        .map(([k]) => k as keyof typeof MILESTONE_COMPLETION_REQUIREMENT_LABELS)
+    : [];
+
+  const hasPlanning =
+    milestone.phase ||
+    milestone.milestoneType ||
+    milestone.priority ||
+    milestone.plannedStartDate ||
+    milestone.plannedEndDate ||
+    milestone.estimatedDuration ||
+    milestone.estimatedCostAmount !== undefined ||
+    milestone.tags?.length;
+
+  const hasOwnership = ownerLabel || milestone.startedAt || startedByLabel;
+  const hasSuccess = milestone.successCriteria || requirementKeys.length;
+  const hasEvidence =
+    milestone.evidence?.length ||
+    milestone.completionNotes ||
+    milestone.lessonsLearned ||
+    milestone.completedDate ||
+    milestone.milestoneResult ||
+    milestone.delayReason ||
+    milestone.failureRootCause;
+  const hasDependencies = dependencyLabels.length > 0;
+  const hasRisk = milestone.riskLevel || milestone.businessImpact || milestone.blockedReason;
+  const hasNotes = milestone.description || milestone.notes || milestone.startedNotes;
+
+  return (
+    <div className="mt-4 space-y-5 border-t border-gray-100 pt-4 dark:border-gray-800">
+      {hasPlanning ? (
+        <DetailSection title="Planning">
+          <DetailRow label="Phase" value={milestone.phase ?? "—"} />
+          <DetailRow label="Type" value={milestone.milestoneType} />
+          <DetailRow
+            label="Priority"
+            value={milestone.priority ? MILESTONE_PRIORITY_LABELS[milestone.priority] : undefined}
+          />
+          <DetailRow
+            label="Target start"
+            value={milestone.plannedStartDate ? formatBosDate(milestone.plannedStartDate) : undefined}
+          />
+          <DetailRow
+            label="Target date"
+            value={milestone.plannedEndDate ? formatBosDate(milestone.plannedEndDate) : undefined}
+          />
+          {milestone.estimatedDuration && milestone.estimatedDurationUnit ? (
+            <DetailRow
+              label="Est. duration"
+              value={`${milestone.estimatedDuration} ${MILESTONE_DURATION_UNIT_LABELS[milestone.estimatedDurationUnit]}`}
+            />
+          ) : null}
+          {milestone.estimatedCostAmount !== undefined ? (
+            <DetailRow
+              label="Est. cost"
+              value={formatBosMoney(
+                milestone.estimatedCostAmount,
+                milestone.estimatedCostCurrency ?? defaultCurrency,
+              )}
+            />
+          ) : null}
+          {milestone.tags?.length ? (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {milestone.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-gray-200/60 px-2 py-0.5 text-[10px] dark:bg-gray-800"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </DetailSection>
+      ) : null}
+
+      {hasOwnership ? (
+        <DetailSection title="Ownership">
+          <DetailRow label="Owner" value={ownerLabel} />
+          <DetailRow
+            label="Started date"
+            value={milestone.startedAt ? formatBosDate(milestone.startedAt) : undefined}
+          />
+          <DetailRow label="Started by" value={startedByLabel} />
+        </DetailSection>
+      ) : null}
+
+      {hasSuccess ? (
+        <DetailSection title="Success criteria">
+          <DetailRow label="Criteria" value={milestone.successCriteria} />
+          {requirementKeys.length ? (
+            <DetailRow
+              label="Requirements"
+              value={requirementKeys.map((k) => MILESTONE_COMPLETION_REQUIREMENT_LABELS[k]).join(", ")}
+            />
+          ) : null}
+        </DetailSection>
+      ) : null}
+
+      {hasEvidence ? (
+        <DetailSection title="Evidence">
+          <DetailRow
+            label="Completed date"
+            value={milestone.completedDate ? formatBosDate(milestone.completedDate) : undefined}
+          />
+          <DetailRow label="Outcome summary" value={milestone.completionNotes} />
+          <DetailRow label="Lessons learned" value={milestone.lessonsLearned} />
+          <DetailRow
+            label="Milestone result"
+            value={
+              milestone.milestoneResult
+                ? MILESTONE_RESULT_LABELS[milestone.milestoneResult]
+                : undefined
+            }
+          />
+          <DetailRow
+            label="Delay reason"
+            value={
+              milestone.delayReason ? MILESTONE_DELAY_REASON_LABELS[milestone.delayReason] : undefined
+            }
+          />
+          <DetailRow
+            label="Root cause"
+            value={
+              milestone.failureRootCause
+                ? MILESTONE_FAILURE_ROOT_CAUSE_LABELS[milestone.failureRootCause]
+                : undefined
+            }
+          />
+          <DetailRow label="Root cause explanation" value={milestone.failureRootCauseNotes} />
+          <DetailRow
+            label="Next action"
+            value={
+              milestone.completionNextAction
+                ? milestone.completionNextActionCustom?.trim()
+                  ? milestone.completionNextActionCustom
+                  : MILESTONE_COMPLETION_NEXT_ACTION_LABELS[milestone.completionNextAction]
+                : undefined
+            }
+          />
+          {milestone.evidence?.length ? (
+            <ul className="list-inside list-disc space-y-0.5 text-gray-500">
+              {milestone.evidence.map((e) => (
+                <li key={e.id}>
+                  {MILESTONE_EVIDENCE_SOURCE_LABELS[e.type] ?? e.type}
+                  {e.notes ? ` — ${e.notes}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </DetailSection>
+      ) : null}
+
+      {hasDependencies ? (
+        <DetailSection title="Dependencies">
+          <p>{dependencyLabels.join(", ")}</p>
+        </DetailSection>
+      ) : null}
+
+      {hasRisk ? (
+        <DetailSection title="Risk">
+          <DetailRow
+            label="Risk level"
+            value={milestone.riskLevel ? MILESTONE_RISK_LEVEL_LABELS[milestone.riskLevel] : undefined}
+          />
+          <DetailRow
+            label="Business impact"
+            value={
+              milestone.businessImpact
+                ? MILESTONE_BUSINESS_IMPACT_LABELS[milestone.businessImpact]
+                : undefined
+            }
+          />
+          <DetailRow label="Block reason" value={milestone.blockedReason} />
+        </DetailSection>
+      ) : null}
+
+      {hasNotes ? (
+        <DetailSection title="Notes">
+          <DetailRow label="Description" value={milestone.description} />
+          <DetailRow label="Notes" value={milestone.notes} />
+          <DetailRow label="Start notes" value={milestone.startedNotes} />
+        </DetailSection>
+      ) : null}
+    </div>
+  );
 }
 
 const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
@@ -99,12 +310,17 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
   canManageTemplates,
   userOptions,
   defaultCurrency = "USD",
-  availableTemplates = [],
   ownerLabelByUserId,
+  milestoneLabelById,
   actionLoading,
   onCreate,
   onUpdate,
-  onSaveTemplateStep,
+  onSaveInitiativeAsTemplate,
+  actorUserId,
+  actorLabel,
+  decisionOptions = [],
+  expenseOptions = [],
+  invoiceOptions = [],
   onStart,
   onComplete,
   onBlock,
@@ -112,6 +328,8 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
   onDelete,
   onMoveUp,
   onMoveDown,
+  requestOpenCreate,
+  onRequestOpenCreateHandled,
 }) => {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => a.sequence - b.sequence),
@@ -119,59 +337,101 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
   );
 
   const [showCreate, setShowCreate] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [editTarget, setEditTarget] = useState<BosMilestone | null>(null);
+  const [startTarget, setStartTarget] = useState<BosMilestone | null>(null);
   const [completeTarget, setCompleteTarget] = useState<BosMilestone | null>(null);
   const [blockTarget, setBlockTarget] = useState<BosMilestone | null>(null);
 
-  const [pendingTemplatePayload, setPendingTemplatePayload] =
-    useState<MilestoneFormSubmitPayload | null>(null);
-  const [templateAction, setTemplateAction] = useState<"create" | "append">("create");
-  const [newTemplateName, setNewTemplateName] = useState("");
-  const [appendTemplateId, setAppendTemplateId] = useState("");
-  const [templateVisibility, setTemplateVisibility] = useState<string>(
-    MILESTONE_TEMPLATE_VISIBILITY.COMPANY,
-  );
-
-  const [evidenceType, setEvidenceType] = useState<MilestoneEvidenceType>(
-    MILESTONE_EVIDENCE_TYPE.MANUAL,
-  );
-  const [evidenceNotes, setEvidenceNotes] = useState("");
-  const [evidenceSourceId, setEvidenceSourceId] = useState("");
-  const [completedDate, setCompletedDate] = useState("");
+  const [startedDate, setStartedDate] = useState("");
+  const [startedNotes, setStartedNotes] = useState("");
   const [blockReason, setBlockReason] = useState("");
+
+  React.useEffect(() => {
+    if (requestOpenCreate) {
+      setShowCreate(true);
+      onRequestOpenCreateHandled?.();
+    }
+  }, [requestOpenCreate, onRequestOpenCreateHandled]);
+
+  const toggleDetails = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openStart = (milestone: BosMilestone) => {
+    setStartTarget(milestone);
+    const todayKey = formatBosPlannedDateInput(Date.now());
+    const plannedKey = milestone.plannedStartDate
+      ? formatBosPlannedDateInput(milestone.plannedStartDate)
+      : undefined;
+    setStartedDate(plannedKey && plannedKey <= todayKey ? plannedKey : todayKey);
+    setStartedNotes("");
+  };
 
   const openComplete = (milestone: BosMilestone) => {
     setCompleteTarget(milestone);
-    setCompletedDate(formatBosPlannedDateInput(Date.now()));
-    setEvidenceType(MILESTONE_EVIDENCE_TYPE.MANUAL);
-    setEvidenceNotes("");
-    setEvidenceSourceId("");
   };
 
-  const handleCreateSubmit = async (payload: MilestoneFormSubmitPayload) => {
-    await onCreate(payload);
-    setShowCreate(false);
-    if (payload.saveAsTemplate && canManageTemplates && onSaveTemplateStep) {
-      setPendingTemplatePayload(payload);
-      setTemplateAction("create");
-      setNewTemplateName(payload.title);
-      setAppendTemplateId(availableTemplates[0]?.id ?? "");
+  const completeMilestone = useMemo(() => {
+    if (!completeTarget) return null;
+    return sorted.find((m) => m.id === completeTarget.id) ?? completeTarget;
+  }, [completeTarget, sorted]);
+
+  const handleMilestoneAction = (milestone: BosMilestone, action: string) => {
+    switch (action) {
+      case "edit":
+        setEditTarget(milestone);
+        break;
+      case "start":
+        openStart(milestone);
+        break;
+      case "complete":
+        openComplete(milestone);
+        break;
+      case "block":
+        setBlockTarget(milestone);
+        setBlockReason("");
+        break;
+      case "skip":
+        void onSkip(milestone.id);
+        break;
+      case "delete":
+        void onDelete(milestone.id);
+        break;
+      default:
+        break;
     }
   };
 
-  const handleTemplateFollowUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pendingTemplatePayload || !onSaveTemplateStep) return;
-    if (templateAction === "create" && !newTemplateName.trim()) return;
-    if (templateAction === "append" && !appendTemplateId) return;
-    await onSaveTemplateStep({
-      action: templateAction,
-      step: pendingTemplatePayload,
-      templateName: newTemplateName.trim(),
-      templateId: appendTemplateId,
-      visibility: templateVisibility,
-    });
-    setPendingTemplatePayload(null);
+  const actionOptionsFor = (milestone: BosMilestone): { value: string; label: string }[] => {
+    const options: { value: string; label: string }[] = [{ value: "edit", label: "Edit" }];
+    if (
+      milestone.status === MILESTONE_STATUS.PLANNED ||
+      milestone.status === MILESTONE_STATUS.READY
+    ) {
+      options.push({ value: "start", label: "Start" });
+    }
+    if (
+      milestone.status === MILESTONE_STATUS.IN_PROGRESS ||
+      milestone.status === MILESTONE_STATUS.READY
+    ) {
+      options.push({ value: "complete", label: "Complete" });
+    }
+    if (
+      milestone.status !== MILESTONE_STATUS.COMPLETED &&
+      milestone.status !== MILESTONE_STATUS.SKIPPED
+    ) {
+      options.push({ value: "block", label: "Block" }, { value: "skip", label: "Skip" });
+    }
+    if (milestone.status === MILESTONE_STATUS.PLANNED) {
+      options.push({ value: "delete", label: "Delete" });
+    }
+    return options;
   };
 
   return (
@@ -182,18 +442,29 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
             Milestones
           </p>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Business outcomes you define — each with explicit success criteria and evidence settings.
+            Your business outcomes — status reflects stored records only.
           </p>
         </div>
-        {canManage ? (
-          <button
-            type="button"
-            className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900"
-            onClick={() => setShowCreate(true)}
-          >
-            Add milestone
-          </button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {canManageTemplates && onSaveInitiativeAsTemplate && sorted.length > 0 ? (
+            <button
+              type="button"
+              className={BOS_SECONDARY_BTN_SM}
+              onClick={onSaveInitiativeAsTemplate}
+            >
+              Save as template
+            </button>
+          ) : null}
+          {canManage ? (
+            <button
+              type="button"
+              className={BOS_PRIMARY_BTN_SM}
+              onClick={() => setShowCreate(true)}
+            >
+              Add milestone
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {sorted.length === 0 ? (
@@ -201,129 +472,119 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
           No milestones yet. {canManage ? "Define your first business outcome." : ""}
         </p>
       ) : (
-        <ul className="mt-5 space-y-3">
+        <ul className="mt-5 space-y-2">
           {sorted.map((milestone, index) => {
-            const progress = computeMilestoneProgressPercent(milestone);
             const target = milestone.plannedEndDate;
             const ownerLabel = milestone.ownerUserId
               ? ownerLabelByUserId(milestone.ownerUserId)
               : "Unassigned";
+            const expanded = expandedIds.has(milestone.id);
+            const dependencyLabels =
+              milestone.dependencyIds?.map(
+                (id) => milestoneLabelById?.(id) ?? id,
+              ) ?? [];
+            const startedByLabel = milestone.startedByUserId
+              ? ownerLabelByUserId(milestone.startedByUserId)
+              : undefined;
 
             return (
               <li
                 key={milestone.id}
-                className="rounded-xl border border-gray-100 bg-gray-50/50 p-4 dark:border-gray-800 dark:bg-gray-950/40"
+                className="rounded-xl border border-gray-100 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950/30"
               >
-                <div className="flex flex-wrap items-start gap-4">
-                  <span
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${statusColorClass(milestone.status)}`}
-                    title={MILESTONE_STATUS_LABELS[milestone.status]}
-                  >
-                    {statusIcon(milestone.status)}
-                  </span>
+                <div className="flex flex-wrap items-start gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       {milestone.milestoneNumber ? (
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                        <span className="font-mono text-xs font-semibold text-gray-400">
                           {milestone.milestoneNumber}
                         </span>
                       ) : null}
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                         {milestone.title}
-                      </p>
-                      {milestone.phase ? (
-                        <span className="rounded-full bg-gray-200/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                          {milestone.phase}
-                        </span>
-                      ) : null}
-                      {milestone.priority ? (
-                        <span className="text-[10px] font-medium uppercase text-gray-400">
-                          {MILESTONE_PRIORITY_LABELS[milestone.priority]}
-                        </span>
-                      ) : null}
-                      {milestone.businessImpact ? (
-                        <span className="text-[10px] font-medium uppercase text-gray-400">
-                          Impact: {MILESTONE_BUSINESS_IMPACT_LABELS[milestone.businessImpact]}
-                        </span>
-                      ) : null}
-                      <span className="ml-auto text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                        {MILESTONE_STATUS_LABELS[milestone.status]}
+                      </h3>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${getMilestoneDisplayStatusBadgeClass(milestone)}`}
+                      >
+                        {getMilestoneDisplayStatusLabel(milestone)}
                       </span>
                     </div>
-                    {milestone.successCriteria ? (
-                      <p className="mt-1.5 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-                        {milestone.successCriteria}
-                      </p>
-                    ) : milestone.description ? (
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {milestone.description}
-                      </p>
-                    ) : null}
-                    {milestone.tags?.length ? (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {milestone.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-full bg-gray-200/60 px-2 py-0.5 text-[10px] text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                          >
-                            {tag}
-                          </span>
-                        ))}
+                    <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <dt className="inline text-gray-400">Phase: </dt>
+                        <dd className="inline text-gray-700 dark:text-gray-200">
+                          {milestone.phase ?? "—"}
+                        </dd>
                       </div>
-                    ) : null}
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                      <span>Owner: {ownerLabel}</span>
-                      <span>Target: {target ? formatBosDate(target) : "—"}</span>
-                      {milestone.estimatedDuration && milestone.estimatedDurationUnit ? (
-                        <span>
-                          Est. duration: {milestone.estimatedDuration}{" "}
-                          {MILESTONE_DURATION_UNIT_LABELS[milestone.estimatedDurationUnit]}
-                        </span>
-                      ) : null}
-                      {milestone.estimatedCostAmount !== undefined ? (
-                        <span>
-                          Est. cost:{" "}
-                          {formatBosMoney(
-                            milestone.estimatedCostAmount,
-                            milestone.estimatedCostCurrency ?? defaultCurrency,
-                          )}
-                        </span>
-                      ) : null}
-                      {milestone.milestoneType ? <span>Type: {milestone.milestoneType}</span> : null}
-                      <span>{progress}%</span>
-                    </div>
-                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
-                      <div
-                        className="h-full rounded-full bg-gray-900 transition-all dark:bg-white"
-                        style={{ width: `${progress}%` }}
+                      <div>
+                        <dt className="inline text-gray-400">Target: </dt>
+                        <dd className="inline text-gray-700 dark:text-gray-200">
+                          {target ? formatBosDate(target) : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="inline text-gray-400">Owner: </dt>
+                        <dd className="inline text-gray-700 dark:text-gray-200">{ownerLabel}</dd>
+                      </div>
+                    </dl>
+                    <button
+                      type="button"
+                      className={BOS_TEXT_BTN_SM}
+                      onClick={() => toggleDetails(milestone.id)}
+                    >
+                      {expanded ? "Hide details" : "Details"}
+                    </button>
+                    {expanded ? (
+                      <MilestoneDetails
+                        milestone={milestone}
+                        defaultCurrency={defaultCurrency}
+                        ownerLabel={ownerLabel}
+                        startedByLabel={startedByLabel}
+                        dependencyLabels={dependencyLabels}
                       />
-                    </div>
-                    {milestone.blockedReason ? (
-                      <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                        Blocked: {milestone.blockedReason}
-                      </p>
                     ) : null}
                   </div>
                   {canManage ? (
-                    <div className="flex flex-wrap gap-1">
-                      <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800" disabled={actionLoading || index === 0} onClick={() => void onMoveUp(milestone.id)}>↑</button>
-                      <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800" disabled={actionLoading || index === sorted.length - 1} onClick={() => void onMoveDown(milestone.id)}>↓</button>
-                      <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800" disabled={actionLoading} onClick={() => setEditTarget(milestone)}>Edit</button>
-                      {(milestone.status === MILESTONE_STATUS.PLANNED || milestone.status === MILESTONE_STATUS.READY) ? (
-                        <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30" disabled={actionLoading} onClick={() => void onStart(milestone.id)}>Start</button>
-                      ) : null}
-                      {(milestone.status === MILESTONE_STATUS.IN_PROGRESS || milestone.status === MILESTONE_STATUS.READY) ? (
-                        <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" disabled={actionLoading} onClick={() => openComplete(milestone)}>Complete</button>
-                      ) : null}
-                      {milestone.status !== MILESTONE_STATUS.COMPLETED && milestone.status !== MILESTONE_STATUS.SKIPPED ? (
-                        <>
-                          <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30" disabled={actionLoading} onClick={() => { setBlockTarget(milestone); setBlockReason(""); }}>Block</button>
-                          <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" disabled={actionLoading} onClick={() => void onSkip(milestone.id)}>Skip</button>
-                        </>
-                      ) : null}
-                      {milestone.status === MILESTONE_STATUS.PLANNED ? (
-                        <button type="button" className="rounded px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" disabled={actionLoading} onClick={() => void onDelete(milestone.id)}>Delete</button>
-                      ) : null}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          className={BOS_ICON_BTN}
+                          disabled={actionLoading || index === 0}
+                          onClick={() => void onMoveUp(milestone.id)}
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className={BOS_ICON_BTN}
+                          disabled={actionLoading || index === sorted.length - 1}
+                          onClick={() => void onMoveDown(milestone.id)}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                      <select
+                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                        defaultValue=""
+                        disabled={actionLoading}
+                        onChange={(e) => {
+                          const action = e.target.value;
+                          e.target.value = "";
+                          if (!action) return;
+                          handleMilestoneAction(milestone, action);
+                        }}
+                        aria-label={`Actions for ${milestone.title}`}
+                      >
+                        <option value="">Actions</option>
+                        {actionOptionsFor(milestone).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   ) : null}
                 </div>
@@ -339,9 +600,11 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
           milestones={sorted}
           userOptions={userOptions}
           defaultCurrency={defaultCurrency}
-          showTemplateSection={Boolean(canManageTemplates && onSaveTemplateStep)}
           actionLoading={actionLoading}
-          onSubmit={handleCreateSubmit}
+          onSubmit={async (payload) => {
+            await onCreate(payload);
+            setShowCreate(false);
+          }}
           onCancel={() => setShowCreate(false)}
         />
       </BosModal>
@@ -365,87 +628,90 @@ const BosMilestoneList: React.FC<BosMilestoneListProps> = ({
         ) : null}
       </BosModal>
 
-      <BosModal
-        open={!!pendingTemplatePayload}
-        title="Save as template"
-        description="Add this milestone definition to your institutional memory."
-        onClose={() => setPendingTemplatePayload(null)}
-      >
-        <form onSubmit={handleTemplateFollowUp} className="space-y-4">
-          <div className="flex gap-2">
-            <button type="button" className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${templateAction === "create" ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "border border-gray-200 text-gray-600 dark:border-gray-700"}`} onClick={() => setTemplateAction("create")}>Create new template</button>
-            <button type="button" className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${templateAction === "append" ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "border border-gray-200 text-gray-600 dark:border-gray-700"}`} onClick={() => setTemplateAction("append")} disabled={availableTemplates.length === 0}>Append to existing</button>
-          </div>
-          {templateAction === "create" ? (
-            <>
-              <div>
-                <BosFormFieldLabel htmlFor="tpl-new-name" label="Template name" tip="Name for this reusable milestone plan." />
-                <input id="tpl-new-name" className={BOS_FIELD_CLASS} value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} required />
-              </div>
-              <div>
-                <BosFormFieldLabel htmlFor="tpl-new-vis" label="Visibility" tip="Private or company-wide." />
-                <select id="tpl-new-vis" className={BOS_FIELD_CLASS} value={templateVisibility} onChange={(e) => setTemplateVisibility(e.target.value)}>
-                  <option value={MILESTONE_TEMPLATE_VISIBILITY.PRIVATE}>Private</option>
-                  <option value={MILESTONE_TEMPLATE_VISIBILITY.COMPANY}>Company</option>
-                </select>
-              </div>
-            </>
-          ) : (
+      <BosModal open={!!startTarget} title="Start milestone" onClose={() => setStartTarget(null)}>
+        {startTarget ? (
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const dateMs = parseBosPlannedDate(startedDate);
+              if (dateMs === undefined) return;
+              void onStart(startTarget.id, {
+                startedAt: dateMs,
+                startedNotes: startedNotes.trim() || undefined,
+                startedByUserId: actorUserId,
+              }).then(() => setStartTarget(null));
+            }}
+          >
             <div>
-              <BosFormFieldLabel htmlFor="tpl-append" label="Existing template" tip="Append this milestone step to the end of the template." />
-              <select id="tpl-append" className={BOS_FIELD_CLASS} value={appendTemplateId} onChange={(e) => setAppendTemplateId(e.target.value)} required>
-                <option value="">Select template…</option>
-                {availableTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <button type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-gray-900" disabled={actionLoading}>
-            Save to template
-          </button>
-        </form>
-      </BosModal>
-
-      <BosModal open={!!completeTarget} title="Complete milestone" onClose={() => setCompleteTarget(null)}>
-        {completeTarget ? (
-          <form className="space-y-4" onSubmit={(e) => {
-            e.preventDefault();
-            const dateMs = parseBosPlannedDate(completedDate);
-            if (dateMs === undefined) return;
-            void onComplete(completeTarget.id, { completedDate: dateMs, evidenceType, notes: evidenceNotes.trim() || undefined, sourceId: evidenceSourceId.trim() || undefined }).then(() => setCompleteTarget(null));
-          }}>
-            {completeTarget.successCriteria ? (
-              <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-950 dark:text-gray-300">
-                <span className="font-medium">Success criteria: </span>
-                {completeTarget.successCriteria}
-              </div>
-            ) : null}
-            <p className="text-sm text-gray-600 dark:text-gray-300">Record explicit evidence — no automatic inference.</p>
-            <div>
-              <BosFormFieldLabel htmlFor="ms-completed" label="Completed date" tip="Business date when achieved." />
-              <input id="ms-completed" type="date" className={BOS_FIELD_CLASS} value={completedDate} onChange={(e) => setCompletedDate(e.target.value)} required />
+              <BosFormFieldLabel
+                htmlFor="ms-started-date"
+                label="Started date"
+                tip="When work on this milestone began — separate from the target date."
+              />
+              <input
+                id="ms-started-date"
+                type="date"
+                className={BOS_FIELD_CLASS}
+                value={startedDate}
+                max={formatBosPlannedDateInput(Date.now())}
+                onChange={(e) => setStartedDate(e.target.value)}
+                required
+              />
             </div>
             <div>
-              <BosFormFieldLabel htmlFor="ms-evidence-type" label="Evidence type" tip="Links completion to a business record." />
-              <select id="ms-evidence-type" className={BOS_FIELD_CLASS} value={evidenceType} onChange={(e) => setEvidenceType(e.target.value as MilestoneEvidenceType)}>
-                {Object.values(MILESTONE_EVIDENCE_TYPE).map((type) => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+              <BosFormFieldLabel
+                htmlFor="ms-started-notes"
+                label="Notes (optional)"
+                tip="Context recorded when starting this milestone."
+              />
+              <textarea
+                id="ms-started-notes"
+                className={BOS_FIELD_CLASS}
+                rows={2}
+                placeholder="Optional context for starting this milestone"
+                value={startedNotes}
+                onChange={(e) => setStartedNotes(e.target.value)}
+              />
             </div>
-            <input className={BOS_FIELD_CLASS} placeholder="Source ID (optional)" value={evidenceSourceId} onChange={(e) => setEvidenceSourceId(e.target.value)} />
-            <textarea className={BOS_FIELD_CLASS} rows={2} placeholder="Notes" value={evidenceNotes} onChange={(e) => setEvidenceNotes(e.target.value)} />
-            <button type="submit" className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white" disabled={actionLoading}>Mark complete</button>
+            <div>
+              <BosFormFieldLabel htmlFor="ms-started-by" label="Started by" />
+              <input
+                id="ms-started-by"
+                type="text"
+                className={`${BOS_FIELD_CLASS} bg-gray-50 dark:bg-gray-950`}
+                value={actorLabel ?? "You"}
+                readOnly
+              />
+            </div>
+            <button
+              type="submit"
+              className={BOS_BLUE_BTN}
+              disabled={actionLoading}
+            >
+              Save & start
+            </button>
           </form>
         ) : null}
       </BosModal>
 
+      <BosMilestoneCompleteModal
+        milestone={completeMilestone}
+        allMilestones={sorted}
+        decisionOptions={decisionOptions}
+        expenseOptions={expenseOptions}
+        invoiceOptions={invoiceOptions}
+        actionLoading={actionLoading}
+        onClose={() => setCompleteTarget(null)}
+        onComplete={onComplete}
+      />
+
       <BosModal open={!!blockTarget} title="Block milestone" onClose={() => setBlockTarget(null)}>
         {blockTarget ? (
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void onBlock(blockTarget.id, blockReason.trim()).then(() => setBlockTarget(null)); }}>
-            <textarea className={BOS_FIELD_CLASS} rows={3} placeholder="Why is this milestone blocked?" value={blockReason} onChange={(e) => setBlockReason(e.target.value)} required />
-            <button type="submit" className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white" disabled={actionLoading}>Block milestone</button>
+            <BosFormFieldLabel htmlFor="ms-block-reason" label="Block reason" tip="Stored on the milestone for situation and timeline." />
+            <textarea id="ms-block-reason" className={BOS_FIELD_CLASS} rows={3} placeholder="Why is this milestone blocked?" value={blockReason} onChange={(e) => setBlockReason(e.target.value)} required />
+            <button type="submit" className={BOS_AMBER_BTN} disabled={actionLoading}>Block milestone</button>
           </form>
         ) : null}
       </BosModal>

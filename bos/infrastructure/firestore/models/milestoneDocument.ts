@@ -5,6 +5,16 @@ import { isMilestonePriority } from "../../../constants/milestonePriority";
 import type { MilestoneCompletionRequirements } from "../../../constants/milestoneCompletionRequirement";
 import { isMilestoneDurationUnit } from "../../../constants/milestoneDurationUnit";
 import { isMilestoneBusinessImpact } from "../../../constants/milestoneBusinessImpact";
+import { isMilestoneRiskLevel } from "../../../constants/milestoneRiskLevel";
+import type { MilestoneRiskLevel } from "../../../constants/milestoneRiskLevel";
+import { isMilestoneResult } from "../../../constants/milestoneResult";
+import type { MilestoneResult } from "../../../constants/milestoneResult";
+import { isMilestoneDelayReason } from "../../../constants/milestoneDelayReason";
+import type { MilestoneDelayReason } from "../../../constants/milestoneDelayReason";
+import { isMilestoneCompletionNextAction } from "../../../constants/milestoneCompletionNextAction";
+import type { MilestoneCompletionNextAction } from "../../../constants/milestoneCompletionNextAction";
+import { isMilestoneFailureRootCause } from "../../../constants/milestoneFailureRootCause";
+import type { MilestoneFailureRootCause } from "../../../constants/milestoneFailureRootCause";
 import { MILESTONE_EVIDENCE_TYPE } from "../../../constants/milestoneEvidenceType";
 import type { MilestoneEvidenceType } from "../../../constants/milestoneEvidenceType";
 import type { MilestoneStatus } from "../../../constants/milestoneStatus";
@@ -40,6 +50,7 @@ export interface BosMilestoneDocument {
   phase?: string;
   priority?: MilestonePriority;
   businessImpact?: MilestoneBusinessImpact;
+  riskLevel?: MilestoneRiskLevel;
   estimatedDuration?: number;
   estimatedDurationUnit?: MilestoneDurationUnit;
   estimatedCostAmount?: number;
@@ -51,6 +62,7 @@ export interface BosMilestoneDocument {
   plannedStartDate?: firebase.firestore.Timestamp;
   plannedEndDate?: firebase.firestore.Timestamp;
   completedDate?: firebase.firestore.Timestamp;
+  completionNotes?: string;
   status: MilestoneStatus;
   ownerUserId?: string;
   notes?: string;
@@ -59,6 +71,17 @@ export interface BosMilestoneDocument {
   blockedReason?: string;
   skippedReason?: string;
   startedAt?: firebase.firestore.Timestamp;
+  startedNotes?: string;
+  startedByUserId?: string;
+  lessonsLearned?: string;
+  milestoneResult?: MilestoneResult;
+  delayReason?: MilestoneDelayReason;
+  completionNextAction?: MilestoneCompletionNextAction;
+  completionNextActionCustom?: string;
+  completionNextActionTargetId?: string;
+  failureRootCause?: MilestoneFailureRootCause;
+  failureRootCauseNotes?: string;
+  reopenedAt?: firebase.firestore.Timestamp;
   blockedAt?: firebase.firestore.Timestamp;
   skippedAt?: firebase.firestore.Timestamp;
   createdById: string;
@@ -167,6 +190,7 @@ export function milestoneFromFirestore(
     businessImpact: isMilestoneBusinessImpact(data.businessImpact)
       ? data.businessImpact
       : undefined,
+    riskLevel: isMilestoneRiskLevel(data.riskLevel) ? data.riskLevel : undefined,
     estimatedDuration:
       data.estimatedDuration !== undefined ? Number(data.estimatedDuration) : undefined,
     estimatedDurationUnit: isMilestoneDurationUnit(data.estimatedDurationUnit)
@@ -184,6 +208,7 @@ export function milestoneFromFirestore(
     plannedStartDate: timestampToEpochMs(data.plannedStartDate),
     plannedEndDate: timestampToEpochMs(data.plannedEndDate),
     completedDate: timestampToEpochMs(data.completedDate),
+    completionNotes: data.completionNotes ? String(data.completionNotes) : undefined,
     status: data.status,
     ownerUserId: data.ownerUserId ? String(data.ownerUserId) : undefined,
     notes: data.notes ? String(data.notes) : undefined,
@@ -194,6 +219,27 @@ export function milestoneFromFirestore(
     blockedReason: data.blockedReason ? String(data.blockedReason) : undefined,
     skippedReason: data.skippedReason ? String(data.skippedReason) : undefined,
     startedAt: timestampToEpochMs(data.startedAt),
+    startedNotes: data.startedNotes ? String(data.startedNotes) : undefined,
+    startedByUserId: data.startedByUserId ? String(data.startedByUserId) : undefined,
+    lessonsLearned: data.lessonsLearned ? String(data.lessonsLearned) : undefined,
+    milestoneResult: isMilestoneResult(data.milestoneResult) ? data.milestoneResult : undefined,
+    delayReason: isMilestoneDelayReason(data.delayReason) ? data.delayReason : undefined,
+    completionNextAction: isMilestoneCompletionNextAction(data.completionNextAction)
+      ? data.completionNextAction
+      : undefined,
+    completionNextActionCustom: data.completionNextActionCustom
+      ? String(data.completionNextActionCustom)
+      : undefined,
+    completionNextActionTargetId: data.completionNextActionTargetId
+      ? String(data.completionNextActionTargetId)
+      : undefined,
+    failureRootCause: isMilestoneFailureRootCause(data.failureRootCause)
+      ? data.failureRootCause
+      : undefined,
+    failureRootCauseNotes: data.failureRootCauseNotes
+      ? String(data.failureRootCauseNotes)
+      : undefined,
+    reopenedAt: timestampToEpochMs(data.reopenedAt),
     blockedAt: timestampToEpochMs(data.blockedAt),
     skippedAt: timestampToEpochMs(data.skippedAt),
     createdById: String(data.createdById ?? ""),
@@ -217,6 +263,7 @@ export function milestoneToFirestore(milestone: Omit<BosMilestone, "id">): BosMi
     phase: milestone.phase?.trim() || undefined,
     priority: milestone.priority,
     businessImpact: milestone.businessImpact,
+    riskLevel: milestone.riskLevel,
     estimatedDuration: milestone.estimatedDuration,
     estimatedDurationUnit: milestone.estimatedDurationUnit,
     estimatedCostAmount: milestone.estimatedCostAmount,
@@ -233,6 +280,7 @@ export function milestoneToFirestore(milestone: Omit<BosMilestone, "id">): BosMi
       milestone.plannedEndDate !== undefined ? epochMsToTimestamp(milestone.plannedEndDate) : undefined,
     completedDate:
       milestone.completedDate !== undefined ? epochMsToTimestamp(milestone.completedDate) : undefined,
+    completionNotes: milestone.completionNotes?.trim() || undefined,
     status: milestone.status,
     ownerUserId: milestone.ownerUserId,
     notes: milestone.notes?.trim() || undefined,
@@ -241,6 +289,18 @@ export function milestoneToFirestore(milestone: Omit<BosMilestone, "id">): BosMi
     blockedReason: milestone.blockedReason?.trim() || undefined,
     skippedReason: milestone.skippedReason?.trim() || undefined,
     startedAt: milestone.startedAt !== undefined ? epochMsToTimestamp(milestone.startedAt) : undefined,
+    startedNotes: milestone.startedNotes?.trim() || undefined,
+    startedByUserId: milestone.startedByUserId,
+    lessonsLearned: milestone.lessonsLearned?.trim() || undefined,
+    milestoneResult: milestone.milestoneResult,
+    delayReason: milestone.delayReason,
+    completionNextAction: milestone.completionNextAction,
+    completionNextActionCustom: milestone.completionNextActionCustom?.trim() || undefined,
+    completionNextActionTargetId: milestone.completionNextActionTargetId,
+    failureRootCause: milestone.failureRootCause,
+    failureRootCauseNotes: milestone.failureRootCauseNotes?.trim() || undefined,
+    reopenedAt:
+      milestone.reopenedAt !== undefined ? epochMsToTimestamp(milestone.reopenedAt) : undefined,
     blockedAt: milestone.blockedAt !== undefined ? epochMsToTimestamp(milestone.blockedAt) : undefined,
     skippedAt: milestone.skippedAt !== undefined ? epochMsToTimestamp(milestone.skippedAt) : undefined,
     createdById: milestone.createdById,

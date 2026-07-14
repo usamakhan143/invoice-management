@@ -121,14 +121,13 @@ export class BosMilestoneApplicationService {
   async startMilestone(
     scope: BosActorScope,
     id: BosMilestoneId,
-    startedAt?: number,
+    input: Omit<StartBosMilestoneInput, "updatedById">,
   ): Promise<BosMilestone> {
     try {
-      const input: StartBosMilestoneInput = {
-        startedAt: startedAt ?? nowEpochMs(),
+      return await this.milestones.start(scope.companyId, id, {
+        ...input,
         updatedById: scope.actorUserId,
-      };
-      return await this.milestones.start(scope.companyId, id, input);
+      });
     } catch (error) {
       return mapRepositoryError(error);
     }

@@ -11,8 +11,9 @@ import { bosDecisionApplicationService } from "../../../bos/application/BosDecis
 import { bosMilestoneApplicationService } from "../../../bos/application/BosMilestoneApplicationService";
 import { bosMilestoneTemplateApplicationService } from "../../../bos/application/BosMilestoneTemplateApplicationService";
 import {
+  buildExecutionHistoryEvents,
   buildMilestoneSituationRows,
-  buildMilestoneTimelineEvents,
+  buildNextFounderAction,
   computeMilestoneSituation,
 } from "../../../bos/application/milestoneSituation";
 import {
@@ -26,6 +27,8 @@ import type { BosAttribution } from "../../../bos/domain/entities/attribution";
 import type { BosInitiative } from "../../../bos/domain/entities/initiative";
 import type { BosVenture } from "../../../bos/domain/entities/venture";
 import type { ErpExpenseListItem } from "../../../bos/integration/ports/ErpExpenseReadPort";
+import { ATTRIBUTION_SOURCE_TYPE } from "../../../bos/constants/attributionSourceType";
+import { MILESTONE_COMPLETION_NEXT_ACTION } from "../../../bos/constants/milestoneCompletionNextAction";
 import {
   INITIATIVE_CLOSURE_OUTCOME,
   INITIATIVE_CLOSURE_OUTCOME_LABELS,
@@ -53,17 +56,25 @@ import BosAccessDenied from "./BosAccessDenied";
 import BosFormFieldLabel from "./BosFormFieldLabel";
 import BosModal from "./initiativeDetail/BosModal";
 import BosSectionShell from "./initiativeDetail/BosSectionShell";
+import {
+  BOS_NAV_PILL_BTN,
+  BOS_PRIMARY_BTN,
+  BOS_RED_BTN,
+  BOS_SECONDARY_BTN,
+} from "./initiativeDetail/bosButtonClasses";
 import BosInitiativeHero from "./initiativeDetail/BosInitiativeHero";
 import BosMilestoneList from "./initiativeDetail/BosMilestoneList";
 import type { MilestoneFormSubmitPayload } from "./initiativeDetail/milestoneFormTypes";
 import BosCurrentSituationCard from "./initiativeDetail/BosCurrentSituationCard";
 import BosHypothesisCard from "./initiativeDetail/BosHypothesisCard";
-import BosOverviewSecondaryMetrics from "./initiativeDetail/BosOverviewSecondaryMetrics";
+import { milestoneReferenceLabel } from "../../../bos/domain/milestoneNumbering";
 import BosDecisionTimeline from "./initiativeDetail/BosDecisionTimeline";
 import BosInitiativeBusinessTimeline from "./initiativeDetail/BosInitiativeBusinessTimeline";
+import BosInitiativeExecutionHistory from "./initiativeDetail/BosInitiativeExecutionHistory";
 import {
   buildBusinessTimelineEvents,
   formatBudgetForDisplay,
+  formatRemainingBudgetDisplay,
   formatRoiForDisplay,
   loadInitiativeBusinessFacts,
   type InitiativeBusinessFacts,
@@ -119,6 +130,7 @@ const BosInitiativeDetailPage: React.FC = () => {
   const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [requestMilestoneCreate, setRequestMilestoneCreate] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateCategory, setTemplateCategory] = useState("");
   const [templateDescription, setTemplateDescription] = useState("");
@@ -204,6 +216,39 @@ const BosInitiativeDetailPage: React.FC = () => {
     [decisions],
   );
 
+  const milestoneDecisionOptions = useMemo(
+    () => sortedDecisions.map((d) => ({ id: d.id, label: d.title })),
+    [sortedDecisions],
+  );
+
+  const milestoneExpenseOptions = useMemo(
+    () =>
+      expenses.map((expense) => ({
+        id: expense.expenseId,
+        label: `${expense.title} — ${formatBosMoney(expense.amount, expense.currency)} (${formatBosDate(expense.dateMs)})`,
+      })),
+    [expenses],
+  );
+
+  const milestoneInvoiceOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: { id: string; label: string }[] = [];
+    for (const attribution of attributions) {
+      if (attribution.sourceType !== ATTRIBUTION_SOURCE_TYPE.INVOICE) continue;
+      if (seen.has(attribution.sourceId)) continue;
+      seen.add(attribution.sourceId);
+      const amountLabel =
+        attribution.amountSnapshot !== undefined
+          ? formatBosMoney(
+              attribution.amountSnapshot,
+              attribution.currencySnapshot ?? initiative?.budget?.currency ?? "USD",
+            )
+          : "Linked invoice";
+      options.push({ id: attribution.sourceId, label: `Invoice — ${amountLabel}` });
+    }
+    return options;
+  }, [attributions, initiative?.budget?.currency]);
+
   const ownerLabel = venture
     ? resolveOwnerLabel(venture.ownerUserId)
     : resolveOwnerLabel(initiative?.createdById ?? "");
@@ -220,6 +265,7 @@ const BosInitiativeDetailPage: React.FC = () => {
     phase: input.phase,
     priority: input.priority,
     businessImpact: input.businessImpact,
+    riskLevel: input.riskLevel,
     estimatedDuration: input.estimatedDuration,
     estimatedDurationUnit: input.estimatedDurationUnit,
     estimatedCostAmount: input.estimatedCostAmount,
@@ -241,6 +287,7 @@ const BosInitiativeDetailPage: React.FC = () => {
     priority: input.priority,
     milestoneType: input.milestoneType,
     businessImpact: input.businessImpact,
+    riskLevel: input.riskLevel,
     estimatedDuration: input.estimatedDuration,
     estimatedDurationUnit: input.estimatedDurationUnit,
     estimatedCostAmount: input.estimatedCostAmount,
@@ -255,33 +302,34 @@ const BosInitiativeDetailPage: React.FC = () => {
     [milestones],
   );
 
-  const situationRows = useMemo(
-    () => buildMilestoneSituationRows(milestoneSituation),
-    [milestoneSituation],
+  const nextMilestoneAction = useMemo(
+    () =>
+      buildNextFounderAction(milestoneSituation, {
+        canManage: canManageMilestones,
+        initiativeClosed: initiative?.status === INITIATIVE_STATUS.CLOSED,
+      }),
+    [milestoneSituation, canManageMilestones, initiative?.status],
   );
 
-  const nextMilestoneAction = useMemo(() => {
-    if (initiative?.status === INITIATIVE_STATUS.CLOSED) return null;
-    if (milestoneSituation.blocked.length > 0) {
-      return `Unblock: ${milestoneSituation.blocked[0].title}`;
-    }
-    if (milestoneSituation.active) {
-      return `In progress: ${milestoneSituation.active.title}`;
-    }
-    if (milestoneSituation.next) {
-      return `Next: ${milestoneSituation.next.title}`;
-    }
-    if (milestoneSituation.totalCount === 0) {
-      return canManageMilestones ? "Add milestones to track progress" : null;
-    }
-    return "All milestones complete or skipped";
-  }, [initiative?.status, milestoneSituation, canManageMilestones]);
+  const situationRows = useMemo(
+    () => buildMilestoneSituationRows(milestoneSituation, nextMilestoneAction),
+    [milestoneSituation, nextMilestoneAction],
+  );
 
   const businessTimelineEvents = useMemo(() => {
     if (!initiative) return [];
-    const milestoneEvents = buildMilestoneTimelineEvents(milestones);
-    return buildBusinessTimelineEvents(initiative, decisions, milestoneEvents);
-  }, [initiative, decisions, milestones]);
+    return buildBusinessTimelineEvents(initiative, decisions, investment);
+  }, [initiative, decisions, investment]);
+
+  const executionHistoryEvents = useMemo(
+    () => buildExecutionHistoryEvents(milestones),
+    [milestones],
+  );
+
+  const milestoneLabelById = useMemo(() => {
+    const map = new Map(milestones.map((m) => [m.id, milestoneReferenceLabel(m)]));
+    return (id: string) => map.get(id) ?? id;
+  }, [milestones]);
 
   const loadAll = useCallback(async () => {
     if (!readScope || !initiativeId) return;
@@ -616,12 +664,12 @@ const BosInitiativeDetailPage: React.FC = () => {
   const invested = investment?.totalInvested ?? 0;
   const currency = investment?.primaryCurrency ?? initiative.budget?.currency ?? "USD";
 
-  const primaryBtn =
-    "inline-flex items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-gray-800 disabled:opacity-50 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100";
-  const secondaryBtn =
-    "inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
+  const primaryBtn = BOS_PRIMARY_BTN;
+  const secondaryBtn = BOS_SECONDARY_BTN;
 
   const displayCurrency = businessFacts?.displayCurrency ?? currency;
+  const remainingBudgetDisplay = formatRemainingBudgetDisplay(initiative, investment, displayCurrency);
+  const budgetUtilizationPercent = investment?.budgetUtilizationPercent ?? null;
   const requiresLesson = invested > 0 && closureOutcome !== INITIATIVE_CLOSURE_OUTCOME.KILLED;
 
   const heroToolbar = (
@@ -666,7 +714,7 @@ const BosInitiativeDetailPage: React.FC = () => {
               <a
                 key={link.id}
                 href={`#${link.id}`}
-                className="rounded-full px-3 py-1 text-xs font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                className={BOS_NAV_PILL_BTN}
               >
                 {link.label}
               </a>
@@ -685,13 +733,20 @@ const BosInitiativeDetailPage: React.FC = () => {
           statusLabel={INITIATIVE_STATUS_LABELS[initiative.status] ?? initiative.status}
           budgetDisplay={formatBudgetForDisplay(initiative)}
           investedDisplay={formatBosMoney(invested, displayCurrency)}
+          remainingBudgetDisplay={remainingBudgetDisplay}
           revenueDisplay={
             businessFacts
               ? formatBosMoney(businessFacts.totalRevenue, displayCurrency)
               : "—"
           }
-          roiDisplay={formatRoiForDisplay(businessFacts?.roiPercent ?? null)}
+          roiDisplay={formatRoiForDisplay(
+            businessFacts?.roiPercent ?? null,
+            businessFacts?.totalRevenue,
+          )}
           nextAction={nextMilestoneAction}
+          ownerLabel={ownerLabel}
+          budgetUtilizationPercent={budgetUtilizationPercent}
+          milestoneSnapshot={milestoneSituation}
           toolbar={heroToolbar}
         />
 
@@ -703,9 +758,21 @@ const BosInitiativeDetailPage: React.FC = () => {
               canManageTemplates={canManageMilestoneTemplates}
               userOptions={milestoneUserOptions}
               defaultCurrency={currency}
-              availableTemplates={milestoneTemplates}
+              decisionOptions={milestoneDecisionOptions}
+              expenseOptions={milestoneExpenseOptions}
+              invoiceOptions={milestoneInvoiceOptions}
               ownerLabelByUserId={resolveOwnerLabel}
+              milestoneLabelById={milestoneLabelById}
+              actorUserId={actorScope?.actorUserId}
+              actorLabel={
+                actorScope?.actorUserId ? resolveOwnerLabel(actorScope.actorUserId) : undefined
+              }
               actionLoading={actionLoading}
+              onSaveInitiativeAsTemplate={
+                canManageMilestoneTemplates && milestones.length > 0
+                  ? () => setShowSaveTemplateModal(true)
+                  : undefined
+              }
               onCreate={async (input) => {
                 setActionLoading(true);
                 setError(null);
@@ -739,51 +806,11 @@ const BosInitiativeDetailPage: React.FC = () => {
                   setActionLoading(false);
                 }
               }}
-              onSaveTemplateStep={
-                canManageMilestoneTemplates
-                  ? async ({ action, step, templateName, templateId, visibility }) => {
-                      setActionLoading(true);
-                      setError(null);
-                      try {
-                        const templateStep = milestoneStepFromPayload(step);
-                        if (action === "create") {
-                          await bosMilestoneTemplateApplicationService.createTemplateFromMilestoneStep(
-                            actorScope,
-                            {
-                              name: templateName ?? step.title,
-                              visibility:
-                                (visibility as (typeof MILESTONE_TEMPLATE_VISIBILITY)[keyof typeof MILESTONE_TEMPLATE_VISIBILITY]) ??
-                                MILESTONE_TEMPLATE_VISIBILITY.COMPANY,
-                              step: templateStep,
-                            },
-                          );
-                        } else if (templateId) {
-                          await bosMilestoneTemplateApplicationService.appendStepToTemplate(
-                            actorScope,
-                            templateId,
-                            templateStep,
-                          );
-                        }
-                        const refreshed =
-                          await bosMilestoneTemplateApplicationService.listAvailableTemplates({
-                            ...readScope,
-                            actorUserId: actorScope.actorUserId,
-                          });
-                        setMilestoneTemplates(refreshed);
-                      } catch (e) {
-                        setError(e instanceof Error ? e.message : "Failed to save template");
-                        throw e;
-                      } finally {
-                        setActionLoading(false);
-                      }
-                    }
-                  : undefined
-              }
-              onStart={async (id) => {
+              onStart={async (id, input) => {
                 setActionLoading(true);
                 setError(null);
                 try {
-                  await bosMilestoneApplicationService.startMilestone(actorScope, id);
+                  await bosMilestoneApplicationService.startMilestone(actorScope, id, input);
                   await loadAll();
                 } catch (e) {
                   setError(e instanceof Error ? e.message : "Failed to start milestone");
@@ -795,23 +822,30 @@ const BosInitiativeDetailPage: React.FC = () => {
                 setActionLoading(true);
                 setError(null);
                 try {
-                  await bosMilestoneApplicationService.completeMilestone(actorScope, id, {
-                    completedDate: input.completedDate,
-                    evidence: [
-                      {
-                        type: input.evidenceType,
-                        sourceId: input.sourceId,
-                        notes: input.notes,
-                      },
-                    ],
-                  });
+                  await bosMilestoneApplicationService.completeMilestone(actorScope, id, input);
                   await loadAll();
+                  if (input.completionNextAction === MILESTONE_COMPLETION_NEXT_ACTION.RECORD_DECISION) {
+                    resetDecisionForm();
+                    setShowDecisionModal(true);
+                  } else if (
+                    input.completionNextAction === MILESTONE_COMPLETION_NEXT_ACTION.LINK_EXPENSE
+                  ) {
+                    setShowExpenseModal(true);
+                  } else if (
+                    input.completionNextAction ===
+                    MILESTONE_COMPLETION_NEXT_ACTION.CREATE_FOLLOW_UP_MILESTONE
+                  ) {
+                    setRequestMilestoneCreate(true);
+                  }
                 } catch (e) {
                   setError(e instanceof Error ? e.message : "Failed to complete milestone");
+                  throw e;
                 } finally {
                   setActionLoading(false);
                 }
               }}
+              requestOpenCreate={requestMilestoneCreate}
+              onRequestOpenCreateHandled={() => setRequestMilestoneCreate(false)}
               onBlock={async (id, reason) => {
                 setActionLoading(true);
                 setError(null);
@@ -853,36 +887,25 @@ const BosInitiativeDetailPage: React.FC = () => {
             />
           ) : null}
           <div className="grid gap-6 lg:grid-cols-2">
-            {situationRows.length > 0 ? <BosCurrentSituationCard rows={situationRows} /> : null}
-            <div className="space-y-4">
-              <BosHypothesisCard
-                hypothesis={initiative.hypothesis}
-                successCriteria={initiative.successCriteria}
-              />
-              {canManageMilestoneTemplates && milestones.length > 0 ? (
-                <button
-                  type="button"
-                  className={secondaryBtn}
-                  onClick={() => setShowSaveTemplateModal(true)}
-                >
-                  Save milestones as template
-                </button>
-              ) : null}
-            </div>
+            <BosCurrentSituationCard rows={situationRows} />
+            <BosHypothesisCard
+              hypothesis={initiative.hypothesis}
+              successCriteria={initiative.successCriteria}
+            />
           </div>
-          <BosOverviewSecondaryMetrics
-            initiative={initiative}
-            investment={investment}
-            ownerLabel={ownerLabel}
-            displayCurrency={displayCurrency}
-          />
+          {canViewMilestones ? (
+            <BosInitiativeExecutionHistory
+              events={executionHistoryEvents}
+              performerLabelByUserId={resolveOwnerLabel}
+            />
+          ) : null}
         </div>
 
         <BosSectionShell
           id="timeline"
           label="Timeline"
           title="Business timeline"
-          description="Sorted by business date (oldest first). Recorded date shown only as metadata."
+          description="Business history only — decisions, investments, and planned dates. Milestone execution events appear in Execution history."
         >
           <BosInitiativeBusinessTimeline events={businessTimelineEvents} />
         </BosSectionShell>
@@ -901,7 +924,7 @@ const BosInitiativeDetailPage: React.FC = () => {
           }
         >
           <div className="rounded-2xl border border-gray-200/80 bg-white p-6 dark:border-gray-800 dark:bg-gray-900/40">
-            <div className="grid gap-6 sm:grid-cols-3">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Total invested</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
@@ -914,6 +937,14 @@ const BosInitiativeDetailPage: React.FC = () => {
                   {initiative.budget?.amount !== undefined
                     ? formatBosMoney(initiative.budget.amount, initiative.budget.currency)
                     : "—"}
+                </p>
+              </div>
+              <div className="rounded-xl bg-emerald-50/80 px-4 py-3 dark:bg-emerald-950/20">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  Remaining budget
+                </p>
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-emerald-900 dark:text-emerald-100">
+                  {remainingBudgetDisplay}
                 </p>
               </div>
               <div>
@@ -1047,7 +1078,7 @@ const BosInitiativeDetailPage: React.FC = () => {
                   ) : null}
                   <div className="flex gap-2">
                     <button type="button" className={secondaryBtn} onClick={() => setShowCloseForm(false)}>Cancel</button>
-                    <button type="submit" disabled={actionLoading} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                    <button type="submit" disabled={actionLoading} className={BOS_RED_BTN}>
                       Confirm close
                     </button>
                   </div>

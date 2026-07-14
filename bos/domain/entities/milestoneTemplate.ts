@@ -20,6 +20,7 @@ export interface BosMilestoneTemplateStep {
   priority?: MilestonePriority;
   milestoneType?: string;
   businessImpact?: string;
+  riskLevel?: string;
   estimatedDuration?: number;
   estimatedDurationUnit?: string;
   estimatedCostAmount?: number;

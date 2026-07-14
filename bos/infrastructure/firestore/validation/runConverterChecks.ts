@@ -12,11 +12,17 @@ import { decisionFromFirestore, decisionToFirestore } from "../models/decisionDo
 import { validateCreateVenture } from "../../../domain/rules/ventureRules";
 import { validateCreateInitiative } from "../../../domain/rules/initiativeRules";
 import { validateCreateDecision } from "../../../domain/rules/decisionRules";
-import { validateCreateMilestone } from "../../../domain/rules/milestoneRules";
+import { validateCreateMilestone, validateCompleteMilestone } from "../../../domain/rules/milestoneRules";
+import { MILESTONE_EVIDENCE_TYPE } from "../../../constants/milestoneEvidenceType";
+import { MILESTONE_RESULT } from "../../../constants/milestoneResult";
+import { MILESTONE_DELAY_REASON } from "../../../constants/milestoneDelayReason";
+import { MILESTONE_COMPLETION_NEXT_ACTION } from "../../../constants/milestoneCompletionNextAction";
+import type { BosMilestone } from "../../../domain/entities/milestone";
 import { validateCreateMilestoneTemplate } from "../../../domain/rules/milestoneTemplateRules";
 import { MILESTONE_STATUS } from "../../../constants/milestoneStatus";
 import { MILESTONE_DURATION_UNIT } from "../../../constants/milestoneDurationUnit";
 import { MILESTONE_BUSINESS_IMPACT } from "../../../constants/milestoneBusinessImpact";
+import { MILESTONE_RISK_LEVEL } from "../../../constants/milestoneRiskLevel";
 import { formatMilestoneNumber, resolveNextMilestoneNumberIndex } from "../../../domain/milestoneNumbering";
 import { MILESTONE_TEMPLATE_VISIBILITY } from "../../../constants/milestoneTemplateVisibility";
 import { milestoneFromFirestore, milestoneToFirestore } from "../models/milestoneDocument";
@@ -205,6 +211,9 @@ export function runBosConverterChecks(): ConverterCheckResult {
     title: "Campaign Launch",
     milestoneType: "Campaign",
     businessImpact: MILESTONE_BUSINESS_IMPACT.HIGH,
+    riskLevel: MILESTONE_RISK_LEVEL.MEDIUM,
+    completionNotes: "Campaign live on all channels",
+    completedDate: now.toMillis(),
     estimatedDuration: 2,
     estimatedDurationUnit: MILESTONE_DURATION_UNIT.WEEKS,
     estimatedCostAmount: 5000,
@@ -233,6 +242,78 @@ export function runBosConverterChecks(): ConverterCheckResult {
     "milestone v1 business impact round-trip",
     milestoneV1Parsed?.businessImpact === MILESTONE_BUSINESS_IMPACT.HIGH,
   );
+  check("milestone risk level round-trip", milestoneV1Parsed?.riskLevel === MILESTONE_RISK_LEVEL.MEDIUM);
+  check(
+    "milestone completion notes round-trip",
+    milestoneV1Parsed?.completionNotes === "Campaign live on all channels",
+  );
+
+  const milestoneExecution = milestoneToFirestore({
+    companyId: "company-1",
+    initiativeId: "i1",
+    title: "Partnership Approved",
+    sequence: 1,
+    status: MILESTONE_STATUS.IN_PROGRESS,
+    startedAt: now.toMillis(),
+    startedNotes: "Kickoff call completed",
+    startedByUserId: "user-1",
+    lessonsLearned: "Align legal early",
+    createdById: "user-1",
+    updatedById: "user-1",
+    createdAt: now.toMillis(),
+    updatedAt: now.toMillis(),
+  });
+  const milestoneExecutionParsed = milestoneFromFirestore("m4", milestoneExecution);
+  check("milestone started notes round-trip", milestoneExecutionParsed?.startedNotes === "Kickoff call completed");
+  check("milestone started by round-trip", milestoneExecutionParsed?.startedByUserId === "user-1");
+  check("milestone lessons learned round-trip", milestoneExecutionParsed?.lessonsLearned === "Align legal early");
+
+  const inProgressMilestone = {
+    id: "m5",
+    companyId: "company-1",
+    initiativeId: "i1",
+    title: "Launch",
+    sequence: 1,
+    status: MILESTONE_STATUS.IN_PROGRESS,
+    startedAt: now.toMillis() - 86400000 * 3,
+    plannedEndDate: now.toMillis() - 86400000,
+    businessImpact: MILESTONE_BUSINESS_IMPACT.HIGH,
+    completionRequirements: { decisionRequired: true, notesRequired: true },
+    createdById: "user-1",
+    createdAt: now.toMillis(),
+    updatedAt: now.toMillis(),
+  } as BosMilestone;
+
+  check(
+    "completion rejects missing decision evidence",
+    !validateCompleteMilestone(inProgressMilestone, {
+      completedDate: now.toMillis(),
+      completionNotes: "Done",
+      milestoneResult: MILESTONE_RESULT.COMPLETED_SUCCESSFULLY,
+      completionNextAction: MILESTONE_COMPLETION_NEXT_ACTION.NOTHING,
+      evidence: [{ type: MILESTONE_EVIDENCE_TYPE.MANUAL, notes: "note" }],
+      updatedById: "user-1",
+    }).ok,
+  );
+
+  check(
+    "completion accepts requirement evidence",
+    validateCompleteMilestone(
+      inProgressMilestone,
+      {
+        completedDate: now.toMillis(),
+        completionNotes: "Signed",
+        lessonsLearned: "Start legal earlier",
+        milestoneResult: MILESTONE_RESULT.COMPLETED_SUCCESSFULLY,
+        delayReason: MILESTONE_DELAY_REASON.INTERNAL,
+        completionNextAction: MILESTONE_COMPLETION_NEXT_ACTION.NOTHING,
+        evidence: [{ type: MILESTONE_EVIDENCE_TYPE.DECISION, sourceId: "dec-1" }],
+        updatedById: "user-1",
+      },
+      { completedDateMaxMs: now.toMillis() },
+    ).ok,
+  );
+
   check(
     "milestone numbering resolves next index",
     resolveNextMilestoneNumberIndex([{ milestoneNumberIndex: 3 } as { milestoneNumberIndex: number }]) === 4,

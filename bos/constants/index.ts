@@ -127,6 +127,13 @@ export {
   isMilestoneBusinessImpact,
 } from "./milestoneBusinessImpact";
 
+export {
+  MILESTONE_RISK_LEVEL,
+  MILESTONE_RISK_LEVEL_LABELS,
+  type MilestoneRiskLevel,
+  isMilestoneRiskLevel,
+} from "./milestoneRiskLevel";
+
 export const BOS_MODULE_NAMESPACE = "bos" as const;
 
 export const BOS_ENTITY_TYPE = {

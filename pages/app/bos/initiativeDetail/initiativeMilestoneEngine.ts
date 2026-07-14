@@ -10,7 +10,6 @@ import {
 import { computeGrossRoi } from "../../../../bos/domain/rules/kpiRules";
 import { firestoreErpInvoiceReadAdapter } from "../../../../bos/integration/adapters/FirestoreErpInvoiceReadAdapter";
 import type { CompanyId } from "../../../../bos/types";
-import type { MilestoneTimelineEvent } from "../../../../bos/application/milestoneSituation";
 import { convertCurrencyAmount } from "../../../../utils/exchangeRates";
 import { formatBosDate, formatBosMoney } from "../../../../utils/bosFormat";
 
@@ -29,17 +28,7 @@ export interface InitiativeBusinessFacts {
 
 export type InitiativeTimelineEvent = {
   id: string;
-  kind:
-    | "created"
-    | "planned_start"
-    | "planned_end"
-    | "decision"
-    | "closed"
-    | "milestone_created"
-    | "milestone_started"
-    | "milestone_completed"
-    | "milestone_blocked"
-    | "milestone_skipped";
+  kind: "planned_start" | "planned_end" | "decision" | "investment" | "learning" | "closed";
   businessDateMs: number;
   title: string;
   detail?: string;
@@ -97,25 +86,16 @@ export async function loadInitiativeBusinessFacts(
 export function buildBusinessTimelineEvents(
   initiative: BosInitiative,
   decisions: BosDecision[],
-  milestoneEvents: MilestoneTimelineEvent[] = [],
+  investment: InitiativeInvestmentSummary | null = null,
 ): InitiativeTimelineEvent[] {
   const events: InitiativeTimelineEvent[] = [];
-
-  if (initiative.createdAt) {
-    events.push({
-      id: "created",
-      kind: "created",
-      businessDateMs: initiative.createdAt,
-      title: "Initiative created",
-    });
-  }
 
   if (initiative.startDate) {
     events.push({
       id: "planned-start",
       kind: "planned_start",
       businessDateMs: initiative.startDate,
-      title: "Planned start date",
+      title: "Initiative planned to start",
       detail: formatBosDate(initiative.startDate),
     });
   }
@@ -125,7 +105,7 @@ export function buildBusinessTimelineEvents(
       id: "planned-end",
       kind: "planned_end",
       businessDateMs: initiative.endDate,
-      title: "Planned end date",
+      title: "Initiative planned to end",
       detail: formatBosDate(initiative.endDate),
     });
   }
@@ -142,15 +122,16 @@ export function buildBusinessTimelineEvents(
     });
   }
 
-  for (const milestoneEvent of milestoneEvents) {
-    events.push({
-      id: milestoneEvent.id,
-      kind: milestoneEvent.kind,
-      businessDateMs: milestoneEvent.businessDateMs,
-      title: milestoneEvent.title,
-      detail: milestoneEvent.detail,
-      recordedAtMs: milestoneEvent.recordedAtMs,
-    });
+  if (investment?.lines.length) {
+    for (const line of investment.lines) {
+      events.push({
+        id: `investment-${line.attributionId}`,
+        kind: "investment",
+        businessDateMs: line.attributedAt,
+        title: `Investment: ${line.expenseTitle}`,
+        detail: `${formatBosMoney(line.allocatedAmount, line.currency)} allocated (${line.allocationPercent}%)`,
+      });
+    }
   }
 
   if (initiative.closedAt) {
@@ -163,12 +144,26 @@ export function buildBusinessTimelineEvents(
         ? INITIATIVE_CLOSURE_OUTCOME_LABELS[initiative.closureOutcome]
         : undefined,
     });
+
+    if (initiative.lessonLearned?.trim()) {
+      events.push({
+        id: "learning",
+        kind: "learning",
+        businessDateMs: initiative.closedAt,
+        title: "Lesson learned",
+        detail: initiative.lessonLearned.trim(),
+      });
+    }
   }
 
   return events.sort((a, b) => a.businessDateMs - b.businessDateMs);
 }
 
-export function formatRoiForDisplay(roiPercent: number | null): string {
+export function formatRoiForDisplay(
+  roiPercent: number | null,
+  totalRevenue?: number,
+): string {
+  if (totalRevenue === 0) return "ROI Pending";
   if (roiPercent === null) return "—";
   return `${roiPercent.toFixed(1)}%`;
 }
@@ -176,4 +171,22 @@ export function formatRoiForDisplay(roiPercent: number | null): string {
 export function formatBudgetForDisplay(initiative: BosInitiative): string {
   if (initiative.budget?.amount === undefined) return "—";
   return formatBosMoney(initiative.budget.amount, initiative.budget.currency);
+}
+
+export function formatRemainingBudgetDisplay(
+  initiative: BosInitiative,
+  investment: InitiativeInvestmentSummary | null,
+  displayCurrency: string,
+): string {
+  if (investment?.budgetRemaining !== undefined) {
+    return formatBosMoney(investment.budgetRemaining, displayCurrency);
+  }
+  if (initiative.budget?.amount !== undefined) {
+    const invested = investment?.totalInvested ?? 0;
+    return formatBosMoney(
+      Math.max(0, initiative.budget.amount - invested),
+      initiative.budget.currency,
+    );
+  }
+  return "—";
 }

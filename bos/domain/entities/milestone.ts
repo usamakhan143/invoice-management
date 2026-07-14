@@ -14,6 +14,11 @@ import type { MilestonePriority } from "../../constants/milestonePriority";
 import type { MilestoneCompletionRequirements } from "../../constants/milestoneCompletionRequirement";
 import type { MilestoneDurationUnit } from "../../constants/milestoneDurationUnit";
 import type { MilestoneBusinessImpact } from "../../constants/milestoneBusinessImpact";
+import type { MilestoneRiskLevel } from "../../constants/milestoneRiskLevel";
+import type { MilestoneResult } from "../../constants/milestoneResult";
+import type { MilestoneDelayReason } from "../../constants/milestoneDelayReason";
+import type { MilestoneCompletionNextAction } from "../../constants/milestoneCompletionNextAction";
+import type { MilestoneFailureRootCause } from "../../constants/milestoneFailureRootCause";
 import type { CurrencyCode } from "../../types";
 
 /** Links milestone completion to explicit business evidence. */
@@ -46,6 +51,7 @@ export interface BosMilestone extends AuditTimestamps, AuditActor {
   phase?: string;
   priority?: MilestonePriority;
   businessImpact?: MilestoneBusinessImpact;
+  riskLevel?: MilestoneRiskLevel;
   estimatedDuration?: number;
   estimatedDurationUnit?: MilestoneDurationUnit;
   estimatedCostAmount?: number;
@@ -56,7 +62,9 @@ export interface BosMilestone extends AuditTimestamps, AuditActor {
   sequence: number;
   plannedStartDate?: EpochMs;
   plannedEndDate?: EpochMs;
+  /** Actual business completion date (set when milestone is completed). */
   completedDate?: EpochMs;
+  completionNotes?: string;
   status: MilestoneStatus;
   ownerUserId?: UserId;
   notes?: string;
@@ -64,7 +72,23 @@ export interface BosMilestone extends AuditTimestamps, AuditActor {
   evidence?: BosMilestoneEvidence[];
   blockedReason?: string;
   skippedReason?: string;
+  /** Business date when work began (separate from target/planned dates). */
   startedAt?: EpochMs;
+  startedNotes?: string;
+  startedByUserId?: UserId;
+  lessonsLearned?: string;
+  /** Founder-assessed outcome at completion. */
+  milestoneResult?: MilestoneResult;
+  /** Why completion occurred after the target date. */
+  delayReason?: MilestoneDelayReason;
+  /** Planned follow-up after completion. */
+  completionNextAction?: MilestoneCompletionNextAction;
+  completionNextActionCustom?: string;
+  completionNextActionTargetId?: BosMilestoneId;
+  failureRootCause?: MilestoneFailureRootCause;
+  failureRootCauseNotes?: string;
+  /** When a blocked milestone was explicitly reopened to planned. */
+  reopenedAt?: EpochMs;
   blockedAt?: EpochMs;
   skippedAt?: EpochMs;
 }
@@ -80,6 +104,7 @@ export interface CreateBosMilestoneInput {
   phase?: string;
   priority?: MilestonePriority;
   businessImpact?: MilestoneBusinessImpact;
+  riskLevel?: MilestoneRiskLevel;
   estimatedDuration?: number;
   estimatedDurationUnit?: MilestoneDurationUnit;
   estimatedCostAmount?: number;
@@ -103,6 +128,7 @@ export interface UpdateBosMilestoneInput {
   phase?: string;
   priority?: MilestonePriority;
   businessImpact?: MilestoneBusinessImpact;
+  riskLevel?: MilestoneRiskLevel;
   estimatedDuration?: number;
   estimatedDurationUnit?: MilestoneDurationUnit;
   estimatedCostAmount?: number;
@@ -121,8 +147,23 @@ export interface UpdateBosMilestoneInput {
 
 export interface CompleteBosMilestoneInput {
   completedDate: EpochMs;
+  completionNotes?: string;
+  lessonsLearned?: string;
+  milestoneResult: MilestoneResult;
+  delayReason?: MilestoneDelayReason;
+  completionNextAction: MilestoneCompletionNextAction;
+  completionNextActionCustom?: string;
+  completionNextActionTargetId?: BosMilestoneId;
+  failureRootCause?: MilestoneFailureRootCause;
+  failureRootCauseNotes?: string;
   evidence: Omit<BosMilestoneEvidence, "id" | "recordedAt" | "recordedById">[];
   updatedById: UserId;
+}
+
+export interface CompleteMilestoneValidationContext {
+  initiativeStartDate?: EpochMs;
+  /** Latest allowed completion instant — typically end of today. */
+  completedDateMaxMs: EpochMs;
 }
 
 export interface BlockBosMilestoneInput {
@@ -139,5 +180,7 @@ export interface SkipBosMilestoneInput {
 
 export interface StartBosMilestoneInput {
   startedAt: EpochMs;
+  startedNotes?: string;
+  startedByUserId?: UserId;
   updatedById: UserId;
 }

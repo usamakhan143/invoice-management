@@ -35,6 +35,7 @@ import {
   formatMilestoneNumber,
   resolveNextMilestoneNumberIndex,
 } from "../../../domain/milestoneNumbering";
+import { omitUndefinedFields } from "../documentPayload";
 import { assertDomainOk, BosRepositoryError, normalizePageLimit } from "../errors";
 import { BOS_COLLECTIONS } from "../collections";
 import { milestoneFromFirestore, milestoneToFirestore } from "../models/milestoneDocument";
@@ -163,6 +164,7 @@ export class FirestoreBosMilestoneRepository implements BosMilestoneRepository {
       phase: input.phase?.trim(),
       priority: input.priority,
       businessImpact: input.businessImpact,
+      riskLevel: input.riskLevel,
       estimatedDuration: input.estimatedDuration,
       estimatedDurationUnit: input.estimatedDurationUnit,
       estimatedCostAmount: input.estimatedCostAmount,
@@ -230,6 +232,7 @@ export class FirestoreBosMilestoneRepository implements BosMilestoneRepository {
         phase: input.phase?.trim(),
         priority: input.priority,
         businessImpact: input.businessImpact,
+        riskLevel: input.riskLevel,
         estimatedDuration: input.estimatedDuration,
         estimatedDurationUnit: input.estimatedDurationUnit,
         estimatedCostAmount: input.estimatedCostAmount,
@@ -286,6 +289,7 @@ export class FirestoreBosMilestoneRepository implements BosMilestoneRepository {
     if (input.phase !== undefined) patch.phase = input.phase.trim();
     if (input.priority !== undefined) patch.priority = input.priority;
     if (input.businessImpact !== undefined) patch.businessImpact = input.businessImpact;
+    if (input.riskLevel !== undefined) patch.riskLevel = input.riskLevel;
     if (input.estimatedDuration !== undefined) patch.estimatedDuration = input.estimatedDuration;
     if (input.estimatedDurationUnit !== undefined) {
       patch.estimatedDurationUnit = input.estimatedDurationUnit;
@@ -339,12 +343,16 @@ export class FirestoreBosMilestoneRepository implements BosMilestoneRepository {
       "Invalid milestone transition",
     );
 
-    await this.collection().doc(id).update({
-      status: MILESTONE_STATUS.IN_PROGRESS,
-      startedAt: epochMsToTimestamp(input.startedAt),
-      updatedAt: Timestamp.now(),
-      updatedById: input.updatedById,
-    });
+    await this.collection().doc(id).update(
+      omitUndefinedFields({
+        status: MILESTONE_STATUS.IN_PROGRESS,
+        startedAt: epochMsToTimestamp(input.startedAt),
+        startedNotes: input.startedNotes?.trim() || undefined,
+        startedByUserId: input.startedByUserId,
+        updatedAt: Timestamp.now(),
+        updatedById: input.updatedById,
+      }),
+    );
 
     const updated = await this.findById(companyId, id);
     if (!updated) {
@@ -365,7 +373,17 @@ export class FirestoreBosMilestoneRepository implements BosMilestoneRepository {
 
     const all = await this.loadInitiativeMilestones(companyId, existing.initiativeId);
     assertDomainOk(validateMilestoneDependenciesMet(existing, all), "Milestone dependencies unmet");
-    assertDomainOk(validateCompleteMilestone(existing, input), "Invalid milestone completion");
+    const initiative = await firestoreBosInitiativeRepository.findById(
+      companyId,
+      existing.initiativeId,
+    );
+    assertDomainOk(
+      validateCompleteMilestone(existing, input, {
+        initiativeStartDate: initiative?.startDate,
+        completedDateMaxMs: nowEpochMs(),
+      }),
+      "Invalid milestone completion",
+    );
 
     const now = nowEpochMs();
     const newEvidence: BosMilestoneEvidence[] = input.evidence.map((e) => ({
@@ -379,20 +397,33 @@ export class FirestoreBosMilestoneRepository implements BosMilestoneRepository {
 
     const mergedEvidence = [...(existing.evidence ?? []), ...newEvidence];
 
-    await this.collection().doc(id).update({
-      status: MILESTONE_STATUS.COMPLETED,
-      completedDate: epochMsToTimestamp(input.completedDate),
-      evidence: mergedEvidence.map((e) => ({
-        id: e.id,
-        type: e.type,
-        sourceId: e.sourceId,
-        notes: e.notes,
-        recordedAt: epochMsToTimestamp(e.recordedAt),
-        recordedById: e.recordedById,
-      })),
-      updatedAt: Timestamp.now(),
-      updatedById: input.updatedById,
-    });
+    await this.collection().doc(id).update(
+      omitUndefinedFields({
+        status: MILESTONE_STATUS.COMPLETED,
+        completedDate: epochMsToTimestamp(input.completedDate),
+        completionNotes: input.completionNotes?.trim() || undefined,
+        lessonsLearned: input.lessonsLearned?.trim() || undefined,
+        milestoneResult: input.milestoneResult,
+        delayReason: input.delayReason,
+        completionNextAction: input.completionNextAction,
+        completionNextActionCustom: input.completionNextActionCustom?.trim() || undefined,
+        completionNextActionTargetId: input.completionNextActionTargetId ?? null,
+        failureRootCause: input.failureRootCause ?? null,
+        failureRootCauseNotes: input.failureRootCauseNotes?.trim() || null,
+        evidence: mergedEvidence.map((e) =>
+          omitUndefinedFields({
+            id: e.id,
+            type: e.type,
+            sourceId: e.sourceId,
+            notes: e.notes?.trim() || undefined,
+            recordedAt: epochMsToTimestamp(e.recordedAt),
+            recordedById: e.recordedById,
+          }),
+        ),
+        updatedAt: Timestamp.now(),
+        updatedById: input.updatedById,
+      }),
+    );
 
     const updated = await this.findById(companyId, id);
     if (!updated) {

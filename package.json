@@ -11,6 +11,7 @@
     "bos:validate": "npx tsx scripts/run-bos-converter-checks.ts",
     "test": "vitest run",
     "test:bos": "vitest run bos/ --exclude bos/infrastructure/firestore/repositories/bosRepositories.integration.test.ts",
+    "test:bos:completion": "vitest run bos/application/milestoneCompletionForm.test.ts",
     "test:bos:integration": "firebase emulators:exec --only firestore,auth \"vitest run bos/infrastructure/firestore/repositories/bosRepositories.integration.test.ts\"",
     "cleanup-db": "node scripts/cleanup-database.js --confirm",
     "migrate-products": "node scripts/migrate-products.js --confirm"

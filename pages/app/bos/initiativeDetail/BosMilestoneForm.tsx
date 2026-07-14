@@ -21,6 +21,11 @@ import {
   type MilestoneBusinessImpact,
 } from "../../../../bos/constants/milestoneBusinessImpact";
 import {
+  MILESTONE_RISK_LEVEL,
+  MILESTONE_RISK_LEVEL_LABELS,
+  type MilestoneRiskLevel,
+} from "../../../../bos/constants/milestoneRiskLevel";
+import {
   MILESTONE_DURATION_UNIT,
   MILESTONE_DURATION_UNIT_LABELS,
   type MilestoneDurationUnit,
@@ -33,9 +38,16 @@ import { milestoneReferenceLabel } from "../../../../bos/domain/milestoneNumberi
 import { BOS_FIELD_CLASS, parseBosPlannedDate } from "../../../../utils/bosFormat";
 import BosFormFieldLabel from "../BosFormFieldLabel";
 import {
+  BOS_PRIMARY_BTN,
+  BOS_SECONDARY_BTN,
+  BOS_TAG_SUGGESTION_BTN,
+} from "./bosButtonClasses";
+import {
   emptyMilestoneFormValues,
   formValuesToSubmitPayload,
+  formatTagsForInput,
   milestoneToFormValues,
+  parseCommaSeparatedTags,
   TAG_SUGGESTIONS,
   type MilestoneFormSubmitPayload,
   type MilestoneFormValues,
@@ -48,7 +60,6 @@ interface BosMilestoneFormProps {
   milestones: BosMilestone[];
   userOptions: UserOption[];
   defaultCurrency?: string;
-  showTemplateSection?: boolean;
   actionLoading?: boolean;
   onSubmit: (payload: MilestoneFormSubmitPayload) => Promise<void>;
   onCancel: () => void;
@@ -81,7 +92,6 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
   milestones,
   userOptions,
   defaultCurrency = "USD",
-  showTemplateSection = false,
   actionLoading,
   onSubmit,
   onCancel,
@@ -96,17 +106,33 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    setValues(
-      initialMilestone
-        ? milestoneToFormValues(initialMilestone, defaultCurrency)
-        : emptyMilestoneFormValues(defaultCurrency),
-    );
+    const nextValues = initialMilestone
+      ? milestoneToFormValues(initialMilestone, defaultCurrency)
+      : emptyMilestoneFormValues(defaultCurrency);
+    setValues(nextValues);
+    setTagInput(formatTagsForInput(nextValues.tags));
     setFormError(null);
   }, [initialMilestone, mode, defaultCurrency]);
+
+  const commitTagsFromInput = () => {
+    const tags = parseCommaSeparatedTags(tagInput);
+    setValues((prev) => ({ ...prev, tags }));
+    setTagInput(formatTagsForInput(tags));
+  };
 
   const dependencyOptions = milestones.filter(
     (m) => m.id !== initialMilestone?.id,
   );
+
+  const appendTagSuggestion = (suggestion: string) => {
+    setTagInput((prev) => {
+      const existing = parseCommaSeparatedTags(prev);
+      if (existing.some((tag) => tag.toLowerCase() === suggestion.toLowerCase())) {
+        return formatTagsForInput(existing);
+      }
+      return formatTagsForInput([...existing, suggestion]);
+    });
+  };
 
   const setRequirement = (key: keyof MilestoneCompletionRequirements, checked: boolean) => {
     setValues((prev) => {
@@ -123,16 +149,6 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
       }
       return { ...prev, completionRequirements: cleared };
     });
-  };
-
-  const addTag = (raw: string) => {
-    const tag = raw.trim();
-    if (!tag) return;
-    setValues((prev) => {
-      if (prev.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) return prev;
-      return { ...prev, tags: [...prev.tags, tag] };
-    });
-    setTagInput("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -157,7 +173,8 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
       return;
     }
     setFormError(null);
-    const payload = formValuesToSubmitPayload(values, parseBosPlannedDate);
+    const tags = parseCommaSeparatedTags(tagInput);
+    const payload = formValuesToSubmitPayload({ ...values, tags }, parseBosPlannedDate);
     await onSubmit(payload);
   };
 
@@ -416,6 +433,33 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
             )}
           </select>
         </div>
+        <div>
+          <BosFormFieldLabel
+            htmlFor="msf-risk-level"
+            label="Risk level"
+            tip="Optional signal for founder intelligence and prediction."
+          />
+          <select
+            id="msf-risk-level"
+            className={BOS_FIELD_CLASS}
+            value={values.riskLevel}
+            onChange={(e) =>
+              setValues((v) => ({
+                ...v,
+                riskLevel: e.target.value as MilestoneRiskLevel | "",
+              }))
+            }
+          >
+            <option value="">None</option>
+            {(Object.keys(MILESTONE_RISK_LEVEL) as Array<keyof typeof MILESTONE_RISK_LEVEL>).map(
+              (key) => (
+                <option key={key} value={MILESTONE_RISK_LEVEL[key]}>
+                  {MILESTONE_RISK_LEVEL_LABELS[MILESTONE_RISK_LEVEL[key]]}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
       </SectionCard>
 
       <SectionCard
@@ -517,21 +561,25 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
           <BosFormFieldLabel
             htmlFor="msf-dep"
             label="Depends on"
-            tip="Optional — this milestone cannot start until the selected one is complete or skipped."
+            tip="Optional — select one or more milestones that must complete first."
           />
           <select
             id="msf-dep"
-            className={BOS_FIELD_CLASS}
-            value={values.dependencyId}
-            onChange={(e) => setValues((v) => ({ ...v, dependencyId: e.target.value }))}
+            multiple
+            className={`${BOS_FIELD_CLASS} min-h-[88px]`}
+            value={values.dependencyIds}
+            onChange={(e) => {
+              const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
+              setValues((v) => ({ ...v, dependencyIds: selected }));
+            }}
           >
-            <option value="">Independent — no dependency</option>
             {dependencyOptions.map((m) => (
               <option key={m.id} value={m.id}>
                 {milestoneReferenceLabel(m)}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-[11px] text-gray-400">Hold Ctrl/Cmd to select multiple dependencies.</p>
         </div>
       </SectionCard>
 
@@ -581,36 +629,32 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
           </div>
         ) : null}
         <div>
-          <BosFormFieldLabel htmlFor="msf-tags" label="Tags" tip="Type a tag and press Enter. Suggestions are optional." />
-          <div className="flex gap-2">
-            <input
-              id="msf-tags"
-              className={BOS_FIELD_CLASS}
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addTag(tagInput);
-                }
-              }}
-              placeholder="Add tag…"
-            />
-            <button
-              type="button"
-              className="shrink-0 rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-600 hover:bg-white dark:border-gray-700 dark:text-gray-300"
-              onClick={() => addTag(tagInput)}
-            >
-              Add
-            </button>
-          </div>
+          <BosFormFieldLabel
+            htmlFor="msf-tags"
+            label="Tags"
+            tip="Enter one or more tags separated by commas — e.g. Marketing, Sales, Legal."
+          />
+          <input
+            id="msf-tags"
+            className={BOS_FIELD_CLASS}
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onBlur={commitTagsFromInput}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitTagsFromInput();
+              }
+            }}
+            placeholder="Marketing, Sales, Legal"
+          />
           <div className="mt-2 flex flex-wrap gap-1.5">
             {TAG_SUGGESTIONS.map((s) => (
               <button
                 key={s}
                 type="button"
-                className="rounded-full bg-gray-200/80 px-2.5 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300"
-                onClick={() => addTag(s)}
+                className={BOS_TAG_SUGGESTION_BTN}
+                onClick={() => appendTagSuggestion(s)}
               >
                 + {s}
               </button>
@@ -626,10 +670,12 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
                   {tag}
                   <button
                     type="button"
-                    className="opacity-70 hover:opacity-100"
-                    onClick={() =>
-                      setValues((v) => ({ ...v, tags: v.tags.filter((t) => t !== tag) }))
-                    }
+                    className="rounded-sm transition-colors hover:bg-black/10 dark:hover:bg-black/15"
+                    onClick={() => {
+                      const nextTags = values.tags.filter((t) => t !== tag);
+                      setValues((v) => ({ ...v, tags: nextTags }));
+                      setTagInput(formatTagsForInput(nextTags));
+                    }}
                     aria-label={`Remove tag ${tag}`}
                   >
                     ×
@@ -641,36 +687,10 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
         </div>
       </SectionCard>
 
-      {showTemplateSection && mode === "create" ? (
-        <SectionCard
-          title="Template"
-          icon={
-            <span className="text-base" aria-hidden>
-              ⎘
-            </span>
-          }
-        >
-          <label className="flex cursor-pointer items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-            <input
-              type="checkbox"
-              className="mt-0.5 rounded border-gray-300"
-              checked={values.saveAsTemplate}
-              onChange={(e) => setValues((v) => ({ ...v, saveAsTemplate: e.target.checked }))}
-            />
-            <span>
-              Save this milestone as a reusable template
-              <span className="mt-0.5 block text-xs text-gray-400">
-                After creation, you can create a new template or append to an existing one.
-              </span>
-            </span>
-          </label>
-        </SectionCard>
-      ) : null}
-
       <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
         <button
           type="button"
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200"
+          className={BOS_SECONDARY_BTN}
           onClick={onCancel}
           disabled={actionLoading}
         >
@@ -678,7 +698,7 @@ const BosMilestoneForm: React.FC<BosMilestoneFormProps> = ({
         </button>
         <button
           type="submit"
-          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 dark:bg-white dark:text-gray-900"
+          className={BOS_PRIMARY_BTN}
           disabled={actionLoading}
         >
           {submitLabel ?? (mode === "create" ? "Create milestone" : "Save changes")}

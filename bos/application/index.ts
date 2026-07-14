@@ -34,10 +34,13 @@ export {
   computeMilestoneSituation,
   buildMilestoneSituationRows,
   buildMilestoneTimelineEvents,
+  buildExecutionHistoryEvents,
+  buildNextFounderAction,
   computeMilestoneProgressPercent,
   type MilestoneSituationSnapshot,
   type MilestoneSituationRow,
-  type MilestoneTimelineEvent,
+  type MilestoneExecutionEvent,
+  type MilestoneExecutionEventKind,
 } from "./milestoneSituation";
 export type {
   InitiativeInvestmentSummary,
