@@ -1,5 +1,6 @@
 /* Tailwind CSS (Vite plugin — do not use cdn.tailwindcss.com in production) */
 @import "tailwindcss";
+@import "./aos/theme/tokens.css";
 
 @theme {
   --color-primary-50: #eff6ff;

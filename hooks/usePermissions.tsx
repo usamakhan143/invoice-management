@@ -288,6 +288,96 @@ export const usePermissions = () => {
     canManageBosMilestones() ||
     canManageBosMilestoneTemplates();
 
+  const canViewAosDashboard = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_DASHBOARD_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosEngagements = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ENGAGEMENTS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosEngagements = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ENGAGEMENTS_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosRegistry = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_REGISTRY_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosRegistry = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_REGISTRY_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosRequirements = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_REQUIREMENTS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canEditAosRequirements = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_REQUIREMENTS_EDIT) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canApproveAosRequirements = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_REQUIREMENTS_APPROVE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosPrompts = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_PROMPTS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosPrompts = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_PROMPTS_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosCursor = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_CURSOR_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canExecuteAosCursor = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_CURSOR_EXECUTE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosEvaluation = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_EVALUATION_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosEvaluation = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_EVALUATION_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosKnowledge = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_KNOWLEDGE_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosKnowledge = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_KNOWLEDGE_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosPlaybook = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_PLAYBOOK_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosPlaybook = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_PLAYBOOK_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosTemplates = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_TEMPLATES_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosTemplates = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_TEMPLATES_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canViewAosRubrics = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_RUBRICS_VIEW) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canManageAosRubrics = (): boolean =>
+    hasPermission(GRANULAR_PERMISSIONS.AOS_RUBRICS_MANAGE) ||
+    hasPermission(GRANULAR_PERMISSIONS.AOS_ADMIN);
+  const canAccessAosModule = (): boolean =>
+    canViewAosDashboard() ||
+    canViewAosEngagements() ||
+    canManageAosEngagements() ||
+    canViewAosRegistry() ||
+    canManageAosRegistry() ||
+    canViewAosRequirements() ||
+    canEditAosRequirements() ||
+    canApproveAosRequirements() ||
+    canViewAosPrompts() ||
+    canManageAosPrompts() ||
+    canViewAosCursor() ||
+    canExecuteAosCursor() ||
+    canViewAosEvaluation() ||
+    canManageAosEvaluation() ||
+    canViewAosKnowledge() ||
+    canManageAosKnowledge() ||
+    canViewAosPlaybook() ||
+    canManageAosPlaybook() ||
+    canViewAosTemplates() ||
+    canManageAosTemplates() ||
+    canViewAosRubrics() ||
+    canManageAosRubrics();
+
   // Company activity permissions
   const canViewCompanyActivity = (): boolean => hasPermission(GRANULAR_PERMISSIONS.COMPANY_ACTIVITY_VIEW);
   const canBulkDeleteCompanyActivity = (): boolean =>
@@ -431,6 +521,8 @@ export const usePermissions = () => {
         return canAccessPerformancePage();
       case "bos":
         return canAccessBosModule();
+      case "aos":
+        return canAccessAosModule();
       default:
         return false;
     }
@@ -702,6 +794,30 @@ export const usePermissions = () => {
     canViewBosMilestoneTemplates,
     canManageBosMilestoneTemplates,
     canAccessBosModule,
+
+    canViewAosDashboard,
+    canViewAosEngagements,
+    canManageAosEngagements,
+    canViewAosRegistry,
+    canManageAosRegistry,
+    canViewAosRequirements,
+    canEditAosRequirements,
+    canApproveAosRequirements,
+    canViewAosPrompts,
+    canManageAosPrompts,
+    canViewAosCursor,
+    canExecuteAosCursor,
+    canViewAosEvaluation,
+    canManageAosEvaluation,
+    canViewAosKnowledge,
+    canManageAosKnowledge,
+    canViewAosPlaybook,
+    canManageAosPlaybook,
+    canViewAosTemplates,
+    canManageAosTemplates,
+    canViewAosRubrics,
+    canManageAosRubrics,
+    canAccessAosModule,
 
     // Legacy compatibility
     hasPageAccess,

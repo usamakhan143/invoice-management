@@ -11,6 +11,7 @@ import ConnectionStatus from "./components/ConnectionStatus";
 import OfflineModeIndicator from "./components/OfflineModeIndicator";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
+import AosProvidersLayout from "./aos/presentation/layouts/AosProvidersLayout";
 
 // Lazy load pages for better performance
 const DashboardPage = lazy(() => import("./pages/app/DashboardPage"));
@@ -38,6 +39,15 @@ const BosInitiativeDetailPage = lazy(
 const BosMilestoneTemplatesPage = lazy(
   () => import("./pages/app/bos/BosMilestoneTemplatesPage"),
 );
+const AosDashboardPage = lazy(() => import("./aos/pages/AosDashboardPage"));
+const AosDeliveryPage = lazy(() => import("./aos/pages/AosDeliveryPage"));
+const AosRegistryPage = lazy(() => import("./aos/pages/AosRegistryPage"));
+const AosRequirementsPage = lazy(() => import("./aos/pages/AosRequirementsPage"));
+const AosPromptsPage = lazy(() => import("./aos/pages/AosPromptsPage"));
+const AosCursorPage = lazy(() => import("./aos/pages/AosCursorPage"));
+const AosEvaluationPage = lazy(() => import("./aos/pages/AosEvaluationPage"));
+const AosKnowledgePage = lazy(() => import("./aos/pages/AosKnowledgePage"));
+const AosPlaybookPage = lazy(() => import("./aos/pages/AosPlaybookPage"));
 const UserManagementPage = lazy(() => import("./pages/app/UserManagementPage"));
 const ActivityPage = lazy(() => import("./pages/app/ActivityPage"));
 const CompanyActivityPage = lazy(
@@ -199,6 +209,17 @@ const App: React.FC = () => {
                   path="/bos/initiatives/:initiativeId"
                   element={<BosInitiativeDetailPage />}
                 />
+                <Route element={<AosProvidersLayout />}>
+                  <Route path="/aos" element={<AosDashboardPage />} />
+                  <Route path="/aos/delivery" element={<AosDeliveryPage />} />
+                  <Route path="/aos/registry" element={<AosRegistryPage />} />
+                  <Route path="/aos/requirements" element={<AosRequirementsPage />} />
+                  <Route path="/aos/prompts" element={<AosPromptsPage />} />
+                  <Route path="/aos/cursor" element={<AosCursorPage />} />
+                  <Route path="/aos/evaluation" element={<AosEvaluationPage />} />
+                  <Route path="/aos/knowledge" element={<AosKnowledgePage />} />
+                  <Route path="/aos/playbook" element={<AosPlaybookPage />} />
+                </Route>
                 <Route path="/users" element={<UserManagementPage />} />
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route

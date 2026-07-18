@@ -1,0 +1,120 @@
+/**
+ * AOS semantic design tokens — Sprint 1 value mapping.
+ * @see docs/aos-design-system/02_DESIGN_TOKENS.md
+ */
+:root {
+  /* Text */
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-text-inverse: #ffffff;
+  --color-text-link: #2563eb;
+  --color-text-link-sidecar: #4b5563;
+  --color-text-danger: #b91c1c;
+  --color-text-success: #15803d;
+  --color-text-warning: #b45309;
+  --color-text-ai: #7c3aed;
+  --color-text-approved: #166534;
+
+  /* Surface */
+  --color-surface-page: #f9fafb;
+  --color-surface-card: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-inset: #f3f4f6;
+  --color-surface-ai-draft: #faf5ff;
+  --color-surface-approved: #f0fdf4;
+  --color-surface-danger-subtle: #fef2f2;
+  --color-surface-warning-subtle: #fffbeb;
+
+  /* Border */
+  --color-border-default: #e5e7eb;
+  --color-border-subtle: #f3f4f6;
+  --color-border-focus: #2563eb;
+  --color-border-ai: #c4b5fd;
+  --color-border-approved: #86efac;
+  --color-border-danger: #fca5a5;
+
+  /* Interactive */
+  --color-interactive-primary: #2563eb;
+  --color-interactive-primary-hover: #1d4ed8;
+  --color-interactive-primary-disabled: #93c5fd;
+  --color-interactive-secondary: #ffffff;
+  --color-interactive-danger: #dc2626;
+
+  /* Lifecycle */
+  --color-lifecycle-neutral-bg: #f3f4f6;
+  --color-lifecycle-neutral-text: #374151;
+  --color-lifecycle-paused-bg: #fef3c7;
+  --color-lifecycle-cancelled-bg: #f3f4f6;
+  --color-lifecycle-terminal-bg: #e5e7eb;
+
+  /* Spacing */
+  --space-stack-xs: 0.25rem;
+  --space-stack-sm: 0.5rem;
+  --space-stack-md: 1rem;
+  --space-stack-lg: 1.5rem;
+  --space-stack-xl: 2rem;
+  --space-inline-sm: 0.375rem;
+  --space-inline-md: 0.75rem;
+  --space-page-x: 1.5rem;
+  --space-page-y: 1.5rem;
+  --space-card-padding: 1rem;
+
+  /* Typography */
+  --font-family-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-size-display: 1.875rem;
+  --font-size-heading: 1.125rem;
+  --font-size-body: 0.875rem;
+  --font-size-label: 0.8125rem;
+  --font-size-caption: 0.75rem;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --line-height-body: 1.5;
+  --line-height-tight: 1.25;
+
+  /* Radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
+
+  /* Shadow */
+  --shadow-none: none;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08);
+  --shadow-focus: 0 0 0 2px var(--color-border-focus);
+
+  /* Z-index */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-side-panel: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* Duration */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+
+  /* Sizing */
+  --size-icon-sm: 1rem;
+  --size-icon-md: 1.25rem;
+  --size-touch-min: 2.75rem;
+  --size-button-height-md: 2.5rem;
+  --size-button-height-sm: 2rem;
+  --size-input-height: 2.5rem;
+  --size-sidebar-panel-width: 28rem;
+  --size-content-max-width: 72rem;
+  --size-table-row-height-comfortable: 3rem;
+  --size-table-row-height-compact: 2.25rem;
+
+  /* Component-specific */
+  --size-attention-queue-max-visible: 8;
+  --size-next-best-action-min-height: 8rem;
+  --size-lifecycle-badge-height: 1.5rem;
+  --size-status-chip-height: 1.375rem;
+}

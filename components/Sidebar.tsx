@@ -9,6 +9,12 @@ import {
   BOS_VERTICAL_SLICE_NAV_ITEMS,
 } from "../bos/config/navigation";
 import {
+  AOS_NAV_GROUP_LABEL,
+  AOS_NAV_ITEMS,
+} from "../aos/config/navigation";
+import { useAosFeatureFlags } from "../aos/hooks/useAosFeatureFlags";
+import { AOS_FEATURE_FLAG } from "../aos/config/featureFlags";
+import {
   DashboardIcon,
   InvoiceIcon,
   CustomerIcon,
@@ -26,8 +32,9 @@ import { BRAND_LOGO_ALT, BRAND_LOGO_DARK } from "../config/brand";
 const Sidebar: React.FC = () => {
   const { logout, userProfile } = useAuth();
   const { hasScreenPin, lockScreen } = useScreenLock();
-  const { hasPageAccess, isOwner, isAdmin, canImportLeads, hasPermission, canAccessBosModule } =
+  const { hasPageAccess, isOwner, isAdmin, canImportLeads, hasPermission, canAccessBosModule, canAccessAosModule } =
     usePermissions();
+  const { isEnabled: isAosFeatureEnabled } = useAosFeatureFlags();
   const navigate = useNavigate();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
@@ -43,6 +50,9 @@ const Sidebar: React.FC = () => {
   const isBosPath =
     location.pathname === "/bos" ||
     location.pathname.startsWith("/bos/");
+  const isAosPath =
+    location.pathname === "/aos" ||
+    location.pathname.startsWith("/aos/");
 
   const [leadsOpen, setLeadsOpen] = useState(
     () =>
@@ -50,6 +60,7 @@ const Sidebar: React.FC = () => {
   );
   const [financeOpen, setFinanceOpen] = useState(() => isFinancePath);
   const [bosOpen, setBosOpen] = useState(() => isBosPath);
+  const [aosOpen, setAosOpen] = useState(() => isAosPath);
 
   useEffect(() => {
     if (location.pathname === "/leads" || location.pathname.startsWith("/leads/")) {
@@ -61,7 +72,10 @@ const Sidebar: React.FC = () => {
     if (isBosPath) {
       setBosOpen(true);
     }
-  }, [location.pathname, isFinancePath, isBosPath]);
+    if (isAosPath) {
+      setAosOpen(true);
+    }
+  }, [location.pathname, isFinancePath, isBosPath, isAosPath]);
 
   const handleLogout = async () => {
     try {
@@ -341,7 +355,34 @@ const Sidebar: React.FC = () => {
         : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
     }`;
 
+  const aosNavIcon = (
+    <svg
+      className="h-6 w-6 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
+      />
+    </svg>
+  );
+
+  const aosSubLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-sm font-medium transition-colors ${
+      isActive
+        ? "bg-primary-50 text-primary-800 ring-1 ring-primary-500/15 dark:bg-gray-800 dark:text-white dark:ring-primary-400/20"
+        : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+    }`;
+
   const bosNavItems = BOS_VERTICAL_SLICE_NAV_ITEMS.filter((item) =>
+    item.requiredPermissions.some((permission) => hasPermission(permission)),
+  );
+
+  const aosNavItems = AOS_NAV_ITEMS.filter((item) =>
     item.requiredPermissions.some((permission) => hasPermission(permission)),
   );
 
@@ -409,6 +450,9 @@ const Sidebar: React.FC = () => {
         ? "/performance"
         : "/";
 
+  /** Delivery (AOS) group sits after Strategy (BOS) in the sidebar. */
+  const aosMenuAfterTo = bosMenuAfterTo;
+
   const financeMenuBlock =
     financeNavItems.length > 0 ? (
       <li className="space-y-0.5">
@@ -475,6 +519,46 @@ const Sidebar: React.FC = () => {
                   end={item.path === "/bos/initiatives"}
                   onClick={() => setIsOpen(false)}
                   className={bosSubLinkClass}
+                >
+                  <span className="truncate">{item.label}</span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </li>
+    ) : null;
+
+  const aosMenuBlock =
+    isAosFeatureEnabled(AOS_FEATURE_FLAG.MODULE_ENABLED) &&
+    canAccessAosModule() &&
+    aosNavItems.length > 0 ? (
+      <li className="space-y-0.5">
+        <button
+          type="button"
+          onClick={() => setAosOpen((o) => !o)}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+            isAosPath
+              ? "text-primary-700 dark:text-primary-300"
+              : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800/80 dark:hover:text-white"
+          }`}
+          aria-expanded={aosOpen}
+        >
+          {aosNavIcon}
+          <span className="min-w-0 flex-1 truncate">{AOS_NAV_GROUP_LABEL}</span>
+          <span className="shrink-0 text-xs text-slate-400 dark:text-gray-500" aria-hidden>
+            {aosOpen ? "▲" : "▼"}
+          </span>
+        </button>
+        {aosOpen ? (
+          <ul className="ml-3 space-y-0.5 border-l border-slate-200/90 pl-2 dark:border-gray-700">
+            {aosNavItems.map((item) => (
+              <li key={item.path}>
+                <NavLink
+                  to={item.path}
+                  end={item.path === "/aos"}
+                  onClick={() => setIsOpen(false)}
+                  className={aosSubLinkClass}
                 >
                   <span className="truncate">{item.label}</span>
                 </NavLink>
@@ -581,6 +665,7 @@ const Sidebar: React.FC = () => {
                   ? financeMenuBlock
                   : null}
                 {bosMenuBlock && item.to === bosMenuAfterTo ? bosMenuBlock : null}
+                {aosMenuBlock && item.to === aosMenuAfterTo ? aosMenuBlock : null}
               </React.Fragment>
             ))}
           </ul>

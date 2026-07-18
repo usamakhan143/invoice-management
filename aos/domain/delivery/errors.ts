@@ -1,0 +1,50 @@
+export type DeliveryDomainErrorCode =
+  | "DELIVERY_TITLE_REQUIRED"
+  | "DELIVERY_CUSTOMER_REQUIRED"
+  | "DELIVERY_LEAD_REQUIRED"
+  | "DELIVERY_INVALID_STATE"
+  | "DELIVERY_INVALID_TRANSITION"
+  | "DELIVERY_COMPANY_MISMATCH"
+  | "DELIVERY_CUSTOMER_IMMUTABLE"
+  | "DELIVERY_INITIATIVE_LOCKED"
+  | "DELIVERY_INITIATIVE_FORBIDDEN_ALIAS"
+  | "DELIVERY_MISSING_REQUIREMENT_SET"
+  | "DELIVERY_MISSING_PROMPT_PACK"
+  | "DELIVERY_MISSING_RETROSPECTIVE"
+  | "DELIVERY_MULTIPLE_ACTIVE_REQUIREMENT_SETS"
+  | "DELIVERY_CANCEL_REASON_REQUIRED"
+  | "DELIVERY_PAUSE_FROM_TERMINAL"
+  | "DELIVERY_RESUME_NOT_PAUSED"
+  | "DELIVERY_METADATA_LOCKED"
+  | "DELIVERY_AGENCY_TYPE_CHANGE_REQUIRES_AUDIT"
+  | "DELIVERY_TEMPLATE_NAME_REQUIRED"
+  | "DELIVERY_TEMPLATE_AGENCY_TYPE_REQUIRED"
+  | "DELIVERY_TEMPLATE_PHASES_REQUIRED"
+  | "DELIVERY_TEMPLATE_DEPRECATED"
+  | "DELIVERY_TEMPLATE_INVALID_TRANSITION"
+  | "DELIVERY_QUALITY_REPORT_ENGAGEMENT_REQUIRED"
+  | "DELIVERY_QUALITY_REPORT_EVALUATIONS_REQUIRED"
+  | "DELIVERY_QUALITY_REPORT_IMMUTABLE"
+  | "DELIVERY_QUALITY_REPORT_INVALID_TRANSITION";
+
+export interface DeliveryDomainErrorPayload {
+  code: DeliveryDomainErrorCode;
+  message: string;
+}
+
+export class DeliveryDomainError extends Error implements DeliveryDomainErrorPayload {
+  readonly code: DeliveryDomainErrorCode;
+
+  constructor(code: DeliveryDomainErrorCode, message: string) {
+    super(message);
+    this.name = "DeliveryDomainError";
+    this.code = code;
+  }
+}
+
+export function throwDeliveryDomainError(
+  code: DeliveryDomainErrorCode,
+  message: string,
+): never {
+  throw new DeliveryDomainError(code, message);
+}
