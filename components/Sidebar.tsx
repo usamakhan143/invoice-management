@@ -12,6 +12,7 @@ import {
   AOS_NAV_GROUP_LABEL,
   AOS_NAV_ITEMS,
 } from "../aos/config/navigation";
+import { AosSidebarNavLinks } from "../aos/presentation/navigation/AosSidebarNavLinks";
 import { useAosFeatureFlags } from "../aos/hooks/useAosFeatureFlags";
 import { AOS_FEATURE_FLAG } from "../aos/config/featureFlags";
 import {
@@ -551,20 +552,11 @@ const Sidebar: React.FC = () => {
           </span>
         </button>
         {aosOpen ? (
-          <ul className="ml-3 space-y-0.5 border-l border-slate-200/90 pl-2 dark:border-gray-700">
-            {aosNavItems.map((item) => (
-              <li key={item.path}>
-                <NavLink
-                  to={item.path}
-                  end={item.path === "/aos"}
-                  onClick={() => setIsOpen(false)}
-                  className={aosSubLinkClass}
-                >
-                  <span className="truncate">{item.label}</span>
-                </NavLink>
-              </li>
-            ))}
-          </ul>
+          <AosSidebarNavLinks
+            items={aosNavItems}
+            linkClassName={aosSubLinkClass}
+            onNavigate={() => setIsOpen(false)}
+          />
         ) : null}
       </li>
     ) : null;

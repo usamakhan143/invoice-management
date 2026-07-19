@@ -41,7 +41,34 @@ const BosMilestoneTemplatesPage = lazy(
 );
 const AosDashboardPage = lazy(() => import("./aos/pages/AosDashboardPage"));
 const AosDeliveryPage = lazy(() => import("./aos/pages/AosDeliveryPage"));
+const AosCreateEngagementPage = lazy(() => import("./aos/pages/AosCreateEngagementPage"));
+const AosEngagementHubPage = lazy(() => import("./aos/pages/AosEngagementHubPage"));
+const EngagementOverviewScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/overview/EngagementOverviewScreen"),
+);
+const EngagementRequirementsScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/requirements/EngagementRequirementsScreen"),
+);
+const EngagementReuseScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/reuse/EngagementReuseScreen"),
+);
+const EngagementPromptsScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/prompts/EngagementPromptsScreen"),
+);
+const EngagementCursorScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/cursor/EngagementCursorScreen"),
+);
+const EngagementEvaluationScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/evaluation/EngagementEvaluationScreen"),
+);
+const EngagementQaScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/qa/EngagementQaScreen"),
+);
+const EngagementRetrospectiveScreen = lazy(
+  () => import("./aos/presentation/screens/engagement-hub/retrospective/EngagementRetrospectiveScreen"),
+);
 const AosRegistryPage = lazy(() => import("./aos/pages/AosRegistryPage"));
+const AosRegistryDetailPage = lazy(() => import("./aos/pages/AosRegistryDetailPage"));
 const AosRequirementsPage = lazy(() => import("./aos/pages/AosRequirementsPage"));
 const AosPromptsPage = lazy(() => import("./aos/pages/AosPromptsPage"));
 const AosCursorPage = lazy(() => import("./aos/pages/AosCursorPage"));
@@ -211,7 +238,19 @@ const App: React.FC = () => {
                 />
                 <Route element={<AosProvidersLayout />}>
                   <Route path="/aos" element={<AosDashboardPage />} />
+                  <Route path="/aos/delivery/new" element={<AosCreateEngagementPage />} />
+                  <Route path="/aos/delivery/:engagementId" element={<AosEngagementHubPage />}>
+                    <Route index element={<EngagementOverviewScreen />} />
+                    <Route path="requirements" element={<EngagementRequirementsScreen />} />
+                    <Route path="reuse" element={<EngagementReuseScreen />} />
+                    <Route path="prompts" element={<EngagementPromptsScreen />} />
+                    <Route path="cursor" element={<EngagementCursorScreen />} />
+                    <Route path="evaluation" element={<EngagementEvaluationScreen />} />
+                    <Route path="qa" element={<EngagementQaScreen />} />
+                    <Route path="retrospective" element={<EngagementRetrospectiveScreen />} />
+                  </Route>
                   <Route path="/aos/delivery" element={<AosDeliveryPage />} />
+                  <Route path="/aos/registry/:moduleId" element={<AosRegistryDetailPage />} />
                   <Route path="/aos/registry" element={<AosRegistryPage />} />
                   <Route path="/aos/requirements" element={<AosRequirementsPage />} />
                   <Route path="/aos/prompts" element={<AosPromptsPage />} />

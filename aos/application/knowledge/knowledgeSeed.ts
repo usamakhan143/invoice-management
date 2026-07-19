@@ -1,0 +1,161 @@
+import { AGENCY_TYPE } from "../../constants/agencyType";
+import type { KnowledgeDetailDto } from "./dto/KnowledgeDto";
+
+const SEED_KNOWLEDGE: readonly KnowledgeDetailDto[] = [
+  {
+    patternId: "kp-auth-gates",
+    title: "Auth gate sequencing",
+    primaryDomain: "Security",
+    agencyTypes: [AGENCY_TYPE.WEB, AGENCY_TYPE.SAAS, AGENCY_TYPE.MOBILE],
+    knowledgeType: "success_pattern",
+    confidence: "canonical",
+    promotionStatus: "pattern_active",
+    patternVersion: 2,
+    tags: ["auth", "gates", "permissions"],
+    summary: "Sequence Firebase auth bootstrap before route gates and permission checks.",
+    body:
+      "Always initialize Firebase auth and session persistence before rendering permission-gated routes. ERP permission keys remain the source of truth — AOS gates are UX-only until server enforcement ships.",
+    learningOrigin: "bootstrap",
+    sourceReferences: [
+      { id: "adr-014", label: "ADR-014 Audit and append-only policy", kind: "adr" },
+      { id: "kr-auth-001", label: "Knowledge Record — auth bootstrap lesson", kind: "knowledge_record" },
+    ],
+    relatedModules: [{ moduleId: "auth-firebase-v2", moduleName: "Firebase Auth Module" }],
+    relatedPrompts: [{ promptId: "pt-auth-handoff", title: "Auth module reuse prompt block" }],
+    relatedPatterns: [{ patternId: "kp-sidecar-law", title: "Sidecar law reference pattern" }],
+    aiSuggestedPatterns: [{ patternId: "kp-permission-gates", title: "Permission gate UX pattern" }],
+  },
+  {
+    patternId: "kp-form-a11y",
+    title: "Form accessibility checklist",
+    primaryDomain: "UX",
+    agencyTypes: [AGENCY_TYPE.WEB, AGENCY_TYPE.SAAS],
+    knowledgeType: "lesson",
+    confidence: "repeated",
+    promotionStatus: "pattern_active",
+    patternVersion: 1,
+    tags: ["forms", "accessibility", "a11y"],
+    summary: "Label every input, wire aria-invalid on errors, and preserve focus on validation failure.",
+    body:
+      "Use FormField + explicit htmlFor ids. Surface validation errors with aria-invalid and aria-describedby. Never rely on placeholder text alone for labeling.",
+    learningOrigin: "retrospective",
+    sourceReferences: [
+      { id: "retro-portal-01", label: "Retrospective — Client Portal Rebuild", kind: "retrospective" },
+      { id: "eva-a11y-03", label: "Evaluation EVA-a11y-03", kind: "evaluation" },
+    ],
+    relatedModules: [{ moduleId: "form-field-kit", moduleName: "Form Field Kit" }],
+    relatedPrompts: [{ promptId: "pt-form-review", title: "Form review prompt template" }],
+    relatedPatterns: [],
+    aiSuggestedPatterns: [],
+  },
+  {
+    patternId: "kp-prompt-structure",
+    title: "Prompt pack structure",
+    primaryDomain: "Prompt Engineering",
+    agencyTypes: [AGENCY_TYPE.AI, AGENCY_TYPE.WEB],
+    knowledgeType: "process_note",
+    confidence: "validated",
+    promotionStatus: "pattern_proposed",
+    patternVersion: 1,
+    tags: ["prompts", "structure", "cursor"],
+    summary: "Prompt packs follow objective → constraints → reuse block → acceptance checks.",
+    body:
+      "Each prompt artifact must state objective, frozen constraints, explicit reuse references, and evaluation acceptance checks before Cursor handoff.",
+    learningOrigin: "evaluation",
+    sourceReferences: [
+      { id: "eva-prompt-12", label: "Evaluation — prompt pack gate failure", kind: "evaluation" },
+    ],
+    relatedModules: [{ moduleId: "cursor-prompt-pack-gen", moduleName: "Prompt Pack Generator Skill" }],
+    relatedPrompts: [
+      { promptId: "pt-pack-skeleton", title: "Prompt pack skeleton template" },
+      { promptId: "pt-reuse-block", title: "Reuse block directive" },
+    ],
+    relatedPatterns: [{ patternId: "kp-auth-gates", title: "Auth gate sequencing" }],
+    aiSuggestedPatterns: [{ patternId: "kp-eval-rubric", title: "Evaluation rubric alignment" }],
+  },
+  {
+    patternId: "kp-sidecar-law",
+    title: "Sidecar law reference pattern",
+    primaryDomain: "Architecture",
+    agencyTypes: [AGENCY_TYPE.WEB, AGENCY_TYPE.SAAS, AGENCY_TYPE.AI, AGENCY_TYPE.MOBILE],
+    knowledgeType: "success_pattern",
+    confidence: "canonical",
+    promotionStatus: "pattern_active",
+    patternVersion: 3,
+    tags: ["architecture", "sidecar", "erp"],
+    summary: "ERP owns customers, users, and permissions — AOS references, never duplicates.",
+    body:
+      "All customer and permission data flows through ERP read ports. AOS stores delivery artifacts only. Cross-layer duplication is forbidden by ADR-011.",
+    learningOrigin: "bootstrap",
+    sourceReferences: [
+      { id: "adr-011", label: "ADR-011 Sidecar law extension", kind: "adr" },
+    ],
+    relatedModules: [],
+    relatedPrompts: [{ promptId: "pt-sidecar-constraints", title: "Sidecar constraint block" }],
+    relatedPatterns: [{ patternId: "kp-auth-gates", title: "Auth gate sequencing" }],
+    aiSuggestedPatterns: [],
+  },
+  {
+    patternId: "kp-eval-first-pass",
+    title: "Evaluation first-pass criteria",
+    primaryDomain: "Evaluation",
+    agencyTypes: [AGENCY_TYPE.AI, AGENCY_TYPE.WEB, AGENCY_TYPE.SAAS],
+    knowledgeType: "failure_pattern",
+    confidence: "repeated",
+    promotionStatus: "pattern_active",
+    patternVersion: 1,
+    tags: ["evaluation", "quality", "gates"],
+    summary: "Block promotion when evaluation lacks reproducible steps or evidence links.",
+    body:
+      "First-pass evaluation must cite session ID, artifact version, and explicit pass/fail criteria. Failures without root cause stay engagement-scoped until validated.",
+    learningOrigin: "evaluation",
+    sourceReferences: [
+      { id: "eva-fail-07", label: "Evaluation failure cluster EVA-fail-07", kind: "evaluation" },
+      { id: "eng-ai-02", label: "Engagement — AI Workflow Pilot", kind: "engagement" },
+    ],
+    relatedModules: [],
+    relatedPrompts: [{ promptId: "pt-eval-checklist", title: "Evaluation checklist prompt" }],
+    relatedPatterns: [{ patternId: "kp-prompt-structure", title: "Prompt pack structure" }],
+    aiSuggestedPatterns: [],
+  },
+  {
+    patternId: "kr-reuse-observation-01",
+    title: "Reuse assessment latency observation",
+    primaryDomain: "Module Engineering",
+    agencyTypes: [AGENCY_TYPE.WEB],
+    knowledgeType: "observation",
+    confidence: "single_observation",
+    promotionStatus: "record_active",
+    patternVersion: 1,
+    tags: ["reuse", "performance"],
+    summary: "Reuse assessment over 20 modules slows founder review — batch above 5 deferred.",
+    body:
+      "Single-engagement reuse assessment remains interactive per module. Large catalogs should be pre-filtered by requirements metadata before presentation.",
+    learningOrigin: "reuse_assessment",
+    sourceReferences: [
+      { id: "reuse-assess-09", label: "Reuse assessment run #9", kind: "knowledge_record" },
+    ],
+    relatedModules: [{ moduleId: "data-table-shell", moduleName: "DataTable Shell" }],
+    relatedPrompts: [],
+    relatedPatterns: [],
+    aiSuggestedPatterns: [{ patternId: "kp-prompt-structure", title: "Prompt pack structure" }],
+  },
+];
+
+export function getKnowledgeSeedCatalog(): readonly KnowledgeDetailDto[] {
+  return SEED_KNOWLEDGE;
+}
+
+export function toKnowledgeListItem(detail: KnowledgeDetailDto) {
+  const {
+    body: _body,
+    learningOrigin: _learningOrigin,
+    sourceReferences: _sourceReferences,
+    relatedModules: _relatedModules,
+    relatedPrompts: _relatedPrompts,
+    relatedPatterns: _relatedPatterns,
+    aiSuggestedPatterns: _aiSuggestedPatterns,
+    ...listItem
+  } = detail;
+  return listItem;
+}

@@ -10,6 +10,8 @@ export const aosQueryKeys = {
       [...aosQueryKeys.deliveries.all(), "list", filters] as const,
     detail: (engagementId: string) =>
       [...aosQueryKeys.all, "delivery", engagementId] as const,
+    workflow: (engagementId: string) =>
+      [...aosQueryKeys.all, "workflow", engagementId] as const,
   },
 
   queues: {
@@ -24,4 +26,35 @@ export const aosQueryKeys = {
   },
 
   attention: () => [...aosQueryKeys.all, "attention"] as const,
+
+  erp: {
+    customers: (companyId: string) =>
+      [...aosQueryKeys.all, "erp", "customers", companyId] as const,
+  },
+
+  registry: {
+    all: () => [...aosQueryKeys.all, "registry"] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...aosQueryKeys.registry.all(), "list", filters] as const,
+    detail: (moduleId: string) =>
+      [...aosQueryKeys.registry.all(), "detail", moduleId] as const,
+  },
+
+  knowledge: {
+    all: () => [...aosQueryKeys.all, "knowledge"] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...aosQueryKeys.knowledge.all(), "list", filters] as const,
+    detail: (patternId: string) =>
+      [...aosQueryKeys.knowledge.all(), "detail", patternId] as const,
+  },
+
+  dashboard: () => [...aosQueryKeys.all, "dashboard", "founder"] as const,
+
+  playbook: {
+    all: () => [...aosQueryKeys.all, "playbook"] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...aosQueryKeys.playbook.all(), "list", filters] as const,
+    detail: (entryId: string) =>
+      [...aosQueryKeys.playbook.all(), "detail", entryId] as const,
+  },
 } as const;

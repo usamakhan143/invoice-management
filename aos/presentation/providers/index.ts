@@ -1,5 +1,7 @@
 export { AosProviders } from "./AosProviders";
 export type { AosProvidersProps } from "./AosProviders";
+export { AosShellProviders } from "./AosShellProviders";
+export type { AosShellProvidersProps } from "./AosShellProviders";
 export { AosServicesProvider } from "./AosServicesProvider";
 export type { AosServicesProviderProps } from "./AosServicesProvider";
 export { AosQueryProvider } from "./AosQueryProvider";

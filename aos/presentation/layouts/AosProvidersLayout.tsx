@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import { AosProviders } from "../providers";
 
 /**
- * Route layout wrapping all /aos/* routes with AOS provider stack.
+ * Route layout wrapping all /aos/* routes with AOS query + services providers.
  */
 const AosProvidersLayout: React.FC = () => {
   return (

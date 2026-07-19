@@ -1,5 +1,7 @@
 export { default as AosDashboardPage } from "./AosDashboardPage";
 export { default as AosDeliveryPage } from "./AosDeliveryPage";
+export { default as AosCreateEngagementPage } from "./AosCreateEngagementPage";
+export { default as AosEngagementHubPage } from "./AosEngagementHubPage";
 export { default as AosRegistryPage } from "./AosRegistryPage";
 export { default as AosRequirementsPage } from "./AosRequirementsPage";
 export { default as AosPromptsPage } from "./AosPromptsPage";

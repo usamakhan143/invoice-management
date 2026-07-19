@@ -7,6 +7,13 @@ export {
 } from "./permissionKeys";
 
 export {
+  DELIVERY_STATE,
+  DELIVERY_STATE_LABELS,
+  DELIVERY_STATES,
+  type DeliveryState,
+} from "./deliveryState";
+
+export {
   AGENCY_TYPE,
   AGENCY_TYPE_LABELS,
   AGENCY_TYPES,

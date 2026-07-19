@@ -5,6 +5,8 @@ export interface EngagementTab {
   id: string;
   label: string;
   indicator?: boolean;
+  disabled?: boolean;
+  title?: string;
 }
 
 export interface EngagementTabBarProps {
@@ -77,14 +79,20 @@ export const EngagementTabBar: React.FC<EngagementTabBarProps> = ({
             id={`aos-engagement-tab-${tab.id}`}
             aria-selected={isActive}
             aria-controls={`aos-engagement-panel-${tab.id}`}
+            aria-disabled={tab.disabled || undefined}
+            disabled={tab.disabled}
+            title={tab.title}
             tabIndex={isActive ? 0 : -1}
-            onClick={() => onTabChange(tab.id)}
+            onClick={() => {
+              if (!tab.disabled) onTabChange(tab.id);
+            }}
             onKeyDown={(event) => handleKeyDown(event, index)}
             className={cn(
               "relative inline-flex shrink-0 items-center gap-[var(--space-inline-sm)] border-b-2 px-[var(--space-inline-md)] py-[var(--space-stack-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] transition-colors duration-[var(--duration-fast)]",
               isActive
                 ? "border-[var(--color-interactive-primary)] text-[var(--color-text-primary)]"
                 : "border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border-default)] hover:text-[var(--color-text-primary)]",
+              tab.disabled && "cursor-not-allowed opacity-50",
               focusRing,
             )}
           >
