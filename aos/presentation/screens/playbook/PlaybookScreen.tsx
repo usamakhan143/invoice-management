@@ -1,8 +1,8 @@
 /** ST-19 — Delivery Playbook */
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { PLAYBOOK_SEARCH_MIN_CHARS } from "../../../application/playbook/playbookSearch";
-import { PLAYBOOK_ENTRY_TYPE_LABELS } from "../../../application/playbook/dto/PlaybookDto";
+import { PLAYBOOK_SEARCH_MIN_CHARS } from "../../../constants/searchLimits";
+import { PLAYBOOK_ENTRY_TYPE_LABELS, type PlaybookEntryType } from "../../../types/presentation";
 import { AOS_FEATURE_FLAG } from "../../../config/featureFlags";
 import {
   AGENCY_TYPES,
@@ -10,7 +10,6 @@ import {
   type AgencyType,
 } from "../../../constants/agencyType";
 import { DELIVERY_STATE, DELIVERY_STATE_LABELS } from "../../../constants/deliveryState";
-import type { PlaybookEntryType } from "../../../application/playbook/dto/PlaybookDto";
 import { usePlaybookEntryQuery, usePlaybookListQuery } from "../../../hooks/queries/usePlaybookQueries";
 import { FeatureFlagGate } from "../../gates";
 import { PageHeader, PageShell } from "../../layouts";
@@ -183,7 +182,7 @@ const PlaybookScreen: React.FC = () => {
       <PageShell>
         <PageHeader
           title="Delivery Playbook"
-          description="Human-readable methodology aligned to lifecycle — reference only, not executable workflow."
+          subtitle="Human-readable methodology aligned to lifecycle — reference only, not executable workflow."
         />
         <TableToolbar
           left={

@@ -1,5 +1,4 @@
 import type firebase from "firebase/compat/app";
-import { db } from "../../../services/firebase";
 import type { AosDeliveryReadPorts } from "../../integration/ports/deliveryReadPorts";
 import {
   CustomerReadAdapter,
@@ -13,13 +12,13 @@ import {
  * No global singleton; no service locator.
  */
 export interface CreateAosDeliveryReadPortsOptions {
-  firestore?: firebase.firestore.Firestore;
+  firestore: firebase.firestore.Firestore;
 }
 
 export function createAosDeliveryReadPorts(
-  options: CreateAosDeliveryReadPortsOptions = {},
+  options: CreateAosDeliveryReadPortsOptions,
 ): AosDeliveryReadPorts {
-  const firestore = options.firestore ?? db;
+  const { firestore } = options;
 
   return {
     customers: new CustomerReadAdapter(firestore),

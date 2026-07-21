@@ -116,12 +116,8 @@ export class FirestoreBosAttributionRepository implements BosAttributionReposito
       validateNoDuplicateActiveAttribution(existingForSource),
       "Duplicate attribution",
     );
-
-    const existingForInitiative = (
-      await this.listByInitiative(input.companyId, input.initiativeId, { limit: 100 })
-    ).items;
     assertDomainOk(
-      validateAttributionSplitTotal(existingForInitiative, input.allocationPercent),
+      validateAttributionSplitTotal(existingForSource, input.allocationPercent),
       "Attribution split exceeds limit",
     );
 

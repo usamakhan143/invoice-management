@@ -10,6 +10,14 @@ export interface ImportBoundaryRule {
 
 export const AOS_IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
   {
+    layer: "contracts",
+    forbiddenImportPatterns: ["/application/"],
+  },
+  {
+    layer: "infrastructure/firestore",
+    forbiddenImportPatterns: ["/application/"],
+  },
+  {
     layer: "presentation/ui",
     forbiddenImportPatterns: [
       "/application/",
@@ -26,6 +34,7 @@ export const AOS_IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
     forbiddenImportPatterns: [
       "/domain/",
       "/infrastructure/",
+      "/application/",
       "firebase/firestore",
       "firebase/compat",
     ],
@@ -57,6 +66,7 @@ export const AOS_IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
       "firebase/compat",
       "/presentation/ui/",
       "/presentation/screens/",
+      "/presentation/providers/",
     ],
   },
   {

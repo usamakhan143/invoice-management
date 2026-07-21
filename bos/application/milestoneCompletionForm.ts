@@ -100,6 +100,21 @@ export function shouldInitializeCompleteForm(
   return previousMilestoneId !== nextMilestoneId;
 }
 
+/** Keeps required link `<select>` value in sync with available options. */
+export function resolveRequiredLinkSelection(
+  currentId: string,
+  options: MilestoneLinkOption[],
+): string {
+  const trimmed = currentId.trim();
+  if (trimmed && options.some((option) => option.id === trimmed)) {
+    return trimmed;
+  }
+  if (options.length === 1) {
+    return options[0]!.id;
+  }
+  return "";
+}
+
 /** Keeps dependent-milestone `<select>` value in sync with available options. */
 export function resolveDependentMilestoneTargetId(
   action: MilestoneCompletionNextAction | "",

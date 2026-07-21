@@ -57,4 +57,24 @@ export const aosQueryKeys = {
     detail: (entryId: string) =>
       [...aosQueryKeys.playbook.all(), "detail", entryId] as const,
   },
+
+  versionHistory: {
+    all: () => [...aosQueryKeys.all, "version-history"] as const,
+    requirements: (engagementId: string, requirementSetId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "requirements", engagementId, requirementSetId] as const,
+    requirementDetail: (versionId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "requirement-detail", versionId] as const,
+    prompts: (promptArtifactId: string, engagementId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "prompts", promptArtifactId, engagementId] as const,
+    promptDetail: (versionId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "prompt-detail", versionId] as const,
+    cursorSessions: (engagementId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "cursor-sessions", engagementId] as const,
+    cursorRevisions: (sessionId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "cursor-revisions", sessionId] as const,
+    evaluations: (engagementId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "evaluations", engagementId] as const,
+    evaluationDetail: (evaluationId: string) =>
+      [...aosQueryKeys.versionHistory.all(), "evaluation-detail", evaluationId] as const,
+  },
 } as const;

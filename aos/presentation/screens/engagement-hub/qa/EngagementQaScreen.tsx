@@ -41,7 +41,7 @@ const EngagementQaScreen: React.FC = () => {
   const checklist = report?.checklist ?? DEFAULT_QA_CHECKLIST;
 
   return (
-    <div id="aos-engagement-panel-qa" aria-labelledby="aos-engagement-tab-qa" className="flex flex-col gap-[var(--space-stack-lg)]">
+    <div id="aos-engagement-panel-qa" role="tabpanel" aria-labelledby="aos-engagement-tab-qa" className="flex flex-col gap-[var(--space-stack-lg)]">
       <FeatureFlagGate flag={AOS_FEATURE_FLAG.DELIVERY}>
         <LinkButton icon="external" onClick={() => navigate("/invoices")}>
           View ERP invoices (Sidecar)

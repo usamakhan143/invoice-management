@@ -30,7 +30,7 @@ const EngagementReuseScreen: React.FC = () => {
 
   return (
     <FeatureFlagGate flag={AOS_FEATURE_FLAG.REGISTRY} fallback={<ErrorState title="Registry module disabled" />}>
-      <div id="aos-engagement-panel-reuse" aria-labelledby="aos-engagement-tab-reuse" className="flex flex-col gap-[var(--space-stack-lg)]">
+      <div id="aos-engagement-panel-reuse" role="tabpanel" aria-labelledby="aos-engagement-tab-reuse" className="flex flex-col gap-[var(--space-stack-lg)]">
         {!assessment ? (
           <EmptyState
             title="Run reuse assessment"

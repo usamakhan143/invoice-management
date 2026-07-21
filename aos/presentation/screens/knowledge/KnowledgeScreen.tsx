@@ -1,7 +1,7 @@
 /** ST-18 — Knowledge Library */
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { KNOWLEDGE_SEARCH_MIN_CHARS } from "../../../application/knowledge/knowledgeSearch";
+import { KNOWLEDGE_SEARCH_MIN_CHARS } from "../../../constants/searchLimits";
 import { AOS_FEATURE_FLAG } from "../../../config/featureFlags";
 import {
   AGENCY_TYPES,
@@ -241,7 +241,7 @@ const KnowledgeScreen: React.FC = () => {
       <PageShell>
         <PageHeader
           title="Knowledge Library"
-          description="Agency delivery wisdom — patterns promoted from retrospectives and evaluations."
+          subtitle="Agency delivery wisdom — patterns promoted from retrospectives and evaluations."
         />
         <TableToolbar
           left={

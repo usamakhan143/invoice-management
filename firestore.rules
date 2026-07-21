@@ -664,6 +664,166 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // AOS Delivery — company-scoped workflow, audit, and catalog collections
+    function aosCompanyReadOk(data) {
+      return data.companyId is string &&
+        data.companyId.size() > 0 &&
+        canAccessCompanyData(data.companyId);
+    }
+
+    function aosCompanyGetOk() {
+      return resource == null || aosCompanyReadOk(resource.data);
+    }
+
+    function aosCompanyWriteOk(data) {
+      return data.companyId is string &&
+        data.companyId.size() > 0 &&
+        canAccessCompanyData(data.companyId);
+    }
+
+    match /aosDeliveryEngagements/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /aosDeliveryTemplates/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /aosDeliveryQualityReports/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /aosEngagementWorkflows/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /aosAuditEvents/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /aosModuleRegistry/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /aosKnowledgePatterns/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    match /aosPlaybookEntries/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId;
+      allow delete: if false;
+    }
+
+    function aosCursorSessionFinalized(data) {
+      return data.status == 'passed' || data.status == 'failed' || data.status == 'submitted';
+    }
+
+    function aosEvaluationFinalized(data) {
+      return data.status == 'confirmed' || data.status == 'overridden';
+    }
+
+    function aosEvaluationCreateOk(data) {
+      return data.status == 'draft' ||
+        (aosEvaluationFinalized(data) &&
+          data.confirmedAt is timestamp &&
+          data.confirmedByUserId is string &&
+          data.confirmedByUserId.size() > 0);
+    }
+
+    match /aosRequirementVersions/{versionId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    match /aosPromptVersions/{versionId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    match /aosCursorSessions/{sessionId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        !aosCursorSessionFinalized(resource.data);
+      allow delete: if false;
+    }
+
+    match /aosCursorRevisions/{revisionId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        resource.data.status == 'open';
+      allow delete: if false;
+    }
+
+    match /aosEvaluations/{evaluationId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data) &&
+        aosEvaluationCreateOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        resource.data.status == 'draft' &&
+        (request.resource.data.status == 'confirmed' || request.resource.data.status == 'overridden');
+      allow delete: if false;
+    }
+
     // Default deny rule for any other collections
     match /{document=**} {
       allow read, write: if false;

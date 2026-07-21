@@ -1,6 +1,7 @@
+import { AOS_CATALOG_SEARCH_MIN_CHARS } from "../../constants/searchLimits";
 import type { PlaybookEntryListItemDto } from "./dto/PlaybookDto";
 
-const MIN_SEARCH_CHARS = 2;
+const MIN_SEARCH_CHARS = AOS_CATALOG_SEARCH_MIN_CHARS;
 
 function searchRank(item: PlaybookEntryListItemDto, query: string): number | null {
   const q = query.trim().toLowerCase();

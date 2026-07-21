@@ -34,19 +34,20 @@ export function validateCreateAttribution(
   return domainOk();
 }
 
+/** Doc 11 §5 — sum of split % per source (expense), not per initiative. */
 export function validateAttributionSplitTotal(
-  existingActive: readonly BosAttribution[],
+  existingActiveForSource: readonly BosAttribution[],
   newAllocationPercent: number,
 ): DomainResult {
   const total =
-    existingActive
+    existingActiveForSource
       .filter((a) => a.status === ATTRIBUTION_STATUS.ACTIVE)
       .reduce((sum, a) => sum + a.allocationPercent, 0) + newAllocationPercent;
 
   if (total > ATTRIBUTION_MAX_TOTAL_PERCENT) {
     return domainFailOne(
       "ATTRIBUTION_SPLIT_EXCEEDS_MAX",
-      `Total active allocation would exceed ${ATTRIBUTION_MAX_TOTAL_PERCENT}% (Doc 11).`,
+      `Total active allocation for this source would exceed ${ATTRIBUTION_MAX_TOTAL_PERCENT}% (Doc 11).`,
     );
   }
   return domainOk();

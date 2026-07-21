@@ -1,4 +1,4 @@
-import type { EngagementWorkflowDto } from "../../../application/workflow/dto/EngagementWorkflowDto";
+import type { EngagementWorkflowDto } from "../../../types/presentation";
 
 import { ENGAGEMENT_HUB_TABS } from "./engagementHubTabs";
 

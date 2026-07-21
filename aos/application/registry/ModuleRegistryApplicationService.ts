@@ -1,3 +1,4 @@
+import type { ModuleRegistryRepository } from "../../contracts/ModuleRegistryRepository";
 import type { AosReadScope } from "../types";
 import type {
   ListModuleRegistryQuery,
@@ -5,19 +6,25 @@ import type {
   ModuleRegistryListDto,
 } from "./dto/ModuleRegistryDto";
 import { filterAndRankRegistryModules } from "./registrySearch";
-import { getModuleRegistrySeedCatalog, toRegistryListItem } from "./moduleRegistrySeed";
+import { toRegistryListItem } from "./moduleRegistrySeed";
 
-/** Phase 1A registry catalog — in-memory seed; no Firestore. */
+export interface ModuleRegistryApplicationServiceDeps {
+  repository: ModuleRegistryRepository;
+}
+
 export class ModuleRegistryApplicationService {
-  private catalogForCompany(_scope: AosReadScope): readonly ModuleRegistryDetailDto[] {
-    return getModuleRegistrySeedCatalog();
+  private readonly repository: ModuleRegistryRepository;
+
+  constructor(deps: ModuleRegistryApplicationServiceDeps) {
+    this.repository = deps.repository;
   }
 
   async listModules(
     scope: AosReadScope,
     query: ListModuleRegistryQuery = {},
   ): Promise<ModuleRegistryListDto> {
-    let items = this.catalogForCompany(scope).map(toRegistryListItem);
+    const catalog = await this.repository.listAll(scope);
+    let items = catalog.map(toRegistryListItem);
 
     if (query.agencyType) {
       items = items.filter((item) => item.agencyTypes.includes(query.agencyType!));
@@ -35,6 +42,6 @@ export class ModuleRegistryApplicationService {
     scope: AosReadScope,
     moduleId: string,
   ): Promise<ModuleRegistryDetailDto | null> {
-    return this.catalogForCompany(scope).find((item) => item.moduleId === moduleId) ?? null;
+    return this.repository.findById(scope, moduleId);
   }
 }

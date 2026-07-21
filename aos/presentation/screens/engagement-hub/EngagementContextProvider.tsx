@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from "react";
-import type { DeliveryEngagementDto } from "../../../application/delivery/dto/DeliveryEngagementDto";
+import type { DeliveryEngagementDto } from "../../../types/presentation";
 
 export interface EngagementContextValue {
   engagementId: string;

@@ -10,7 +10,7 @@ import type { EngagementType } from "../../../constants/engagementType";
 import { ENGAGEMENT_TYPES, ENGAGEMENT_TYPE_LABELS } from "../../../constants/engagementType";
 import { AOS_PERMISSION_KEY } from "../../../constants/permissionKeys";
 import { AOS_FEATURE_FLAG } from "../../../config/featureFlags";
-import type { CreateDeliveryEngagementCommand } from "../../../application/delivery/commands/CreateDeliveryEngagementCommand";
+import type { CreateDeliveryEngagementCommand } from "../../../types/presentation";
 import { useCreateEngagementMutation } from "../../../hooks/mutations/useCreateEngagementMutation";
 import { useErpCustomersQuery } from "../../../hooks/queries/useErpCustomersQuery";
 import { FeatureFlagGate } from "../../gates";

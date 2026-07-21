@@ -3,9 +3,13 @@ import { PlaybookApplicationService } from "./PlaybookApplicationService";
 import { filterAndRankPlaybookEntries } from "./playbookSearch";
 import { getPlaybookSeedCatalog, toPlaybookListItem } from "./playbookSeed";
 
+import { InMemoryPlaybookRepository } from "../../infrastructure/testing/inMemoryCatalogRepositories";
+
 describe("PlaybookApplicationService", () => {
   const scope = { companyId: "co1" };
-  const service = new PlaybookApplicationService();
+  const service = new PlaybookApplicationService({
+    repository: new InMemoryPlaybookRepository(),
+  });
 
   it("lists seeded playbook entries", async () => {
     const result = await service.listEntries(scope, {});

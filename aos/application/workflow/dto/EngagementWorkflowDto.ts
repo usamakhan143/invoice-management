@@ -1,6 +1,6 @@
 /**
  * Engagement workflow read models — presentation/application DTOs.
- * Not persistence documents; backed by in-memory workflow store until Stage D+ repos land.
+ * Persisted via Firestore repositories; timeline from append-only audit store (ADR-014).
  */
 
 export type WorkflowArtifactStatus = "empty" | "draft" | "in_review" | "approved" | "running" | "passed" | "failed";
@@ -23,6 +23,8 @@ export interface RequirementSetDto {
   approvalNote?: string;
   approvedAt?: number;
   updatedAt: number;
+  currentApprovedVersionId?: string;
+  currentApprovedVersionNumber?: number;
 }
 
 export interface ReuseModuleDecisionDto {
@@ -49,6 +51,8 @@ export interface PromptArtifactDto {
   id: string;
   title: string;
   body: string;
+  currentApprovedVersionId?: string;
+  currentApprovedVersionNumber?: number;
 }
 
 export interface PromptPackDto {
@@ -62,16 +66,21 @@ export interface PromptPackDto {
   approvalNote?: string;
   approvedAt?: number;
   updatedAt: number;
+  requirementVersionId?: string;
 }
 
 export interface CursorSessionDto {
   id: string;
   engagementId: string;
   promptPackId: string;
-  status: "active" | "awaiting_capture" | "submitted" | "abandoned";
+  promptArtifactId?: string;
+  promptVersionId?: string;
+  status: "active" | "awaiting_capture" | "submitted" | "abandoned" | "failed" | "passed";
   captureSummary?: string;
   startedAt: number;
   submittedAt?: number;
+  finalizedAt?: number;
+  readOnly?: boolean;
 }
 
 export interface EvaluationCriterionDto {
@@ -86,10 +95,16 @@ export interface EvaluationDto {
   engagementId: string;
   status: WorkflowArtifactStatus;
   rubricName: string;
+  rubricVersionId?: string;
   scorePercent: number;
   passed: boolean;
   criteria: EvaluationCriterionDto[];
   ranAt?: number;
+  cursorSessionId?: string;
+  promptVersionId?: string;
+  requirementVersionId?: string;
+  amendsEvaluationId?: string;
+  readOnly?: boolean;
 }
 
 export interface QaChecklistItemDto {
@@ -121,6 +136,25 @@ export interface RetrospectiveDto {
   aiGenerated: boolean;
   approvalNote?: string;
   approvedAt?: number;
+  traceabilityRefs?: DeliveryTraceabilityRefsDto;
+}
+
+export interface DeliveryTraceabilityRefsDto {
+  requirementVersionId?: string;
+  requirementVersionNumber?: number;
+  promptVersionId?: string;
+  promptVersionNumber?: number;
+  cursorSessionId?: string;
+  evaluationId?: string;
+  rubricVersionId?: string;
+}
+
+export interface WorkflowVersionPointersDto {
+  currentApprovedRequirementVersionId?: string;
+  currentApprovedRequirementVersionNumber?: number;
+  currentPromptPackId?: string;
+  currentCursorSessionId?: string;
+  currentEvaluationId?: string;
 }
 
 export interface TimelineEventDto {
@@ -153,4 +187,6 @@ export interface EngagementWorkflowDto {
   retrospective: RetrospectiveDto | null;
   timeline: TimelineEventDto[];
   gates: WorkflowGateStatusDto;
+  versionPointers: WorkflowVersionPointersDto;
+  versionChainsEnabled: boolean;
 }

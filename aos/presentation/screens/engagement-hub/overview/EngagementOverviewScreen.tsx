@@ -19,7 +19,7 @@ const EngagementOverviewScreen: React.FC = () => {
   const tabAccess = getWorkflowTabAccess(workflowQuery.data);
 
   return (
-    <div id="aos-engagement-panel-overview" aria-labelledby="aos-engagement-tab-overview" className="flex flex-col gap-[var(--space-stack-lg)]">
+    <div id="aos-engagement-panel-overview" role="tabpanel" aria-labelledby="aos-engagement-tab-overview" className="flex flex-col gap-[var(--space-stack-lg)]">
       <section>
         <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
           Founder workflow status

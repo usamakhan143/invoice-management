@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("../../services/firebase", () => ({
+  db: {},
+  auth: { currentUser: null },
+}));
+
 vi.mock("../infrastructure/wiring/createAosDeliveryReadPorts", () => ({
   createAosDeliveryReadPorts: vi.fn(() => ({
     customers: {},
@@ -14,6 +19,22 @@ vi.mock("../infrastructure/firestore/wiring/createAosDeliveryRepositories", () =
     engagements: {},
     templates: {},
     qualityReports: {},
+  })),
+}));
+
+vi.mock("../infrastructure/firestore/wiring/createAosWorkflowRepositories", () => ({
+  createAosWorkflowRepositories: vi.fn(() => ({
+    workflows: {},
+    auditEvents: {},
+    requirementVersions: {},
+    promptVersions: {},
+    cursorSessions: {},
+    cursorRevisions: {},
+    evaluations: {},
+    registry: {},
+    knowledge: {},
+    playbook: {},
+    firestore: {},
   })),
 }));
 

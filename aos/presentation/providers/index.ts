@@ -7,5 +7,5 @@ export type { AosServicesProviderProps } from "./AosServicesProvider";
 export { AosQueryProvider } from "./AosQueryProvider";
 export type { AosQueryProviderProps } from "./AosQueryProvider";
 export { createAosQueryClient } from "./createAosQueryClient";
-export { AosServicesContext } from "./AosServicesContext";
-export type { AosServicesContextValue } from "./AosServicesContext";
+export { AosServicesContext } from "../../hooks/AosServicesContext";
+export type { AosServicesContextValue } from "../../hooks/AosServicesContext";

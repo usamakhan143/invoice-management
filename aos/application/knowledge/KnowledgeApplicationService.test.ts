@@ -17,9 +17,13 @@ describe("filterAndRankKnowledgeItems", () => {
   });
 });
 
+import { InMemoryKnowledgeRepository } from "../../infrastructure/testing/inMemoryCatalogRepositories";
+
 describe("KnowledgeApplicationService", () => {
   const scope = { companyId: "co1" };
-  const service = new KnowledgeApplicationService();
+  const service = new KnowledgeApplicationService({
+    repository: new InMemoryKnowledgeRepository(),
+  });
 
   it("lists knowledge filtered by agency type", async () => {
     const result = await service.listKnowledge(scope, { agencyType: AGENCY_TYPE.MOBILE });

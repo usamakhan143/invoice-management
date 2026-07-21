@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { createAosPresentationServices } from "../../wiring/createAosPresentationServices";
 import type { CreateAosPresentationServicesOptions } from "../../wiring/createAosPresentationServices";
-import { AosServicesContext } from "./AosServicesContext";
+import { AosServicesContext } from "../../hooks/AosServicesContext";
 
 export interface AosServicesProviderProps {
   children: React.ReactNode;

@@ -40,6 +40,7 @@ import {
   isLessonsLearnedRequired,
   isMilestoneCompletionLate,
   resolveDependentMilestoneTargetId,
+  resolveRequiredLinkSelection,
   shouldInitializeCompleteForm,
   validateCompletionForm,
   type MilestoneCompleteFormState,
@@ -94,13 +95,18 @@ function FounderLinkSelect({
         onChange={(e) => onChange(e.target.value)}
         required={required && hasOptions}
       >
-        {hasOptions
-          ? options.map((opt) => (
+        {hasOptions ? (
+          <>
+            <option value="" disabled={required}>
+              {required ? `Select ${label.toLowerCase()}…` : "Select…"}
+            </option>
+            {options.map((opt) => (
               <option key={opt.id} value={opt.id}>
                 {opt.label}
               </option>
-            ))
-          : null}
+            ))}
+          </>
+        ) : null}
       </select>
       {!hasOptions ? (
         <p className="mt-1.5 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
@@ -187,6 +193,37 @@ const BosMilestoneCompleteModal: React.FC<BosMilestoneCompleteModalProps> = ({
       setForm((prev) => ({ ...prev, completionNextActionTargetId: resolved }));
     }
   }, [form.completionNextAction, form.completionNextActionTargetId, dependentMilestoneOptions]);
+
+  React.useEffect(() => {
+    if (!milestone) return;
+    const req = milestone.completionRequirements;
+    if (!req) return;
+
+    setForm((prev) => {
+      const patch: Partial<MilestoneCompleteFormState> = {};
+
+      if (req[MILESTONE_COMPLETION_REQUIREMENT_KEY.EXPENSE_LINKED]) {
+        const resolved = resolveRequiredLinkSelection(prev.selectedExpenseId, expenseOptions);
+        if (resolved !== prev.selectedExpenseId) {
+          patch.selectedExpenseId = resolved;
+        }
+      }
+      if (req[MILESTONE_COMPLETION_REQUIREMENT_KEY.DECISION_REQUIRED]) {
+        const resolved = resolveRequiredLinkSelection(prev.selectedDecisionId, decisionOptions);
+        if (resolved !== prev.selectedDecisionId) {
+          patch.selectedDecisionId = resolved;
+        }
+      }
+      if (req[MILESTONE_COMPLETION_REQUIREMENT_KEY.REVENUE_LINKED]) {
+        const resolved = resolveRequiredLinkSelection(prev.selectedInvoiceId, invoiceOptions);
+        if (resolved !== prev.selectedInvoiceId) {
+          patch.selectedInvoiceId = resolved;
+        }
+      }
+
+      return Object.keys(patch).length ? { ...prev, ...patch } : prev;
+    });
+  }, [milestone, expenseOptions, decisionOptions, invoiceOptions]);
 
   const patchForm = (partial: Partial<MilestoneCompleteFormState>) => {
     setForm((prev) => {

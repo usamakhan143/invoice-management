@@ -43,6 +43,9 @@ function layerForFile(relPath: string): (typeof AOS_IMPORT_BOUNDARY_RULES)[numbe
   if (relPath.startsWith("aos/hooks/")) {
     return AOS_IMPORT_BOUNDARY_RULES.find((r) => r.layer === "hooks");
   }
+  if (relPath.startsWith("aos/contracts/")) {
+    return AOS_IMPORT_BOUNDARY_RULES.find((r) => r.layer === "contracts");
+  }
   return undefined;
 }
 

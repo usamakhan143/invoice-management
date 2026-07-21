@@ -1,23 +1,15 @@
 /**
- * Delivery lifecycle states — UI/constants mirror of frozen domain model §01.
- * @see docs/aos-domain-model/01_DELIVERY_DOMAIN.md
+ * Delivery lifecycle states — re-exported from domain (single source of truth).
+ * @see aos/domain/delivery/deliveryState.ts
  */
 
-export const DELIVERY_STATE = {
-  DRAFT: "draft",
-  INTAKE: "intake",
-  DISCOVERY: "discovery",
-  PLANNING: "planning",
-  BUILDING: "building",
-  EVALUATING: "evaluating",
-  DELIVERING: "delivering",
-  HANDOFF: "handoff",
-  CLOSED: "closed",
-  PAUSED: "paused",
-  CANCELLED: "cancelled",
-} as const;
+export {
+  DELIVERY_STATE,
+  type DeliveryState,
+} from "../domain/delivery/deliveryState";
 
-export type DeliveryState = (typeof DELIVERY_STATE)[keyof typeof DELIVERY_STATE];
+import type { DeliveryState } from "../domain/delivery/deliveryState";
+import { DELIVERY_STATE } from "../domain/delivery/deliveryState";
 
 export const DELIVERY_STATE_LABELS: Record<DeliveryState, string> = {
   [DELIVERY_STATE.DRAFT]: "Draft",

@@ -1,3 +1,4 @@
+import type { PlaybookRepository } from "../../contracts/PlaybookRepository";
 import type { AosReadScope } from "../types";
 import type {
   ListPlaybookQuery,
@@ -5,16 +6,22 @@ import type {
   PlaybookListDto,
 } from "./dto/PlaybookDto";
 import { filterAndRankPlaybookEntries } from "./playbookSearch";
-import { getPlaybookSeedCatalog, toPlaybookListItem } from "./playbookSeed";
+import { toPlaybookListItem } from "./playbookSeed";
 
-/** Phase 1A playbook catalog — in-memory seed; no Firestore. */
+export interface PlaybookApplicationServiceDeps {
+  repository: PlaybookRepository;
+}
+
 export class PlaybookApplicationService {
-  private catalog(_scope: AosReadScope): readonly PlaybookEntryDetailDto[] {
-    return getPlaybookSeedCatalog();
+  private readonly repository: PlaybookRepository;
+
+  constructor(deps: PlaybookApplicationServiceDeps) {
+    this.repository = deps.repository;
   }
 
   async listEntries(scope: AosReadScope, query: ListPlaybookQuery = {}): Promise<PlaybookListDto> {
-    let items = this.catalog(scope).map(toPlaybookListItem);
+    const catalog = await this.repository.listAll(scope);
+    let items = catalog.map(toPlaybookListItem);
 
     if (query.entryType) {
       items = items.filter((item) => item.entryType === query.entryType);
@@ -32,6 +39,6 @@ export class PlaybookApplicationService {
   }
 
   async getEntry(scope: AosReadScope, entryId: string): Promise<PlaybookEntryDetailDto | null> {
-    return this.catalog(scope).find((item) => item.entryId === entryId) ?? null;
+    return this.repository.findById(scope, entryId);
   }
 }

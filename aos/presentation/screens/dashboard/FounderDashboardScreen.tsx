@@ -56,7 +56,7 @@ const FounderDashboardScreen: React.FC = () => {
       <PageShell>
         <PageHeader
           title="Dashboard"
-          description="What needs you now — decision surface, not analytics."
+          subtitle="What needs you now — decision surface, not analytics."
         />
         {dashboardQuery.isError ? (
           <DashboardWidgetError

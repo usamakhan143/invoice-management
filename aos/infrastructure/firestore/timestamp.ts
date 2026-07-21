@@ -26,3 +26,7 @@ export function requireTimestampMs(
 export function nowEpochMs(): number {
   return firebase.firestore.Timestamp.now().toMillis();
 }
+
+export function firestoreTimestampNow(): firebase.firestore.Timestamp {
+  return firebase.firestore.Timestamp.now();
+}

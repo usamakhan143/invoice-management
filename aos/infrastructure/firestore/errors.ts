@@ -5,7 +5,8 @@ export type AosRepositoryErrorCode =
   | "AOS_UPDATE_FAILED"
   | "AOS_SAVE_FAILED"
   | "AOS_INVALID_DOC"
-  | "AOS_COMPANY_MISMATCH";
+  | "AOS_COMPANY_MISMATCH"
+  | "VERSION_CONFLICT";
 
 export class AosRepositoryError extends Error {
   readonly code: AosRepositoryErrorCode;

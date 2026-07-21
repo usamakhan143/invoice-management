@@ -49,7 +49,7 @@ export const QueueScreenTemplate: React.FC<QueueScreenTemplateProps> = ({
 }) => (
   <FeatureFlagGate flag={featureFlag} fallback={<InAppAlert variant="info" title="Feature disabled" message={`${title} is not enabled for this workspace.`} />}>
     <PageShell>
-      <PageHeader title={title} description={description} />
+      <PageHeader title={title} subtitle={description} />
       <TableToolbar
         left={
           <SearchInput

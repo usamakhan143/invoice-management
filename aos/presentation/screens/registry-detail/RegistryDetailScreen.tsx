@@ -72,7 +72,7 @@ const RegistryDetailScreen: React.FC = () => {
         />
         <PageHeader
           title={module.moduleName}
-          description={`${MODULE_TYPE_LABELS[module.moduleType]} · Quality ${module.qualityScore}%`}
+          subtitle={`${MODULE_TYPE_LABELS[module.moduleType]} · Quality ${module.qualityScore}%`}
         />
         <RegistryCard
           moduleId={module.moduleId}

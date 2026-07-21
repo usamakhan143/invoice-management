@@ -4,10 +4,11 @@ import { ModuleRegistryApplicationService } from "../application/registry/Module
 import { KnowledgeApplicationService } from "../application/knowledge/KnowledgeApplicationService";
 import { DashboardApplicationService } from "../application/dashboard/DashboardApplicationService";
 import { PlaybookApplicationService } from "../application/playbook/PlaybookApplicationService";
-import { EngagementWorkflowApplicationService } from "../application/workflow/EngagementWorkflowApplicationService";
-import { EngagementWorkflowMemoryStore } from "../infrastructure/memory/EngagementWorkflowMemoryStore";
+import { createEngagementWorkflowApplicationService } from "../application/workflow/createEngagementWorkflowApplicationService";
+import { db } from "../../services/firebase";
 import { createAosDeliveryReadPorts } from "../infrastructure/wiring/createAosDeliveryReadPorts";
 import { createAosDeliveryRepositories } from "../infrastructure/firestore/wiring/createAosDeliveryRepositories";
+import { createAosWorkflowRepositories } from "../infrastructure/firestore/wiring/createAosWorkflowRepositories";
 import type { AosPresentationServices } from "./types";
 
 export interface CreateAosPresentationServicesOptions {
@@ -18,10 +19,7 @@ export interface CreateAosPresentationServicesOptions {
   knowledge?: KnowledgeApplicationService;
   dashboard?: DashboardApplicationService;
   playbook?: PlaybookApplicationService;
-  workflowStore?: EngagementWorkflowMemoryStore;
 }
-
-import type { AosPresentationServices } from "./types";
 
 let defaultPresentationServices: AosPresentationServices | null = null;
 
@@ -59,29 +57,27 @@ export function createAosPresentationServices(
       options.registry ||
       options.knowledge ||
       options.dashboard ||
-      options.playbook ||
-      options.workflowStore,
+      options.playbook,
   );
   if (!hasCustomDeps && defaultPresentationServices) {
     return defaultPresentationServices;
   }
 
-  const repositories = createAosDeliveryRepositories();
-  const readPorts = createAosDeliveryReadPorts();
+  const deliveryRepos = createAosDeliveryRepositories({ firestore: db });
+  const workflowRepos = createAosWorkflowRepositories({ firestore: db });
+  const readPorts = createAosDeliveryReadPorts({ firestore: db });
   const delivery =
     options.delivery ??
     new DeliveryApplicationService({
-      engagements: repositories.engagements,
+      engagements: deliveryRepos.engagements,
       readPorts,
     });
 
-  const workflowStore = options.workflowStore ?? new EngagementWorkflowMemoryStore();
   const workflow =
     options.workflow ??
-    new EngagementWorkflowApplicationService({
-      store: workflowStore,
+    createEngagementWorkflowApplicationService(workflowRepos, {
       advanceEngagementLifecycle: async (scope, engagementId, event) => {
-        const snapshot = workflowStore.getOrCreate(scope.companyId, engagementId);
+        const snapshot = await workflowRepos.workflows.getOrCreate(scope.companyId, engagementId);
         await delivery.advanceLifecycle(scope, engagementId, {
           event,
           artifacts: {
@@ -101,15 +97,18 @@ export function createAosPresentationServices(
     options.queues ??
     new QueueProjectionApplicationService({
       delivery,
-      workflowStore,
+      workflow,
     });
 
-  const registry = options.registry ?? new ModuleRegistryApplicationService();
-  const knowledge = options.knowledge ?? new KnowledgeApplicationService();
+  const registry =
+    options.registry ?? new ModuleRegistryApplicationService({ repository: workflowRepos.registry });
+  const knowledge =
+    options.knowledge ?? new KnowledgeApplicationService({ repository: workflowRepos.knowledge });
   const dashboard =
     options.dashboard ??
     new DashboardApplicationService({ delivery, queues, knowledge, registry });
-  const playbook = options.playbook ?? new PlaybookApplicationService();
+  const playbook =
+    options.playbook ?? new PlaybookApplicationService({ repository: workflowRepos.playbook });
 
   const services = { delivery, workflow, queues, registry, knowledge, dashboard, playbook };
   if (!hasCustomDeps) {

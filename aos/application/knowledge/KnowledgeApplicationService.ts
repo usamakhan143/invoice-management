@@ -1,3 +1,4 @@
+import type { KnowledgeRepository } from "../../contracts/KnowledgeRepository";
 import type { AosReadScope } from "../types";
 import type {
   KnowledgeDetailDto,
@@ -5,19 +6,25 @@ import type {
   ListKnowledgeQuery,
 } from "./dto/KnowledgeDto";
 import { filterAndRankKnowledgeItems } from "./knowledgeSearch";
-import { getKnowledgeSeedCatalog, toKnowledgeListItem } from "./knowledgeSeed";
+import { toKnowledgeListItem } from "./knowledgeSeed";
 
-/** Phase 1A knowledge library — in-memory seed; no Firestore. */
+export interface KnowledgeApplicationServiceDeps {
+  repository: KnowledgeRepository;
+}
+
 export class KnowledgeApplicationService {
-  private catalogForCompany(_scope: AosReadScope): readonly KnowledgeDetailDto[] {
-    return getKnowledgeSeedCatalog();
+  private readonly repository: KnowledgeRepository;
+
+  constructor(deps: KnowledgeApplicationServiceDeps) {
+    this.repository = deps.repository;
   }
 
   async listKnowledge(
     scope: AosReadScope,
     query: ListKnowledgeQuery = {},
   ): Promise<KnowledgeListDto> {
-    let items = this.catalogForCompany(scope).map(toKnowledgeListItem);
+    const catalog = await this.repository.listAll(scope);
+    let items = catalog.map(toKnowledgeListItem);
 
     if (query.agencyType) {
       items = items.filter((item) => item.agencyTypes.includes(query.agencyType!));
@@ -32,6 +39,6 @@ export class KnowledgeApplicationService {
     scope: AosReadScope,
     patternId: string,
   ): Promise<KnowledgeDetailDto | null> {
-    return this.catalogForCompany(scope).find((item) => item.patternId === patternId) ?? null;
+    return this.repository.findById(scope, patternId);
   }
 }

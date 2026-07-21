@@ -1,11 +1,16 @@
+import { connectAuthEmulator, getAuth, signInWithCustomToken } from "firebase/auth";
 import firebase from "firebase/compat/app";
-import "firebase/compat/auth";
 import "firebase/compat/firestore";
 import * as admin from "firebase-admin";
 import { AOS_COLLECTIONS } from "../firestore/collections";
 import { ERP_READ_COLLECTIONS, BOS_READ_COLLECTIONS } from "../adapters/collections";
 
 const PROJECT_ID = "aos-integration-test";
+const EMULATOR_FIREBASE_CONFIG = {
+  projectId: PROJECT_ID,
+  apiKey: "fake-api-key-for-emulator",
+  authDomain: `${PROJECT_ID}.firebaseapp.com`,
+};
 const FIRESTORE_PORT = 8080;
 const AUTH_PORT = 9099;
 const HOST = "127.0.0.1";
@@ -49,12 +54,14 @@ export async function createAosEmulatorHarness(): Promise<AosEmulatorHarness> {
   }
 
   const appName = `aos-test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const app = firebase.initializeApp({ projectId: PROJECT_ID }, appName);
-  firebase.auth(app).useEmulator(`http://${HOST}:${AUTH_PORT}`);
+  const app = firebase.initializeApp(EMULATOR_FIREBASE_CONFIG, appName);
   firebase.firestore(app).useEmulator(HOST, FIRESTORE_PORT);
 
+  const auth = getAuth(app);
+  connectAuthEmulator(auth, `http://${HOST}:${AUTH_PORT}`, { disableWarnings: true });
+
   const token = await admin.auth().createCustomToken(TEST_USER_ID);
-  await firebase.auth(app).signInWithCustomToken(token);
+  await signInWithCustomToken(auth, token);
 
   const db = firebase.firestore(app);
 
@@ -72,12 +79,23 @@ export async function createAosEmulatorHarness(): Promise<AosEmulatorHarness> {
 }
 
 export async function clearAosIntegrationCollections(
-  db: firebase.firestore.Firestore,
+  _db?: firebase.firestore.Firestore,
 ): Promise<void> {
+  const adminDb = admin.firestore();
   const collectionNames = [
     AOS_COLLECTIONS.DELIVERY_ENGAGEMENTS,
     AOS_COLLECTIONS.DELIVERY_TEMPLATES,
     AOS_COLLECTIONS.DELIVERY_QUALITY_REPORTS,
+    AOS_COLLECTIONS.ENGAGEMENT_WORKFLOWS,
+    AOS_COLLECTIONS.AUDIT_EVENTS,
+    AOS_COLLECTIONS.MODULE_REGISTRY,
+    AOS_COLLECTIONS.KNOWLEDGE_PATTERNS,
+    AOS_COLLECTIONS.PLAYBOOK_ENTRIES,
+    AOS_COLLECTIONS.REQUIREMENT_VERSIONS,
+    AOS_COLLECTIONS.PROMPT_VERSIONS,
+    AOS_COLLECTIONS.CURSOR_SESSIONS,
+    AOS_COLLECTIONS.CURSOR_REVISIONS,
+    AOS_COLLECTIONS.EVALUATIONS,
     ERP_READ_COLLECTIONS.CUSTOMERS,
     ERP_READ_COLLECTIONS.LEADS,
     ERP_READ_COLLECTIONS.USERS,
@@ -86,16 +104,16 @@ export async function clearAosIntegrationCollections(
   ];
 
   for (const name of collectionNames) {
-    const snap = await db.collection(name).get();
+    const snap = await adminDb.collection(name).get();
     if (snap.empty) continue;
-    const batch = db.batch();
+    const batch = adminDb.batch();
     snap.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
   }
 }
 
 export async function seedErpBosReadFixtures(
-  db: firebase.firestore.Firestore,
+  _db: firebase.firestore.Firestore,
   companyId: string,
   options: {
     customerId: string;
@@ -104,23 +122,24 @@ export async function seedErpBosReadFixtures(
     userId: string;
   },
 ): Promise<void> {
-  const now = firebase.firestore.Timestamp.now();
+  const adminDb = admin.firestore();
+  const now = admin.firestore.Timestamp.now();
 
-  await db.collection(ERP_READ_COLLECTIONS.CUSTOMERS).doc(options.customerId).set({
+  await adminDb.collection(ERP_READ_COLLECTIONS.CUSTOMERS).doc(options.customerId).set({
     companyId,
     name: "Integration Customer",
     email: "customer@integration.test",
     createdAt: now,
   });
 
-  await db.collection(ERP_READ_COLLECTIONS.LEADS).doc(options.leadId).set({
+  await adminDb.collection(ERP_READ_COLLECTIONS.LEADS).doc(options.leadId).set({
     companyId,
     name: "Integration Lead",
     status: "new",
     createdAt: now,
   });
 
-  await db.collection(ERP_READ_COLLECTIONS.USERS).doc(companyId).set({
+  await adminDb.collection(ERP_READ_COLLECTIONS.USERS).doc(companyId).set({
     displayName: "Integration Owner",
     email: "owner@integration.test",
     isOwner: true,
@@ -128,7 +147,7 @@ export async function seedErpBosReadFixtures(
   });
 
   if (options.userId !== companyId) {
-    await db.collection(ERP_READ_COLLECTIONS.USERS).doc(options.userId).set({
+    await adminDb.collection(ERP_READ_COLLECTIONS.USERS).doc(options.userId).set({
       companyId,
       displayName: "Integration Member",
       email: "member@integration.test",
@@ -136,7 +155,7 @@ export async function seedErpBosReadFixtures(
     });
   }
 
-  await db.collection(BOS_READ_COLLECTIONS.INITIATIVES).doc(options.initiativeId).set({
+  await adminDb.collection(BOS_READ_COLLECTIONS.INITIATIVES).doc(options.initiativeId).set({
     companyId,
     name: "Integration Initiative",
     status: "draft",
@@ -145,7 +164,7 @@ export async function seedErpBosReadFixtures(
     updatedAt: now,
   });
 
-  await db.collection(ERP_READ_COLLECTIONS.CUSTOMERS).doc("other-company-customer").set({
+  await adminDb.collection(ERP_READ_COLLECTIONS.CUSTOMERS).doc("other-company-customer").set({
     companyId: OTHER_COMPANY_ID,
     name: "Foreign Customer",
     createdAt: now,

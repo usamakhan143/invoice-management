@@ -229,7 +229,7 @@ describeIntegration("AOS Delivery stack (Firestore emulator)", () => {
         updatedById: harness.userId,
       }),
     ).rejects.toMatchObject({
-      code: "AOS_REPOSITORY_ERROR",
+      code: "DELIVERY_NOT_FOUND",
     });
   });
 

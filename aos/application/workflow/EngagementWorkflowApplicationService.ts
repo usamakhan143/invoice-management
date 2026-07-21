@@ -1,16 +1,52 @@
+import type {
+  AuditEventRepository,
+  EngagementWorkflowRepository,
+} from "../../contracts/EngagementWorkflowRepository";
+import type { CursorRevisionRepository } from "../../contracts/CursorRevisionRepository";
+import type { CursorSessionRepository } from "../../contracts/CursorSessionRepository";
+import type { EvaluationRepository } from "../../contracts/EvaluationRepository";
+import type { PromptVersionRepository } from "../../contracts/PromptVersionRepository";
+import type { RequirementVersionRepository } from "../../contracts/RequirementVersionRepository";
+import { isVersionChainsEnabled } from "../../config/versionChainConfig";
+import { isCursorSessionFinalized } from "../../domain/cursor/entities/cursorSession";
+import { isEvaluationFinalized } from "../../domain/evaluation/entities/evaluation";
 import type { DeliveryEngagementId } from "../../domain/delivery/valueObjects";
+import * as WorkflowAggregate from "../../domain/workflow/aggregate/engagementWorkflowAggregate";
+import type firebase from "firebase/compat/app";
 import type { AosActorScope, AosReadScope } from "../types";
+import { assertWorkflowOk } from "./errors";
 import type { EngagementWorkflowDto } from "./dto/EngagementWorkflowDto";
-import type { EngagementWorkflowStore } from "./EngagementWorkflowStore";
-
-export type { EngagementWorkflowStore } from "./EngagementWorkflowStore";
+import type {
+  CursorRevisionHistoryDto,
+  CursorSessionHistoryDto,
+  EvaluationDetailDto,
+  EvaluationHistoryDto,
+  PromptVersionDetailDto,
+  PromptVersionHistoryDto,
+  RequirementVersionDetailDto,
+  RequirementVersionHistoryDto,
+} from "./dto/VersionHistoryDto";
+import { toEngagementWorkflowDto } from "./mappers/toEngagementWorkflowDto";
+import {
+  LegacyPromptMigrationService,
+  LegacyVersionMigrationService,
+} from "./LegacyVersionMigrationService";
+import { WorkflowVersionOrchestrator } from "./WorkflowVersionOrchestrator";
 
 export interface GetEngagementWorkflowQuery {
   engagementId: DeliveryEngagementId;
 }
 
 export interface EngagementWorkflowApplicationServiceDeps {
-  store: EngagementWorkflowStore;
+  workflows: EngagementWorkflowRepository;
+  auditEvents: AuditEventRepository;
+  requirementVersions?: RequirementVersionRepository;
+  promptVersions?: PromptVersionRepository;
+  cursorSessions?: CursorSessionRepository;
+  cursorRevisions?: CursorRevisionRepository;
+  evaluations?: EvaluationRepository;
+  firestore?: firebase.firestore.Firestore;
+  versionChainsEnabled?: boolean;
   advanceEngagementLifecycle?: (
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
@@ -24,53 +60,103 @@ export interface EngagementWorkflowApplicationServiceDeps {
   ) => Promise<void>;
 }
 
+/**
+ * Workflow application orchestration — delegates business rules to domain aggregate.
+ */
 export class EngagementWorkflowApplicationService {
-  private readonly store: EngagementWorkflowStore;
+  private readonly workflows: EngagementWorkflowRepository;
+  private readonly auditEvents: AuditEventRepository;
+  private readonly requirementVersions?: RequirementVersionRepository;
+  private readonly promptVersions?: PromptVersionRepository;
+  private readonly cursorSessions?: CursorSessionRepository;
+  private readonly cursorRevisions?: CursorRevisionRepository;
+  private readonly evaluations?: EvaluationRepository;
+  private readonly orchestrator?: WorkflowVersionOrchestrator;
+  private readonly requirementMigration?: LegacyVersionMigrationService;
+  private readonly promptMigration?: LegacyPromptMigrationService;
+  private readonly versionChainsEnabled: boolean;
   private readonly advanceEngagementLifecycle?: EngagementWorkflowApplicationServiceDeps["advanceEngagementLifecycle"];
 
   constructor(deps: EngagementWorkflowApplicationServiceDeps) {
-    this.store = deps.store;
+    this.workflows = deps.workflows;
+    this.auditEvents = deps.auditEvents;
+    this.requirementVersions = deps.requirementVersions;
+    this.promptVersions = deps.promptVersions;
+    this.cursorSessions = deps.cursorSessions;
+    this.cursorRevisions = deps.cursorRevisions;
+    this.evaluations = deps.evaluations;
+    this.versionChainsEnabled = deps.versionChainsEnabled ?? isVersionChainsEnabled();
     this.advanceEngagementLifecycle = deps.advanceEngagementLifecycle;
+
+    if (this.versionChainsEnabled && deps.firestore && deps.requirementVersions && deps.promptVersions) {
+      this.orchestrator = new WorkflowVersionOrchestrator({ firestore: deps.firestore });
+      this.requirementMigration = new LegacyVersionMigrationService({
+        workflows: deps.workflows,
+        requirementVersions: deps.requirementVersions,
+        auditEvents: deps.auditEvents,
+      });
+      this.promptMigration = new LegacyPromptMigrationService({
+        workflows: deps.workflows,
+        requirementVersions: deps.requirementVersions,
+        promptVersions: deps.promptVersions,
+        auditEvents: deps.auditEvents,
+      });
+    }
   }
 
   async getWorkflow(
     scope: AosReadScope,
     query: GetEngagementWorkflowQuery,
   ): Promise<EngagementWorkflowDto> {
-    return this.store.getOrCreate(scope.companyId, query.engagementId);
+    const workflow = await this.workflows.getOrCreate(scope.companyId, query.engagementId);
+    const timeline = await this.auditEvents.listByEngagement(scope.companyId, query.engagementId);
+    return toEngagementWorkflowDto(workflow, timeline);
+  }
+
+  async listWorkflows(scope: AosReadScope): Promise<EngagementWorkflowDto[]> {
+    const workflows = await this.workflows.listByCompany(scope.companyId);
+    const results: EngagementWorkflowDto[] = [];
+    for (const workflow of workflows) {
+      const timeline = await this.auditEvents.listByEngagement(scope.companyId, workflow.engagementId);
+      results.push(toEngagementWorkflowDto(workflow, timeline));
+    }
+    return results;
+  }
+
+  private async persistCommand(
+    scope: AosActorScope,
+    engagementId: DeliveryEngagementId,
+    outcome: WorkflowAggregate.WorkflowCommandOutcome,
+    lifecycleCommand?: Parameters<typeof WorkflowAggregate.lifecycleEventForCommand>[0],
+  ): Promise<EngagementWorkflowDto> {
+    await this.auditEvents.append(outcome.auditEvent);
+    const saved = await this.workflows.save(scope.companyId, outcome.workflow);
+
+    if (lifecycleCommand && this.advanceEngagementLifecycle) {
+      const event = WorkflowAggregate.lifecycleEventForCommand(lifecycleCommand, saved);
+      if (event) {
+        await this.advanceEngagementLifecycle(scope, engagementId, event);
+      }
+    }
+
+    const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+    return toEngagementWorkflowDto(saved, timeline);
+  }
+
+  private async loadWorkflow(scope: AosActorScope, engagementId: DeliveryEngagementId) {
+    return this.workflows.getOrCreate(scope.companyId, engagementId);
   }
 
   async generateRequirementsDraft(
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
+    const workflow = await this.loadWorkflow(scope, engagementId);
     const now = Date.now();
-    workflow.requirementSet = {
-      id: `req-set-${engagementId}-v1`,
-      engagementId,
-      version: 1,
-      status: "draft",
-      title: "Initial requirement set",
-      aiGenerated: true,
-      updatedAt: now,
-      items: [
-        {
-          id: "req-1",
-          title: "Authentication and access control",
-          description: "Users can sign in and access engagement-scoped features per role.",
-          acceptanceCriteria: "Login, logout, and permission gates verified in QA.",
-        },
-        {
-          id: "req-2",
-          title: "Delivery engagement lifecycle",
-          description: "Engagement progresses through gated founder workflow steps.",
-          acceptanceCriteria: "Each gate blocks the next tab until approved.",
-        },
-      ],
-    };
-    workflow.timeline.unshift(this.event(engagementId, "requirements.draft_generated", "AI requirement draft generated", scope.actorUserId, now));
-    return this.store.save(scope.companyId, workflow);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.generateRequirementsDraft(workflow, scope.actorUserId, now),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async updateRequirementDraft(
@@ -78,21 +164,12 @@ export class EngagementWorkflowApplicationService {
     engagementId: DeliveryEngagementId,
     body: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.requirementSet) {
-      throw new Error("No requirement draft exists");
-    }
-    workflow.requirementSet.status = "draft";
-    workflow.requirementSet.items = [
-      {
-        id: "req-manual",
-        title: "Captured requirements",
-        description: body,
-      },
-    ];
-    workflow.requirementSet.aiGenerated = false;
-    workflow.requirementSet.updatedAt = Date.now();
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const now = Date.now();
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.updateRequirementDraft(workflow, body, scope.actorUserId, now),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async approveRequirements(
@@ -100,43 +177,81 @@ export class EngagementWorkflowApplicationService {
     engagementId: DeliveryEngagementId,
     note: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.requirementSet) {
-      throw new Error("No requirement set to approve");
-    }
     const now = Date.now();
-    workflow.requirementSet.status = "approved";
-    workflow.requirementSet.approvalNote = note;
-    workflow.requirementSet.approvedAt = now;
-    workflow.gates.requirementsApproved = true;
-    workflow.timeline.unshift(this.event(engagementId, "requirements.approved", "Requirement set approved", scope.actorUserId, now));
-    await this.advance(scope, engagementId, "approve_requirements");
-    return this.store.save(scope.companyId, workflow);
+    let workflow = await this.loadWorkflow(scope, engagementId);
+
+    if (this.orchestrator && this.requirementVersions && this.requirementMigration) {
+      workflow = await this.requirementMigration.ensureRequirementVersionMaterialized({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+      });
+
+      const setId = workflow.requirementSet?.id;
+      if (!setId) {
+        throw new Error("No requirement set to approve");
+      }
+
+      const pointerId =
+        workflow.currentApprovedRequirementVersionId ??
+        workflow.requirementSet?.currentApprovedVersionId;
+      if (workflow.requirementSet?.status === "approved" && pointerId) {
+        const existingVersion = await this.requirementVersions.getById(scope.companyId, pointerId);
+        if (existingVersion) {
+          const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+          return toEngagementWorkflowDto(workflow, timeline);
+        }
+      }
+
+      const existing = await this.requirementVersions.listBySet(scope.companyId, setId);
+      const supersedesVersionId =
+        existing.length > 0 ? existing[existing.length - 1]?.id : undefined;
+
+      const result = await this.orchestrator.publishRequirementVersionTransactional({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        note,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+        existingVersionNumbers: existing.map((v) => v.versionNumber),
+        supersedesVersionId,
+      });
+
+      if (this.advanceEngagementLifecycle) {
+        await this.advanceEngagementLifecycle(scope, engagementId, "approve_requirements");
+      }
+
+      const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+      return toEngagementWorkflowDto(result.workflow, timeline);
+    }
+
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.approveRequirements(workflow, note, scope.actorUserId, now),
+    );
+    return this.persistCommand(scope, engagementId, outcome, "approveRequirements");
   }
 
   async runReuseAssessment(
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.gates.requirementsApproved) {
-      throw new Error("Requirements must be approved before reuse assessment");
+    let workflow = await this.loadWorkflow(scope, engagementId);
+    if (this.requirementMigration) {
+      workflow = await this.requirementMigration.ensureRequirementVersionMaterialized({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        actorUserId: scope.actorUserId,
+        occurredAt: Date.now(),
+      });
     }
-    const now = Date.now();
-    workflow.reuseAssessment = {
-      id: `reuse-${engagementId}`,
-      engagementId,
-      status: "draft",
-      reuseRate: 0,
-      lastRunAt: now,
-      modules: [
-        { moduleId: "auth-firebase-v2", moduleName: "Firebase Auth Module", matchScore: 92, decision: "pending", source: "registry" },
-        { moduleId: "form-field-kit", moduleName: "Form Field Kit", matchScore: 88, decision: "pending", source: "registry" },
-        { moduleId: "data-table-virtual", moduleName: "Virtual Data Table", matchScore: 75, decision: "pending", source: "knowledge" },
-      ],
-    };
-    workflow.timeline.unshift(this.event(engagementId, "reuse.assessment_run", "Reuse assessment completed", scope.actorUserId, now));
-    return this.store.save(scope.companyId, workflow);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.runReuseAssessment(workflow, scope.actorUserId, Date.now()),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async recordReuseDecisions(
@@ -144,18 +259,11 @@ export class EngagementWorkflowApplicationService {
     engagementId: DeliveryEngagementId,
     input: { netNewJustification?: string },
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.reuseAssessment) {
-      throw new Error("Run reuse assessment first");
-    }
-    const accepted = workflow.reuseAssessment.modules.filter((m) => m.decision === "accepted").length;
-    workflow.reuseAssessment.reuseRate = Math.round((accepted / workflow.reuseAssessment.modules.length) * 100);
-    workflow.reuseAssessment.netNewJustification = input.netNewJustification;
-    workflow.reuseAssessment.status = "approved";
-    workflow.reuseAssessment.recordedAt = Date.now();
-    workflow.gates.reuseRecorded = true;
-    workflow.timeline.unshift(this.event(engagementId, "reuse.recorded", "Reuse decisions recorded", scope.actorUserId, Date.now()));
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.recordReuseDecisions(workflow, input, scope.actorUserId, Date.now()),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async setReuseModuleDecision(
@@ -165,40 +273,30 @@ export class EngagementWorkflowApplicationService {
     decision: "accepted" | "rejected",
     justification?: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.reuseAssessment) {
-      throw new Error("Run reuse assessment first");
-    }
-    workflow.reuseAssessment.modules = workflow.reuseAssessment.modules.map((module) =>
-      module.moduleId === moduleId ? { ...module, decision, justification } : module,
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const now = Date.now();
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.setReuseModuleDecision(
+        workflow,
+        moduleId,
+        decision,
+        scope.actorUserId,
+        now,
+        justification,
+      ),
     );
-    return this.store.save(scope.companyId, workflow);
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async generatePromptPack(
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.gates.reuseRecorded) {
-      throw new Error("Reuse decisions must be recorded first");
-    }
-    const now = Date.now();
-    workflow.promptPack = {
-      id: `prompt-pack-${engagementId}-v1`,
-      engagementId,
-      version: 1,
-      status: "draft",
-      title: "Feature delivery prompt pack",
-      aiGenerated: true,
-      updatedAt: now,
-      artifacts: [
-        { id: "artifact-1", title: "Implementation prompt", body: "Implement approved requirements using accepted reusable modules first." },
-        { id: "artifact-2", title: "Verification prompt", body: "Verify gates, tests, and evaluation rubric before QA handoff." },
-      ],
-    };
-    workflow.timeline.unshift(this.event(engagementId, "prompts.generated", "Prompt pack draft generated", scope.actorUserId, now));
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.generatePromptPack(workflow, scope.actorUserId, Date.now()),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async approvePromptPack(
@@ -206,38 +304,117 @@ export class EngagementWorkflowApplicationService {
     engagementId: DeliveryEngagementId,
     note: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.promptPack) {
-      throw new Error("No prompt pack to approve");
-    }
     const now = Date.now();
-    workflow.promptPack.status = "approved";
-    workflow.promptPack.approvalNote = note;
-    workflow.promptPack.approvedAt = now;
-    workflow.gates.promptPackApproved = true;
-    workflow.timeline.unshift(this.event(engagementId, "prompts.approved", "Prompt pack approved", scope.actorUserId, now));
-    await this.advance(scope, engagementId, "approve_prompt_pack");
-    return this.store.save(scope.companyId, workflow);
+    let workflow = await this.loadWorkflow(scope, engagementId);
+
+    if (
+      this.orchestrator &&
+      this.requirementVersions &&
+      this.promptVersions &&
+      this.promptMigration
+    ) {
+      workflow = await this.requirementMigration!.ensureRequirementVersionMaterialized({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+      });
+
+      const requirementVersionId =
+        workflow.currentApprovedRequirementVersionId ??
+        workflow.requirementSet?.currentApprovedVersionId;
+      if (!requirementVersionId) {
+        throw new Error("Approved requirement version required");
+      }
+
+      const requirementVersion = await this.requirementVersions.getById(
+        scope.companyId,
+        requirementVersionId,
+      );
+      if (!requirementVersion) {
+        throw new Error("Requirement version not found");
+      }
+
+      workflow = await this.promptMigration.ensurePromptVersionsMaterialized({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        requirementVersion,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+      });
+
+      if (!workflow.promptPack) {
+        throw new Error("No prompt pack to approve");
+      }
+
+      const existingByArtifact: Record<string, number[]> = {};
+      for (const artifact of workflow.promptPack.artifacts) {
+        const versions = await this.promptVersions.listByArtifact(scope.companyId, artifact.id);
+        existingByArtifact[artifact.id] = versions.map((v) => v.versionNumber);
+      }
+
+      const result = await this.orchestrator.publishPromptPackTransactional({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        requirementVersion,
+        note,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+        existingVersionNumbersByArtifact: existingByArtifact,
+      });
+
+      if (this.advanceEngagementLifecycle) {
+        await this.advanceEngagementLifecycle(scope, engagementId, "approve_prompt_pack");
+      }
+
+      const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+      return toEngagementWorkflowDto(result.workflow, timeline);
+    }
+
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.approvePromptPack(workflow, note, scope.actorUserId, now),
+    );
+    return this.persistCommand(scope, engagementId, outcome, "approvePromptPack");
   }
 
   async startCursorSession(
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.gates.promptPackApproved || !workflow.promptPack) {
-      throw new Error("Approve a prompt pack before starting Cursor");
-    }
     const now = Date.now();
-    workflow.cursorSessions.unshift({
-      id: `cursor-${now}`,
-      engagementId,
-      promptPackId: workflow.promptPack.id,
-      status: "active",
-      startedAt: now,
-    });
-    workflow.timeline.unshift(this.event(engagementId, "cursor.started", "Cursor session started", scope.actorUserId, now));
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+
+    if (this.orchestrator && this.promptVersions) {
+      const artifact = workflow.promptPack?.artifacts[0];
+      const promptVersionId = artifact?.currentApprovedVersionId;
+      if (!artifact || !promptVersionId) {
+        throw new Error("Approved prompt version required");
+      }
+      const promptVersion = await this.promptVersions.getById(scope.companyId, promptVersionId);
+      if (!promptVersion) {
+        throw new Error("Prompt version not found");
+      }
+
+      const result = await this.orchestrator.createCursorSessionTransactional({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        promptVersion,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+      });
+
+      const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+      return toEngagementWorkflowDto(result.workflow, timeline);
+    }
+
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.startCursorSession(workflow, scope.actorUserId, now),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async submitCursorCapture(
@@ -246,51 +423,94 @@ export class EngagementWorkflowApplicationService {
     sessionId: string,
     captureSummary: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
     const now = Date.now();
-    workflow.cursorSessions = workflow.cursorSessions.map((session) =>
-      session.id === sessionId
-        ? { ...session, status: "submitted", captureSummary, submittedAt: now }
-        : session,
-    );
-    workflow.gates.cursorSubmitted = workflow.cursorSessions.some((s) => s.status === "submitted");
-    workflow.timeline.unshift(this.event(engagementId, "cursor.capture_submitted", "Cursor capture submitted", scope.actorUserId, now));
-    if (workflow.gates.cursorSubmitted) {
-      await this.advance(scope, engagementId, "submit_sessions");
+    const workflow = await this.loadWorkflow(scope, engagementId);
+
+    if (this.orchestrator) {
+      const result = await this.orchestrator.finalizeCursorCaptureTransactional({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        sessionId,
+        captureSummary,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+      });
+
+      if (this.advanceEngagementLifecycle) {
+        const event = WorkflowAggregate.lifecycleEventForCommand("submitCursor", result.workflow);
+        if (event) {
+          await this.advanceEngagementLifecycle(scope, engagementId, event);
+        }
+      }
+
+      const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+      return toEngagementWorkflowDto(result.workflow, timeline);
     }
-    return this.store.save(scope.companyId, workflow);
+
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.submitCursorCapture(
+        workflow,
+        sessionId,
+        captureSummary,
+        scope.actorUserId,
+        now,
+      ),
+    );
+    return this.persistCommand(scope, engagementId, outcome, "submitCursor");
   }
 
   async runEvaluation(
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.gates.cursorSubmitted) {
-      throw new Error("Submit a Cursor capture before evaluation");
-    }
     const now = Date.now();
-    const passed = true;
-    workflow.evaluation = {
-      id: `eval-${engagementId}`,
-      engagementId,
-      status: passed ? "passed" : "failed",
-      rubricName: "Delivery Quality Rubric",
-      scorePercent: passed ? 88 : 62,
-      passed,
-      ranAt: now,
-      criteria: [
-        { id: "c1", label: "Requirements coverage", passed: true, score: 90 },
-        { id: "c2", label: "Reuse compliance", passed: true, score: 85 },
-        { id: "c3", label: "Capture evidence quality", passed: passed, score: passed ? 88 : 55 },
-      ],
-    };
-    workflow.gates.evaluationPassed = passed;
-    workflow.timeline.unshift(this.event(engagementId, "evaluation.completed", passed ? "Evaluation passed" : "Evaluation failed", scope.actorUserId, now));
-    if (passed) {
-      await this.advance(scope, engagementId, "pass_evaluations");
+    const workflow = await this.loadWorkflow(scope, engagementId);
+
+    if (this.orchestrator && this.promptVersions && this.requirementVersions) {
+      const sessionId = workflow.currentCursorSessionId ?? workflow.cursorSessions[0]?.id;
+      const session = workflow.cursorSessions.find((s) => s.id === sessionId);
+      if (!session?.promptVersionId) {
+        throw new Error("Cursor session required");
+      }
+
+      const promptVersion = await this.promptVersions.getById(
+        scope.companyId,
+        session.promptVersionId,
+      );
+      const requirementVersion = promptVersion
+        ? await this.requirementVersions.getById(
+            scope.companyId,
+            promptVersion.requirementVersionId,
+          )
+        : null;
+      if (!promptVersion || !requirementVersion) {
+        throw new Error("Version chain incomplete");
+      }
+
+      const result = await this.orchestrator.confirmEvaluationTransactional({
+        companyId: scope.companyId,
+        engagementId,
+        workflow,
+        session,
+        promptVersion,
+        requirementVersion,
+        actorUserId: scope.actorUserId,
+        occurredAt: now,
+      });
+
+      if (this.advanceEngagementLifecycle && result.evaluation.passed) {
+        await this.advanceEngagementLifecycle(scope, engagementId, "pass_evaluations");
+      }
+
+      const timeline = await this.auditEvents.listByEngagement(scope.companyId, engagementId);
+      return toEngagementWorkflowDto(result.workflow, timeline);
     }
-    return this.store.save(scope.companyId, workflow);
+
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.runEvaluation(workflow, scope.actorUserId, now),
+    );
+    return this.persistCommand(scope, engagementId, outcome, "runEvaluation");
   }
 
   async updateQaChecklist(
@@ -299,26 +519,18 @@ export class EngagementWorkflowApplicationService {
     itemId: string,
     checked: boolean,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.gates.evaluationPassed) {
-      throw new Error("Evaluation must pass before QA");
-    }
-    if (!workflow.qualityReport) {
-      workflow.qualityReport = {
-        id: `qa-${engagementId}`,
-        engagementId,
-        status: "draft",
-        checklist: [
-          { id: "qa-1", label: "All approved requirements verified", checked: false },
-          { id: "qa-2", label: "Prompt pack artifacts copied to Cursor", checked: false },
-          { id: "qa-3", label: "Evaluation evidence attached", checked: false },
-        ],
-      };
-    }
-    workflow.qualityReport.checklist = workflow.qualityReport.checklist.map((item) =>
-      item.id === itemId ? { ...item, checked } : item,
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const now = Date.now();
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.updateQaChecklist(
+        workflow,
+        itemId,
+        checked,
+        scope.actorUserId,
+        now,
+      ),
     );
-    return this.store.save(scope.companyId, workflow);
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async approveQaHandoff(
@@ -326,44 +538,22 @@ export class EngagementWorkflowApplicationService {
     engagementId: DeliveryEngagementId,
     note: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.qualityReport) {
-      throw new Error("QA checklist not initialized");
-    }
-    const allChecked = workflow.qualityReport.checklist.every((item) => item.checked);
-    if (!allChecked) {
-      throw new Error("Complete all QA checklist items before handoff");
-    }
-    const now = Date.now();
-    workflow.qualityReport.status = "approved";
-    workflow.qualityReport.summaryNotes = note;
-    workflow.qualityReport.approvedAt = now;
-    workflow.gates.qaComplete = true;
-    workflow.timeline.unshift(this.event(engagementId, "qa.approved", "QA handoff approved", scope.actorUserId, now));
-    await this.advance(scope, engagementId, "complete_qa");
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.approveQaHandoff(workflow, note, scope.actorUserId, Date.now()),
+    );
+    return this.persistCommand(scope, engagementId, outcome, "approveQa");
   }
 
   async generateRetrospective(
     scope: AosActorScope,
     engagementId: DeliveryEngagementId,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.gates.qaComplete) {
-      throw new Error("Complete QA before retrospective");
-    }
-    workflow.retrospective = {
-      id: `retro-${engagementId}`,
-      engagementId,
-      status: "draft",
-      aiGenerated: true,
-      lessons: [
-        { id: "l1", text: "Reuse assessment early reduced net-new scope.", promotionTarget: "knowledge" },
-        { id: "l2", text: "Approval gates prevented premature Cursor execution.", promotionTarget: "registry" },
-      ],
-    };
-    workflow.timeline.unshift(this.event(engagementId, "retro.generated", "Retrospective draft generated", scope.actorUserId, Date.now()));
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.generateRetrospective(workflow, scope.actorUserId, Date.now()),
+    );
+    return this.persistCommand(scope, engagementId, outcome);
   }
 
   async approveRetrospective(
@@ -371,44 +561,231 @@ export class EngagementWorkflowApplicationService {
     engagementId: DeliveryEngagementId,
     note: string,
   ): Promise<EngagementWorkflowDto> {
-    const workflow = this.store.getOrCreate(scope.companyId, engagementId);
-    if (!workflow.retrospective) {
-      throw new Error("Generate retrospective first");
-    }
-    const now = Date.now();
-    workflow.retrospective.status = "approved";
-    workflow.retrospective.approvalNote = note;
-    workflow.retrospective.approvedAt = now;
-    workflow.gates.retrospectiveComplete = true;
-    workflow.timeline.unshift(this.event(engagementId, "retro.approved", "Retrospective approved", scope.actorUserId, now));
-    await this.advance(scope, engagementId, "submit_retrospective");
-    return this.store.save(scope.companyId, workflow);
+    const workflow = await this.loadWorkflow(scope, engagementId);
+    const outcome = assertWorkflowOk(
+      WorkflowAggregate.approveRetrospective(workflow, note, scope.actorUserId, Date.now()),
+    );
+    return this.persistCommand(scope, engagementId, outcome, "approveRetrospective");
   }
 
-  private async advance(
-    scope: AosActorScope,
+  isVersionChainsEnabled(): boolean {
+    return this.versionChainsEnabled;
+  }
+
+  async listRequirementVersions(
+    scope: AosReadScope,
     engagementId: DeliveryEngagementId,
-    event: Parameters<NonNullable<EngagementWorkflowApplicationServiceDeps["advanceEngagementLifecycle"]>>[2],
-  ): Promise<void> {
-    if (this.advanceEngagementLifecycle) {
-      await this.advanceEngagementLifecycle(scope, engagementId, event);
-    }
+    requirementSetId?: string,
+  ): Promise<RequirementVersionHistoryDto[]> {
+    if (!this.versionChainsEnabled || !this.requirementVersions) return [];
+    const workflow = await this.workflows.get(scope.companyId, engagementId);
+    const currentId =
+      workflow?.currentApprovedRequirementVersionId ??
+      workflow?.requirementSet?.currentApprovedVersionId;
+    const versions = requirementSetId
+      ? await this.requirementVersions.listBySet(scope.companyId, requirementSetId)
+      : await this.requirementVersions.listByEngagement(scope.companyId, engagementId);
+    return versions.map((v) => ({
+      id: v.id,
+      engagementId: v.engagementId,
+      requirementSetId: v.requirementSetId,
+      versionNumber: v.versionNumber,
+      publishedAt: v.publishedAt,
+      publishedByUserId: v.publishedByUserId,
+      title: v.snapshot.title,
+      itemCount: v.snapshot.items.length,
+      supersedesVersionId: v.supersedesVersionId,
+      isCurrent: v.id === currentId,
+    }));
   }
 
-  private event(
-    engagementId: string,
-    type: string,
-    title: string,
-    actorUserId: string,
-    timestamp: number,
-  ) {
+  async getRequirementVersionDetail(
+    scope: AosReadScope,
+    versionId: string,
+  ): Promise<RequirementVersionDetailDto | null> {
+    if (!this.versionChainsEnabled || !this.requirementVersions) return null;
+    const version = await this.requirementVersions.getById(scope.companyId, versionId);
+    if (!version) return null;
+    const workflow = await this.workflows.get(scope.companyId, version.engagementId);
+    const currentId =
+      workflow?.currentApprovedRequirementVersionId ??
+      workflow?.requirementSet?.currentApprovedVersionId;
     return {
-      id: `${type}-${timestamp}`,
-      engagementId,
-      type,
-      title,
-      actorLabel: actorUserId,
-      timestamp,
+      id: version.id,
+      engagementId: version.engagementId,
+      requirementSetId: version.requirementSetId,
+      versionNumber: version.versionNumber,
+      publishedAt: version.publishedAt,
+      publishedByUserId: version.publishedByUserId,
+      title: version.snapshot.title,
+      itemCount: version.snapshot.items.length,
+      supersedesVersionId: version.supersedesVersionId,
+      isCurrent: version.id === currentId,
+      items: version.snapshot.items.map((item) => ({ ...item })),
+      attachmentRefs: version.snapshot.attachmentRefs,
+    };
+  }
+
+  async listPromptVersions(
+    scope: AosReadScope,
+    promptArtifactId: string,
+    engagementId?: DeliveryEngagementId,
+  ): Promise<PromptVersionHistoryDto[]> {
+    if (!this.versionChainsEnabled || !this.promptVersions) return [];
+    const versions = await this.promptVersions.listByArtifact(scope.companyId, promptArtifactId);
+    let currentId: string | undefined;
+    if (engagementId) {
+      const workflow = await this.workflows.get(scope.companyId, engagementId);
+      currentId = workflow?.promptPack?.artifacts.find((a) => a.id === promptArtifactId)
+        ?.currentApprovedVersionId;
+    }
+    return versions.map((v) => ({
+      id: v.id,
+      engagementId: v.engagementId,
+      promptPackId: v.promptPackId,
+      promptArtifactId: v.promptArtifactId,
+      requirementVersionId: v.requirementVersionId,
+      versionNumber: v.versionNumber,
+      publishedAt: v.publishedAt,
+      publishedByUserId: v.publishedByUserId,
+      title: v.snapshot.title,
+      isCurrent: v.id === currentId,
+    }));
+  }
+
+  async getPromptVersionDetail(
+    scope: AosReadScope,
+    versionId: string,
+  ): Promise<PromptVersionDetailDto | null> {
+    if (!this.versionChainsEnabled || !this.promptVersions) return null;
+    const version = await this.promptVersions.getById(scope.companyId, versionId);
+    if (!version) return null;
+    const workflow = await this.workflows.get(scope.companyId, version.engagementId);
+    const currentId = workflow?.promptPack?.artifacts.find(
+      (a) => a.id === version.promptArtifactId,
+    )?.currentApprovedVersionId;
+    return {
+      id: version.id,
+      engagementId: version.engagementId,
+      promptPackId: version.promptPackId,
+      promptArtifactId: version.promptArtifactId,
+      requirementVersionId: version.requirementVersionId,
+      versionNumber: version.versionNumber,
+      publishedAt: version.publishedAt,
+      publishedByUserId: version.publishedByUserId,
+      title: version.snapshot.title,
+      isCurrent: version.id === currentId,
+      body: version.snapshot.body,
+    };
+  }
+
+  async listCursorSessions(
+    scope: AosReadScope,
+    engagementId: DeliveryEngagementId,
+  ): Promise<CursorSessionHistoryDto[]> {
+    if (!this.versionChainsEnabled) {
+      const workflow = await this.workflows.get(scope.companyId, engagementId);
+      return (workflow?.cursorSessions ?? []).map((s) => ({
+        id: s.id,
+        engagementId: s.engagementId,
+        promptPackId: s.promptPackId,
+        promptArtifactId: s.promptArtifactId,
+        promptVersionId: s.promptVersionId,
+        status: s.status,
+        startedAt: s.startedAt,
+        finalizedAt: s.finalizedAt,
+        captureSummary: s.captureSummary,
+        readOnly: isCursorSessionFinalized(s),
+      }));
+    }
+    if (!this.cursorSessions) return [];
+    const sessions = await this.cursorSessions.listByEngagement(scope.companyId, engagementId);
+    return sessions.map((s) => ({
+      id: s.id,
+      engagementId: s.engagementId,
+      promptPackId: s.promptPackId,
+      promptArtifactId: s.promptArtifactId,
+      promptVersionId: s.promptVersionId,
+      status: s.status,
+      startedAt: s.startedAt,
+      finalizedAt: s.finalizedAt,
+      captureSummary: s.captureSummary,
+      readOnly: isCursorSessionFinalized(s),
+    }));
+  }
+
+  async listCursorRevisions(
+    scope: AosReadScope,
+    cursorSessionId: string,
+  ): Promise<CursorRevisionHistoryDto[]> {
+    if (!this.versionChainsEnabled || !this.cursorRevisions) return [];
+    const revisions = await this.cursorRevisions.listBySession(
+      scope.companyId,
+      cursorSessionId,
+    );
+    return revisions.map((r) => ({
+      id: r.id,
+      cursorSessionId: r.cursorSessionId,
+      originalPromptVersionId: r.originalPromptVersionId,
+      revisionPromptVersionId: r.revisionPromptVersionId,
+      status: r.status,
+      createdAt: r.createdAt,
+      resolvedAt: r.resolvedAt,
+    }));
+  }
+
+  async listEvaluations(
+    scope: AosReadScope,
+    engagementId: DeliveryEngagementId,
+  ): Promise<EvaluationHistoryDto[]> {
+    if (!this.versionChainsEnabled || !this.evaluations) return [];
+    const evaluations = await this.evaluations.listByEngagement(scope.companyId, engagementId);
+    return evaluations.map((e) => ({
+      id: e.id,
+      engagementId: e.engagementId,
+      cursorSessionId: e.cursorSessionId,
+      promptVersionId: e.promptVersionId,
+      requirementVersionId: e.requirementVersionId,
+      rubricVersionId: e.rubricVersionId,
+      rubricName: e.rubricSnapshot.name,
+      status: e.status,
+      scorePercent: e.scorePercent,
+      passed: e.passed,
+      createdAt: e.createdAt,
+      confirmedAt: e.status !== "draft" ? e.confirmedAt : undefined,
+      confirmedByUserId: e.status !== "draft" ? e.confirmedByUserId : undefined,
+      overrideReason: e.status === "overridden" ? e.overrideReason : undefined,
+      amendsEvaluationId: e.amendsEvaluationId,
+      readOnly: isEvaluationFinalized(e),
+    }));
+  }
+
+  async getEvaluationDetail(
+    scope: AosReadScope,
+    evaluationId: string,
+  ): Promise<EvaluationDetailDto | null> {
+    if (!this.versionChainsEnabled || !this.evaluations) return null;
+    const evaluation = await this.evaluations.getById(scope.companyId, evaluationId);
+    if (!evaluation) return null;
+    return {
+      id: evaluation.id,
+      engagementId: evaluation.engagementId,
+      cursorSessionId: evaluation.cursorSessionId,
+      promptVersionId: evaluation.promptVersionId,
+      requirementVersionId: evaluation.requirementVersionId,
+      rubricVersionId: evaluation.rubricVersionId,
+      rubricName: evaluation.rubricSnapshot.name,
+      status: evaluation.status,
+      scorePercent: evaluation.scorePercent,
+      passed: evaluation.passed,
+      createdAt: evaluation.createdAt,
+      confirmedAt: evaluation.status !== "draft" ? evaluation.confirmedAt : undefined,
+      confirmedByUserId: evaluation.status !== "draft" ? evaluation.confirmedByUserId : undefined,
+      overrideReason: evaluation.status === "overridden" ? evaluation.overrideReason : undefined,
+      amendsEvaluationId: evaluation.amendsEvaluationId,
+      readOnly: isEvaluationFinalized(evaluation),
+      criteria: evaluation.criteria.map((c) => ({ ...c })),
+      rubricCriteriaLabels: [...evaluation.rubricSnapshot.criteriaLabels],
     };
   }
 }

@@ -1,14 +1,14 @@
 /** ST-16 — Module Registry */
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { REGISTRY_SEARCH_MIN_CHARS } from "../../../application/registry/registrySearch";
+import { REGISTRY_SEARCH_MIN_CHARS } from "../../../constants/searchLimits";
 import { AOS_FEATURE_FLAG } from "../../../config/featureFlags";
 import {
   AGENCY_TYPES,
   AGENCY_TYPE_LABELS,
   type AgencyType,
 } from "../../../constants/agencyType";
-import type { ModuleRegistryCatalogStatus } from "../../../application/registry/dto/ModuleRegistryDto";
+import type { ModuleRegistryCatalogStatus } from "../../../types/presentation";
 import { useRegistryListQuery, useRegistryModuleQuery } from "../../../hooks/queries/useRegistryQueries";
 import { FeatureFlagGate } from "../../gates";
 import { PageHeader, PageShell } from "../../layouts";
@@ -166,7 +166,7 @@ const RegistryScreen: React.FC = () => {
       <PageShell>
         <PageHeader
           title="Module Registry"
-          description="Agency-wide reusable module catalog for reuse-first delivery."
+          subtitle="Agency-wide reusable module catalog for reuse-first delivery."
         />
         <TableToolbar
           left={

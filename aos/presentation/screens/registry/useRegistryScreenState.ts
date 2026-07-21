@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { AgencyType } from "../../../constants/agencyType";
-import type { ModuleRegistryCatalogStatus } from "../../../application/registry/dto/ModuleRegistryDto";
+import type { ModuleRegistryCatalogStatus } from "../../../types/presentation";
 import type { RegistryListFilters } from "../../../hooks/queries/registryListFilters";
 
 function parseAgencyType(value: string | null): AgencyType | undefined {

@@ -1,5 +1,4 @@
 import type firebase from "firebase/compat/app";
-import { db } from "../../../../services/firebase";
 import type { DeliveryEngagementRepository } from "../../../contracts/DeliveryEngagementRepository";
 import type { DeliveryQualityReportRepository } from "../../../contracts/DeliveryQualityReportRepository";
 import type { DeliveryTemplateRepository } from "../../../contracts/DeliveryTemplateRepository";
@@ -18,13 +17,13 @@ export interface AosDeliveryRepositoryBundle {
 }
 
 export interface CreateAosDeliveryRepositoriesOptions {
-  firestore?: firebase.firestore.Firestore;
+  firestore: firebase.firestore.Firestore;
 }
 
 export function createAosDeliveryRepositories(
-  options: CreateAosDeliveryRepositoriesOptions = {},
+  options: CreateAosDeliveryRepositoriesOptions,
 ): AosDeliveryRepositoryBundle {
-  const firestore = options.firestore ?? db;
+  const { firestore } = options;
 
   return {
     engagements: new DeliveryEngagementFirestoreRepository(firestore),

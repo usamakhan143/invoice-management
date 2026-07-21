@@ -21,6 +21,5 @@ export type {
 export {
   EngagementWorkflowApplicationService,
   type EngagementWorkflowApplicationServiceDeps,
-  type EngagementWorkflowStore,
   type GetEngagementWorkflowQuery,
 } from "./EngagementWorkflowApplicationService";

@@ -42,6 +42,9 @@ export const AOS_FEATURE_FLAG = {
 
   /** Phase 1B — BOS initiative read port adapter */
   BOS_INITIATIVE_READ: "aos_bos_initiative_read",
+
+  /** Phase E — immutable version chain repositories (Firestore collections) */
+  VERSION_CHAINS: "aos_version_chains_enabled",
 } as const;
 
 export type AosFeatureFlag = (typeof AOS_FEATURE_FLAG)[keyof typeof AOS_FEATURE_FLAG];
@@ -132,6 +135,12 @@ export const AOS_FEATURE_FLAG_DEFINITIONS: readonly AosFeatureFlagDefinition[] =
     defaultEnabled: false,
     phase: "1b",
   },
+  {
+    key: AOS_FEATURE_FLAG.VERSION_CHAINS,
+    label: "Immutable version chain repositories",
+    defaultEnabled: true,
+    phase: "2",
+  },
 ] as const;
 
 /** Runtime defaults for Phase 1A scaffold. */
@@ -149,6 +158,7 @@ export const PHASE_1A_FEATURE_DEFAULTS: Record<AosFeatureFlag, boolean> = {
   [AOS_FEATURE_FLAG.ERP_USER_READ]: false,
   [AOS_FEATURE_FLAG.ERP_LEAD_READ]: false,
   [AOS_FEATURE_FLAG.BOS_INITIATIVE_READ]: false,
+  [AOS_FEATURE_FLAG.VERSION_CHAINS]: true,
 };
 
 export function isAosFeatureEnabled(

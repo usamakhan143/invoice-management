@@ -9,7 +9,7 @@ import {
   DELIVERY_STATE_LABELS,
   type DeliveryState,
 } from "../../../constants/deliveryState";
-import type { DeliveryEngagementDto } from "../../../application/delivery/dto/DeliveryEngagementDto";
+import type { DeliveryEngagementDto } from "../../../types/presentation";
 import { useDeliveryListQuery } from "../../../hooks/queries/useDeliveryListQuery";
 import { FeatureFlagGate, PermissionGate } from "../../gates";
 import { PageHeader, PageShell } from "../../layouts";

@@ -20,6 +20,35 @@ import {
   deliveryQualityReportFromFirestore,
   deliveryQualityReportToFirestore,
 } from "../models/deliveryQualityReportDocument";
+import {
+  requirementVersionFromFirestore,
+  requirementVersionToFirestore,
+} from "../models/requirementVersionDocument";
+import {
+  promptVersionFromFirestore,
+  promptVersionToFirestore,
+} from "../models/promptVersionDocument";
+import {
+  cursorSessionFromFirestore,
+  cursorSessionToFirestore,
+} from "../models/cursorSessionDocument";
+import {
+  cursorRevisionFromFirestore,
+  cursorRevisionToFirestore,
+} from "../models/cursorRevisionDocument";
+import {
+  evaluationFromFirestore,
+  evaluationToFirestore,
+} from "../models/evaluationDocument";
+import { createRequirementVersion } from "../../../domain/requirements/entities/requirementVersion";
+import { createPromptVersion } from "../../../domain/prompt/entities/promptVersion";
+import { createCursorSession } from "../../../domain/cursor/entities/cursorSession";
+import { createCursorRevision } from "../../../domain/cursor/entities/cursorRevision";
+import {
+  createEvaluationDraft,
+  freezeEvaluation,
+} from "../../../domain/evaluation/entities/evaluation";
+import { DEFAULT_DELIVERY_RUBRIC } from "../../../domain/evaluation/entities/evaluationRubric";
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
 
@@ -98,6 +127,93 @@ export function runAosConverterChecks(): ConverterCheckResult {
   check(
     "delivery quality report engagement reference",
     report?.deliveryEngagementId === "eng-1",
+  );
+
+  const reqVersion = createRequirementVersion({
+    id: "co1__set1__v1",
+    companyId: "company-1",
+    engagementId: "eng-1",
+    requirementSetId: "set1",
+    versionNumber: 1,
+    publishedAt: nowMs,
+    publishedByUserId: "user-1",
+    snapshot: { title: "Req", items: [{ id: "r1", title: "T", description: "D" }] },
+  });
+  const reqDoc = requirementVersionToFirestore(reqVersion);
+  const reqRoundTrip = requirementVersionFromFirestore(reqVersion.id, reqDoc);
+  check("requirement version round-trip title", reqRoundTrip?.snapshot.title === "Req");
+
+  const promptVersion = createPromptVersion({
+    id: "co1__art1__v1",
+    companyId: "company-1",
+    engagementId: "eng-1",
+    promptPackId: "pack1",
+    promptArtifactId: "art1",
+    requirementVersionId: reqVersion.id,
+    versionNumber: 1,
+    publishedAt: nowMs,
+    publishedByUserId: "user-1",
+    snapshot: { title: "Prompt", body: "Body" },
+  });
+  const promptDoc = promptVersionToFirestore(promptVersion);
+  check(
+    "prompt version round-trip requirement ref",
+    promptVersionFromFirestore(promptVersion.id, promptDoc)?.requirementVersionId === reqVersion.id,
+  );
+
+  const session = createCursorSession({
+    id: "cursor-1",
+    companyId: "company-1",
+    engagementId: "eng-1",
+    promptPackId: "pack1",
+    promptArtifactId: "art1",
+    promptVersionId: promptVersion.id,
+    executorUserId: "user-1",
+    startedAt: nowMs,
+  });
+  check(
+    "cursor session round-trip promptVersionId",
+    cursorSessionFromFirestore(session.id, cursorSessionToFirestore(session))?.promptVersionId ===
+      promptVersion.id,
+  );
+
+  const revision = createCursorRevision({
+    id: "rev-1",
+    companyId: "company-1",
+    engagementId: "eng-1",
+    cursorSessionId: session.id,
+    originalPromptVersionId: promptVersion.id,
+    createdAt: nowMs,
+    createdByUserId: "user-1",
+  });
+  check(
+    "cursor revision round-trip session ref",
+    cursorRevisionFromFirestore(revision.id, cursorRevisionToFirestore(revision))?.cursorSessionId ===
+      session.id,
+  );
+
+  const evalDraft = createEvaluationDraft({
+    id: "eval-1",
+    companyId: "company-1",
+    engagementId: "eng-1",
+    cursorSessionId: session.id,
+    promptVersionId: promptVersion.id,
+    requirementVersionId: reqVersion.id,
+    rubric: DEFAULT_DELIVERY_RUBRIC,
+    criteria: [{ id: "c1", label: "C", passed: true, score: 90 }],
+    scorePercent: 90,
+    passed: true,
+    createdAt: nowMs,
+  });
+  const evalConfirmed = freezeEvaluation(evalDraft, {
+    status: "confirmed",
+    confirmedAt: nowMs,
+    confirmedByUserId: "user-1",
+  });
+  check(
+    "evaluation round-trip rubric snapshot",
+    evaluationFromFirestore(evalConfirmed.id, evaluationToFirestore(evalConfirmed))?.rubricSnapshot
+      .name === DEFAULT_DELIVERY_RUBRIC.name,
   );
 
   return { passed, failed };

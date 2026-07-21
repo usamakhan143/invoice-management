@@ -13,6 +13,7 @@ import {
   getCompletionDatePickerMinDayKey,
   hasStructuredEvidenceRequirements,
   resolveDependentMilestoneTargetId,
+  resolveRequiredLinkSelection,
   shouldInitializeCompleteForm,
   validateCompletionForm,
   type MilestoneCompleteFormState,
@@ -116,6 +117,64 @@ describe("milestone completion date boundaries", () => {
     const milestone = baseMilestone({ startedAt: TODAY });
     expect(getCompletionDateMinDayKey(milestone)).toBe("2026-07-14");
     expect(getCompletionDatePickerMinDayKey(milestone, TODAY)).toBeUndefined();
+  });
+});
+
+describe("required link selections", () => {
+  it("auto-selects when only one expense option exists", () => {
+    expect(resolveRequiredLinkSelection("", [{ id: "e1", label: "Ads" }])).toBe("e1");
+  });
+
+  it("keeps a valid expense selection", () => {
+    expect(
+      resolveRequiredLinkSelection("e2", [
+        { id: "e1", label: "Ads" },
+        { id: "e2", label: "Tools" },
+      ]),
+    ).toBe("e2");
+  });
+
+  it("requires explicit selection when multiple expense options exist", () => {
+    expect(
+      resolveRequiredLinkSelection("", [
+        { id: "e1", label: "Ads" },
+        { id: "e2", label: "Tools" },
+      ]),
+    ).toBe("");
+  });
+
+  it("passes validation when expense linked requirement has a selected expense", () => {
+    const milestone = baseMilestone({
+      completionRequirements: { expenseLinked: true },
+    });
+    const form: MilestoneCompleteFormState = {
+      ...validForm("2026-07-09"),
+      selectedExpenseId: "e1",
+    };
+    const error = validateCompletionForm(
+      milestone,
+      form,
+      parseBosPlannedDate(form.completedDate)!,
+      TODAY,
+    );
+    expect(error).toBeNull();
+  });
+
+  it("fails validation when expense linked requirement has no selection", () => {
+    const milestone = baseMilestone({
+      completionRequirements: { expenseLinked: true },
+    });
+    const form: MilestoneCompleteFormState = {
+      ...validForm("2026-07-09"),
+      selectedExpenseId: "",
+    };
+    const error = validateCompletionForm(
+      milestone,
+      form,
+      parseBosPlannedDate(form.completedDate)!,
+      TODAY,
+    );
+    expect(error).toBe("Select the expense that satisfies this milestone's requirements.");
   });
 });
 

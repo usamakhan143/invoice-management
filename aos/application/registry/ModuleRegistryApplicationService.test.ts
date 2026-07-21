@@ -17,9 +17,13 @@ describe("filterAndRankRegistryModules", () => {
   });
 });
 
+import { InMemoryModuleRegistryRepository } from "../../infrastructure/testing/inMemoryCatalogRepositories";
+
 describe("ModuleRegistryApplicationService", () => {
   const scope = { companyId: "co1" };
-  const service = new ModuleRegistryApplicationService();
+  const service = new ModuleRegistryApplicationService({
+    repository: new InMemoryModuleRegistryRepository(),
+  });
 
   it("lists modules with agency and status filters", async () => {
     const result = await service.listModules(scope, {

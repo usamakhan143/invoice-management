@@ -1,7 +1,7 @@
 import type { DeliveryApplicationService } from "../delivery/DeliveryApplicationService";
 import type { DeliveryEngagementDto } from "../delivery/dto/DeliveryEngagementDto";
+import type { EngagementWorkflowApplicationService } from "../workflow/EngagementWorkflowApplicationService";
 import type { EngagementWorkflowDto } from "../workflow/dto/EngagementWorkflowDto";
-import type { EngagementWorkflowStore } from "../workflow/EngagementWorkflowStore";
 import type { AosReadScope } from "../types";
 import type {
   CursorQueueRowDto,
@@ -15,7 +15,7 @@ import type {
 
 export interface QueueProjectionApplicationServiceDeps {
   delivery: DeliveryApplicationService;
-  workflowStore: EngagementWorkflowStore;
+  workflow: EngagementWorkflowApplicationService;
 }
 
 function matchesSearch(
@@ -37,7 +37,7 @@ function engagementMap(items: DeliveryEngagementDto[]): Map<string, DeliveryEnga
 }
 
 function baseRow(
-  workflow: EngagementWorkflowDto,
+  workflow: { engagementId: string },
   engagement: DeliveryEngagementDto | undefined,
   tabSegment: string,
 ) {
@@ -78,17 +78,17 @@ function isPendingEvaluation(workflow: EngagementWorkflowDto): boolean {
 /** Cross-engagement queue projections for global queue screens (ST-12–ST-15). */
 export class QueueProjectionApplicationService {
   private readonly delivery: DeliveryApplicationService;
-  private readonly workflowStore: EngagementWorkflowStore;
+  private readonly workflow: EngagementWorkflowApplicationService;
 
   constructor(deps: QueueProjectionApplicationServiceDeps) {
     this.delivery = deps.delivery;
-    this.workflowStore = deps.workflowStore;
+    this.workflow = deps.workflow;
   }
 
   private async loadContext(scope: AosReadScope) {
     const [deliveries, workflows] = await Promise.all([
       this.delivery.listCompanyDeliveries(scope, { limit: 200 }),
-      Promise.resolve(this.workflowStore.listByCompany(scope.companyId)),
+      this.workflow.listWorkflows(scope),
     ]);
     return { deliveries: deliveries.items, workflows, byId: engagementMap(deliveries.items) };
   }

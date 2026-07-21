@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { AOS_FEATURE_FLAG } from "../../../../config/featureFlags";
 import { FeatureFlagGate } from "../../../gates";
 import { StickyFooterBar } from "../../../layouts";
+import { TraceabilityReference } from "../../../components/version-history";
 import {
   AiDraftPanel,
   ApprovalDialog,
@@ -23,6 +24,7 @@ const EngagementRetrospectiveScreen: React.FC = () => {
   const { engagementId, workflow, isLoading, isError, error, refetch, mutations } = useEngagementWorkflowScreen();
   const [approveOpen, setApproveOpen] = useState(false);
   const retro = workflow?.retrospective;
+  const refs = retro?.traceabilityRefs;
 
   if (isLoading) return <LoadingState message="Loading retrospective…" />;
   if (isError) return <ErrorState title="Could not load workflow" message={error?.message} onRetry={() => void refetch()} />;
@@ -32,7 +34,7 @@ const EngagementRetrospectiveScreen: React.FC = () => {
 
   return (
     <FeatureFlagGate flag={AOS_FEATURE_FLAG.KNOWLEDGE} fallback={<ErrorState title="Knowledge module disabled" />}>
-      <div id="aos-engagement-panel-retrospective" aria-labelledby="aos-engagement-tab-retrospective" className="flex flex-col gap-[var(--space-stack-lg)]">
+      <div id="aos-engagement-panel-retrospective" role="tabpanel" aria-labelledby="aos-engagement-tab-retrospective" className="flex flex-col gap-[var(--space-stack-lg)]">
         {!retro ? (
           <EmptyState
             title="Generate retrospective"
@@ -57,6 +59,39 @@ const EngagementRetrospectiveScreen: React.FC = () => {
                 </article>
               ))}
             </AiDraftPanel>
+            {refs ? (
+              <section aria-label="Delivery traceability">
+                <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
+                  Delivery traceability
+                </h3>
+                <p className="mb-[var(--space-stack-md)] text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">
+                  Immutable evidence chain for future Learning Engine promotion — not executed in Phase E.
+                </p>
+                <div className="grid gap-[var(--space-stack-sm)] md:grid-cols-2">
+                  <TraceabilityReference
+                    label={
+                      refs.requirementVersionNumber
+                        ? `Requirement v${refs.requirementVersionNumber}`
+                        : "Requirement Version"
+                    }
+                    technicalId={refs.requirementVersionId}
+                  />
+                  <TraceabilityReference
+                    label={
+                      refs.promptVersionNumber ? `Prompt v${refs.promptVersionNumber}` : "Prompt Version"
+                    }
+                    technicalId={refs.promptVersionId}
+                  />
+                  <TraceabilityReference label="Cursor Session" technicalId={refs.cursorSessionId} />
+                  <TraceabilityReference label="Evaluation" technicalId={refs.evaluationId} />
+                  <TraceabilityReference label="Rubric Version" technicalId={refs.rubricVersionId} />
+                </div>
+              </section>
+            ) : workflow.versionChainsEnabled ? (
+              <p className="text-[length:var(--font-size-caption)] text-[var(--color-text-secondary)]">
+                Traceability references are captured when the retrospective is approved.
+              </p>
+            ) : null}
             <section>
               <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">Timeline</h3>
               <Timeline events={workflow.timeline} />

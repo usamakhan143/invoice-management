@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { AgencyType } from "../../../constants/agencyType";
 import type { DeliveryState } from "../../../constants/deliveryState";
-import type { PlaybookEntryType } from "../../../application/playbook/dto/PlaybookDto";
+import type { PlaybookEntryType } from "../../../types/presentation";
 import type { PlaybookListFilters } from "../../../hooks/queries/playbookListFilters";
 
 function parseAgencyType(value: string | null): AgencyType | undefined {

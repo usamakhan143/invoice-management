@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { AosServicesContext } from "../presentation/providers/AosServicesContext";
+import { AosServicesContext } from "./AosServicesContext";
 import type { AosPresentationServices } from "../wiring/types";
 
 /**

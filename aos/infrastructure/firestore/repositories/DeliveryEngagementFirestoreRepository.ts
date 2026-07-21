@@ -1,5 +1,5 @@
 import type firebase from "firebase/compat/app";
-import { Timestamp } from "../../../../services/firebase";
+import { firestoreTimestampNow } from "../timestamp";
 import type { DeliveryEngagementRepository } from "../../../contracts/DeliveryEngagementRepository";
 import type {
   CreateDeliveryEngagementInput,
@@ -155,7 +155,7 @@ export class DeliveryEngagementFirestoreRepository implements DeliveryEngagement
       }
 
       const patch: Record<string, unknown> = {
-        updatedAt: Timestamp.now(),
+        updatedAt: firestoreTimestampNow(),
         updatedById: input.updatedById,
       };
 

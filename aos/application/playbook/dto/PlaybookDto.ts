@@ -1,44 +1,20 @@
 import type { AgencyType } from "../../../constants/agencyType";
 import type { DeliveryState } from "../../../constants/deliveryState";
 
-export type PlaybookEntryType =
-  | "agency_playbook"
-  | "template"
-  | "rubric"
-  | "prompt_template"
-  | "quality_standard"
-  | "evaluation_template"
-  | "best_practice"
-  | "delivery_standard"
-  | "knowledge_reference";
+export type {
+  PlaybookEntry,
+  PlaybookEntryListItem,
+  PlaybookEntryType,
+  PlaybookKnowledgeRef,
+  PlaybookRelatedEntry,
+} from "../../../domain/catalog/entities/playbookEntry";
 
-export interface PlaybookEntryListItemDto {
-  entryId: string;
-  title: string;
-  entryType: PlaybookEntryType;
-  lifecyclePhase?: DeliveryState;
-  agencyTypes: readonly AgencyType[];
-  version: string;
-  summary: string;
-  tags: readonly string[];
-}
+import type { PlaybookEntry, PlaybookEntryListItem, PlaybookEntryType } from "../../../domain/catalog/entities/playbookEntry";
 
-export interface PlaybookKnowledgeRefDto {
-  patternId: string;
-  title: string;
-}
-
-export interface PlaybookRelatedEntryDto {
-  entryId: string;
-  title: string;
-}
-
-export interface PlaybookEntryDetailDto extends PlaybookEntryListItemDto {
-  body: string;
-  checklist: readonly string[];
-  knowledgeReferences: readonly PlaybookKnowledgeRefDto[];
-  relatedTemplates: readonly PlaybookRelatedEntryDto[];
-}
+export type PlaybookEntryDetailDto = PlaybookEntry;
+export type PlaybookEntryListItemDto = PlaybookEntryListItem;
+export type PlaybookKnowledgeRefDto = PlaybookEntry["knowledgeReferences"][number];
+export type PlaybookRelatedEntryDto = PlaybookEntry["relatedTemplates"][number];
 
 export interface ListPlaybookQuery {
   search?: string;

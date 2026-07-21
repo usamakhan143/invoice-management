@@ -1,41 +1,24 @@
 import type { AgencyType } from "../../constants/agencyType";
-import type { ModuleType } from "../../constants/moduleType";
+import type { ModuleRegistryCatalogStatus } from "../../../domain/catalog/entities/moduleRegistry";
 
-/** Registry catalog status — frozen search doc §26 filter values. */
-export type ModuleRegistryCatalogStatus = "stable" | "experimental" | "deprecated";
+export type {
+  ModuleRegistryCatalogStatus,
+  ModuleRegistryEntry,
+  ModuleRegistryKnowledgeLink,
+  ModuleRegistryListItem,
+  ModuleRegistryUsageRow,
+} from "../../../domain/catalog/entities/moduleRegistry";
 
-export interface ModuleRegistryListItemDto {
-  moduleId: string;
-  moduleName: string;
-  moduleType: ModuleType;
-  agencyTypes: readonly AgencyType[];
-  status: ModuleRegistryCatalogStatus;
-  version: string;
-  reuseCount: number;
-  qualityScore: number;
-  tags: readonly string[];
-  description: string;
-}
+import type {
+  ModuleRegistryEntry,
+  ModuleRegistryListItem,
+} from "../../../domain/catalog/entities/moduleRegistry";
 
-export interface ModuleRegistryUsageRowDto {
-  engagementId: string;
-  engagementTitle: string;
-  usedAt: number;
-  versionUsed: string;
-}
-
-export interface ModuleRegistryKnowledgeLinkDto {
-  patternId: string;
-  title: string;
-  scope: string;
-}
-
-export interface ModuleRegistryDetailDto extends ModuleRegistryListItemDto {
-  locationReference: string;
-  origin: string;
-  usageHistory: readonly ModuleRegistryUsageRowDto[];
-  knowledgeLinks: readonly ModuleRegistryKnowledgeLinkDto[];
-}
+/** Preserved for application API stability — alias of domain read model. */
+export type ModuleRegistryDetailDto = ModuleRegistryEntry;
+export type ModuleRegistryListItemDto = ModuleRegistryListItem;
+export type ModuleRegistryUsageRowDto = ModuleRegistryEntry["usageHistory"][number];
+export type ModuleRegistryKnowledgeLinkDto = ModuleRegistryEntry["knowledgeLinks"][number];
 
 export interface ListModuleRegistryQuery {
   search?: string;
