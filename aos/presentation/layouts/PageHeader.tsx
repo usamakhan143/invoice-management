@@ -20,17 +20,17 @@ const PageHeader: React.FC<PageHeaderProps> = ({
   className,
 }) => {
   return (
-    <header className={cn("mb-[var(--space-stack-md)]", className)}>
+    <header className={cn("mb-[var(--space-stack-lg)]", className)}>
       {breadcrumb ? (
-        <div className="mb-[var(--space-stack-sm)]">{breadcrumb}</div>
+        <div className="mb-[var(--space-stack-sm)] w-full">{breadcrumb}</div>
       ) : null}
-      <div className="flex flex-col gap-[var(--space-stack-md)] sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex w-full flex-col gap-[var(--space-stack-md)] sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[length:var(--font-size-display)] font-[var(--font-weight-semibold)] leading-[var(--line-height-tight)] text-[var(--color-text-primary)]">
+          <h1 className="m-0 text-[length:var(--font-size-page-title)] font-[var(--font-weight-bold)] leading-[var(--line-height-tight)] text-[var(--color-text-primary)] sm:text-[length:var(--font-size-display)]">
             {title}
           </h1>
           {subtitle ? (
-            <p className="mt-[var(--space-stack-xs)] text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">
+            <p className="mt-[var(--space-stack-sm)] text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">
               {subtitle}
             </p>
           ) : null}

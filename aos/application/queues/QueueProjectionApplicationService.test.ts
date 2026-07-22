@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createOwnerActorScope } from "../../constants/actorScope";
 import { DELIVERY_STATE } from "../../domain/delivery/deliveryState";
 import type { DeliveryApplicationService } from "../delivery/DeliveryApplicationService";
 import type { DeliveryEngagementDto } from "../delivery/dto/DeliveryEngagementDto";
@@ -11,7 +12,7 @@ import { QueueProjectionApplicationService } from "./QueueProjectionApplicationS
 
 describe("QueueProjectionApplicationService", () => {
   const scope = { companyId: "co1" };
-  const actor = { companyId: "co1", actorUserId: "user1" };
+  const actor = createOwnerActorScope("co1", "user1");
 
   const engagement: DeliveryEngagementDto = {
     id: "eng1",
@@ -63,5 +64,6 @@ describe("QueueProjectionApplicationService", () => {
 
     expect(counts.requirements).toBe(1);
     expect(counts.prompts).toBe(0);
+    expect(counts.learning).toBe(0);
   });
 });

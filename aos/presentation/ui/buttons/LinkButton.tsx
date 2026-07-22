@@ -17,7 +17,7 @@ export const LinkButton = React.forwardRef<HTMLButtonElement, LinkButtonProps>(
         type="button"
         disabled={disabled}
         className={cn(
-          "inline-flex items-center gap-[var(--space-inline-sm)] rounded-[var(--radius-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] text-[var(--color-text-link)] underline-offset-2 transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-interactive-primary-hover)] hover:underline",
+          "inline-flex items-center gap-[var(--space-inline-sm)] rounded-[var(--radius-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] text-[var(--color-text-link)] underline-offset-2 transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-text-link-hover)] hover:underline",
           focusRing,
           disabledStyles,
           className,

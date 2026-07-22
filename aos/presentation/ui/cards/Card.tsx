@@ -5,14 +5,15 @@ export type CardVariant = "default" | "aiDraft" | "approved" | "risk" | "evidenc
 
 const variantStyles: Record<CardVariant, string> = {
   default:
-    "border-[var(--color-border-default)] bg-[var(--color-surface-card)] shadow-[var(--shadow-none)]",
+    "border-[var(--color-border-default)] bg-[var(--color-surface-card)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]",
   aiDraft:
-    "border-[var(--color-border-ai)] bg-[var(--color-surface-ai-draft)] shadow-[var(--shadow-none)]",
+    "border-[var(--color-border-ai)] bg-[var(--color-surface-ai-draft)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]",
   approved:
-    "border-[var(--color-border-approved)] bg-[var(--color-surface-approved)] shadow-[var(--shadow-none)]",
-  risk: "border-[var(--color-border-default)] bg-[var(--color-surface-warning-subtle)] shadow-[var(--shadow-none)]",
+    "border-[var(--color-border-approved)] bg-[var(--color-surface-approved)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]",
+  risk:
+    "border-[var(--color-border-default)] bg-[var(--color-surface-warning-subtle)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]",
   evidence:
-    "border-[var(--color-border-default)] bg-[var(--color-surface-inset)] shadow-[var(--shadow-none)]",
+    "border-[var(--color-border-default)] bg-[var(--color-surface-inset)] shadow-[var(--shadow-sm)]",
 };
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -32,7 +33,7 @@ function CardRoot({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-lg)] border p-[var(--space-card-padding)]",
+        "rounded-[var(--radius-2xl)] border p-[var(--space-card-padding)]",
         variantStyles[variant],
         interactive &&
           "cursor-pointer transition-[border-color,box-shadow] hover:border-[var(--color-border-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-border-focus)]",

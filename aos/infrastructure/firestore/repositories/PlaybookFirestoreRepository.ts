@@ -59,4 +59,43 @@ export class PlaybookFirestoreRepository implements PlaybookRepository {
       return entry as PlaybookEntry;
     });
   }
+
+  async publishFromPromotion(
+    command: import("../../../contracts/PlaybookRepository").PublishPlaybookFromPromotionCommand,
+  ): Promise<PlaybookEntry> {
+    return runAosFirestoreOperation("Playbook.publishFromPromotion", async () => {
+      return this.firestore.runTransaction(async (tx) => {
+        const newRef = this.collection().doc(
+          catalogDocId(command.companyId, command.entry.entryId),
+        );
+        const newSnap = await tx.get(newRef);
+        if (newSnap.exists) {
+          const data = newSnap.data()!;
+          const { companyId: _companyId, ...entry } = data;
+          return entry as PlaybookEntry;
+        }
+
+        if (command.markStaleEntryId) {
+          const staleRef = this.collection().doc(
+            catalogDocId(command.companyId, command.markStaleEntryId),
+          );
+          const staleSnap = await tx.get(staleRef);
+          if (staleSnap.exists) {
+            const staleData = staleSnap.data() as PlaybookEntry & { companyId: string };
+            tx.set(
+              staleRef,
+              {
+                ...staleData,
+                tags: [...(staleData.tags ?? []), "superseded"],
+              },
+              { merge: true },
+            );
+          }
+        }
+
+        tx.set(newRef, { companyId: command.companyId, ...command.entry });
+        return command.entry;
+      });
+    });
+  }
 }

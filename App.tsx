@@ -75,6 +75,7 @@ const AosCursorPage = lazy(() => import("./aos/pages/AosCursorPage"));
 const AosEvaluationPage = lazy(() => import("./aos/pages/AosEvaluationPage"));
 const AosKnowledgePage = lazy(() => import("./aos/pages/AosKnowledgePage"));
 const AosPlaybookPage = lazy(() => import("./aos/pages/AosPlaybookPage"));
+const AosLearningReviewPage = lazy(() => import("./aos/pages/AosLearningReviewPage"));
 const UserManagementPage = lazy(() => import("./pages/app/UserManagementPage"));
 const ActivityPage = lazy(() => import("./pages/app/ActivityPage"));
 const CompanyActivityPage = lazy(
@@ -257,6 +258,7 @@ const App: React.FC = () => {
                   <Route path="/aos/cursor" element={<AosCursorPage />} />
                   <Route path="/aos/evaluation" element={<AosEvaluationPage />} />
                   <Route path="/aos/knowledge" element={<AosKnowledgePage />} />
+                  <Route path="/aos/learning" element={<AosLearningReviewPage />} />
                   <Route path="/aos/playbook" element={<AosPlaybookPage />} />
                 </Route>
                 <Route path="/users" element={<UserManagementPage />} />

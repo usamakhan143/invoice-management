@@ -45,6 +45,9 @@ export const AOS_FEATURE_FLAG = {
 
   /** Phase E — immutable version chain repositories (Firestore collections) */
   VERSION_CHAINS: "aos_version_chains_enabled",
+
+  /** Phase F — learning engine extraction and candidate persistence */
+  LEARNING_ENGINE: "learning_engine",
 } as const;
 
 export type AosFeatureFlag = (typeof AOS_FEATURE_FLAG)[keyof typeof AOS_FEATURE_FLAG];
@@ -141,6 +144,12 @@ export const AOS_FEATURE_FLAG_DEFINITIONS: readonly AosFeatureFlagDefinition[] =
     defaultEnabled: true,
     phase: "2",
   },
+  {
+    key: AOS_FEATURE_FLAG.LEARNING_ENGINE,
+    label: "Learning engine extraction",
+    defaultEnabled: false,
+    phase: "4",
+  },
 ] as const;
 
 /** Runtime defaults for Phase 1A scaffold. */
@@ -159,12 +168,30 @@ export const PHASE_1A_FEATURE_DEFAULTS: Record<AosFeatureFlag, boolean> = {
   [AOS_FEATURE_FLAG.ERP_LEAD_READ]: false,
   [AOS_FEATURE_FLAG.BOS_INITIATIVE_READ]: false,
   [AOS_FEATURE_FLAG.VERSION_CHAINS]: true,
+  [AOS_FEATURE_FLAG.LEARNING_ENGINE]: false,
 };
 
 export function isAosFeatureEnabled(
   flags: Partial<Record<AosFeatureFlag, boolean>>,
   flag: AosFeatureFlag,
 ): boolean {
+  const envOverride = readEnvFeatureOverride(flag);
+  if (envOverride !== undefined) return envOverride;
   if (flag in flags && flags[flag] !== undefined) return Boolean(flags[flag]);
   return PHASE_1A_FEATURE_DEFAULTS[flag];
+}
+
+function readEnvFeatureOverride(flag: AosFeatureFlag): boolean | undefined {
+  const env = typeof import.meta !== "undefined" ? import.meta.env : undefined;
+  if (!env) return undefined;
+
+  if (flag === AOS_FEATURE_FLAG.LEARNING_ENGINE) {
+    if (env.VITE_AOS_LEARNING_ENGINE === "true") return true;
+    if (env.VITE_AOS_LEARNING_ENGINE === "false") return false;
+  }
+  if (flag === AOS_FEATURE_FLAG.VERSION_CHAINS) {
+    if (env.VITE_AOS_VERSION_CHAINS === "true") return true;
+    if (env.VITE_AOS_VERSION_CHAINS === "false") return false;
+  }
+  return undefined;
 }

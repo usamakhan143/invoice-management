@@ -1,4 +1,4 @@
-import type { AosReadScope } from "../types";
+import type { AosActorScope } from "../types";
 import type { DeliveryApplicationService } from "../delivery/DeliveryApplicationService";
 import type { QueueProjectionApplicationService } from "../queues/QueueProjectionApplicationService";
 import type { KnowledgeApplicationService } from "../knowledge/KnowledgeApplicationService";
@@ -8,6 +8,8 @@ import {
   DELIVERY_STATE_LABELS,
   type DeliveryState,
 } from "../../constants/deliveryState";
+import type { LearningApplicationService } from "../learning/LearningApplicationService";
+import { isLearningEngineEnabled } from "../../config/learningEngineConfig";
 import type {
   AttentionItemDto,
   AttentionSeverity,
@@ -18,13 +20,14 @@ import type {
 
 const ATTENTION_PRIORITY: Record<AttentionType, number> = {
   REVIEW_EVALUATION: 1,
-  APPROVE_REQUIREMENTS: 2,
-  APPROVE_PROMPT_PACK: 3,
-  COMPLETE_CAPTURE: 4,
-  QA_BLOCKED: 5,
-  RETROSPECTIVE_DUE: 6,
-  RUN_REUSE_SCAN: 7,
-  RISK_STALE: 8,
+  REVIEW_LEARNING: 2,
+  APPROVE_REQUIREMENTS: 3,
+  APPROVE_PROMPT_PACK: 4,
+  COMPLETE_CAPTURE: 5,
+  QA_BLOCKED: 6,
+  RETROSPECTIVE_DUE: 7,
+  RUN_REUSE_SCAN: 8,
+  RISK_STALE: 9,
 };
 
 export interface DashboardApplicationServiceDeps {
@@ -32,6 +35,7 @@ export interface DashboardApplicationServiceDeps {
   queues: QueueProjectionApplicationService;
   knowledge: KnowledgeApplicationService;
   registry: ModuleRegistryApplicationService;
+  learning: LearningApplicationService;
 }
 
 function sortAttention(items: AttentionItemDto[]): AttentionItemDto[] {
@@ -156,15 +160,17 @@ export class DashboardApplicationService {
   private readonly queues: QueueProjectionApplicationService;
   private readonly knowledge: KnowledgeApplicationService;
   private readonly registry: ModuleRegistryApplicationService;
+  private readonly learning: LearningApplicationService;
 
   constructor(deps: DashboardApplicationServiceDeps) {
     this.delivery = deps.delivery;
     this.queues = deps.queues;
     this.knowledge = deps.knowledge;
     this.registry = deps.registry;
+    this.learning = deps.learning;
   }
 
-  async getFounderDashboard(scope: AosReadScope): Promise<FounderDashboardDto> {
+  async getFounderDashboard(scope: AosActorScope): Promise<FounderDashboardDto> {
     const [
       deliveries,
       requirements,
@@ -174,6 +180,7 @@ export class DashboardApplicationService {
       badgeCounts,
       knowledgeList,
       registryList,
+      learningQueue,
     ] = await Promise.all([
       this.delivery.listCompanyDeliveries(scope, { limit: 200 }),
       this.queues.listRequirementsQueue(scope, {}),
@@ -183,10 +190,27 @@ export class DashboardApplicationService {
       this.queues.getBadgeCounts(scope),
       this.knowledge.listKnowledge(scope, {}),
       this.registry.listModules(scope, {}),
+      isLearningEngineEnabled()
+        ? this.learning.listReviewQueue(scope, { status: "pending_review" })
+        : Promise.resolve({ items: [], totalCount: 0, pendingReviewCount: 0 }),
     ]);
+
+    const learningAttention: AttentionItemDto[] = learningQueue.items.slice(0, 3).map((item) => ({
+      id: `learning-${item.candidateId}`,
+      type: "REVIEW_LEARNING" as const,
+      severity: "warning" as const,
+      actionLabel: "Review learning candidate",
+      engagementTitle: item.engagementTitle,
+      clientLabel: item.clientLabel,
+      whyNow: `${item.title} — ${item.summary.slice(0, 80)}`,
+      tabHref: `/aos/learning?candidate=${encodeURIComponent(item.candidateId)}`,
+      aiDraft: Boolean(item.confidence.aiConfidence),
+      triggeredAt: Date.parse(item.updatedAt ?? item.createdAt),
+    }));
 
     const attentionQueue = sortAttention([
       ...mapEvaluationAttention(evaluation.items),
+      ...learningAttention,
       ...mapRequirementsAttention(requirements.items),
       ...mapPromptsAttention(prompts.items),
       ...mapCursorAttention(cursor.items),
@@ -244,7 +268,13 @@ export class DashboardApplicationService {
       lifecycleCounts: countByLifecycle(deliveries.items),
       risks,
       evaluationAlerts,
-      pendingReviews: badgeCounts,
+      pendingReviews: {
+        requirements: badgeCounts.requirements,
+        prompts: badgeCounts.prompts,
+        cursor: badgeCounts.cursor,
+        evaluations: badgeCounts.evaluation,
+        learning: badgeCounts.learning,
+      },
       aiInsights,
       todaysFocus:
         attentionQueue[0]?.whyNow ??
@@ -257,6 +287,9 @@ export class DashboardApplicationService {
         { id: "create", label: "Create engagement", href: "/aos/delivery/new" },
         { id: "delivery", label: "View deliveries", href: "/aos/delivery" },
         { id: "requirements", label: "Requirements queue", href: "/aos/requirements" },
+        ...(isLearningEngineEnabled()
+          ? [{ id: "learning", label: "Learning review", href: "/aos/learning" }]
+          : []),
         { id: "playbook", label: "Open playbook", href: "/aos/playbook" },
       ],
       founderDecisionCards: attentionQueue.slice(0, 3),

@@ -4,7 +4,10 @@ import type { EngagementWorkflowApplicationServiceDeps } from "./EngagementWorkf
 
 export function createEngagementWorkflowApplicationService(
   repos: AosWorkflowRepositoryBundle,
-  extras?: Pick<EngagementWorkflowApplicationServiceDeps, "advanceEngagementLifecycle" | "versionChainsEnabled">,
+  extras?: Pick<
+    EngagementWorkflowApplicationServiceDeps,
+    "advanceEngagementLifecycle" | "versionChainsEnabled" | "onRetrospectiveApproved"
+  >,
 ): EngagementWorkflowApplicationService {
   return new EngagementWorkflowApplicationService({
     workflows: repos.workflows,
@@ -17,5 +20,6 @@ export function createEngagementWorkflowApplicationService(
     firestore: repos.firestore,
     versionChainsEnabled: extras?.versionChainsEnabled,
     advanceEngagementLifecycle: extras?.advanceEngagementLifecycle,
+    onRetrospectiveApproved: extras?.onRetrospectiveApproved,
   });
 }

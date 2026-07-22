@@ -26,7 +26,7 @@ export const TraceabilityReference: React.FC<TraceabilityReferenceProps> = ({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-md)] border border-[var(--color-border-subtle)] bg-[var(--color-surface-inset)] p-[var(--space-stack-sm)]",
+        "rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] p-[var(--space-stack-sm)]",
         className,
       )}
     >

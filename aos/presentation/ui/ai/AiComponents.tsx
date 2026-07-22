@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "../buttons/Button";
 import { cn } from "../utils/cn";
 
 export interface AiDraftPanelProps {
@@ -19,7 +20,7 @@ export const AiDraftPanel: React.FC<AiDraftPanelProps> = ({
 }) => (
   <section
     className={cn(
-      "rounded-[var(--radius-lg)] border border-[var(--color-border-ai)] bg-[var(--color-surface-ai-draft)] p-[var(--space-card-padding)]",
+      "rounded-[var(--radius-2xl)] border border-[var(--color-border-ai)] bg-[var(--color-surface-ai-draft)] p-[var(--space-card-padding)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]",
       className,
     )}
   >
@@ -67,26 +68,21 @@ export const ApprovalPanel: React.FC<ApprovalPanelProps> = ({
   error,
   children,
 }) => (
-  <aside className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-card-padding)]">
-    <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
+  <aside className="rounded-[var(--radius-2xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-card-padding)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]">
+    <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)]">
       Approval
     </h3>
     {children}
     {error ? <p className="mb-[var(--space-stack-sm)] text-[length:var(--font-size-caption)] text-[var(--color-text-danger)]" role="alert">{error}</p> : null}
     <div className="flex flex-wrap gap-[var(--space-inline-md)]">
       {onRequestRevision ? (
-        <button type="button" className="text-[length:var(--font-size-label)] text-[var(--color-text-link)]" onClick={onRequestRevision}>
+        <Button variant="ghost" size="sm" onClick={onRequestRevision}>
           {revisionLabel}
-        </button>
+        </Button>
       ) : null}
-      <button
-        type="button"
-        disabled={!canApprove || loading}
-        onClick={onApprove}
-        className="rounded-[var(--radius-md)] bg-[var(--color-interactive-primary)] px-[var(--space-inline-md)] py-[var(--space-stack-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] text-[var(--color-text-inverse)] disabled:opacity-50"
-      >
+      <Button variant="approve" disabled={!canApprove || loading} loading={loading} onClick={onApprove}>
         {approveLabel}
-      </button>
+      </Button>
     </div>
   </aside>
 );
@@ -98,9 +94,9 @@ export interface ContextPanelProps {
 
 /** C-032 ContextPanel */
 export const ContextPanel: React.FC<ContextPanelProps> = ({ title = "Context", children }) => (
-  <aside className="rounded-[var(--radius-lg)] border border-[var(--color-border-subtle)] bg-[var(--color-surface-inset)] p-[var(--space-card-padding)]">
-    <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-label)] font-[var(--font-weight-semibold)]">{title}</h3>
-    <div className="text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">{children}</div>
+  <aside className="rounded-[var(--radius-xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] p-[var(--space-card-padding)]">
+    <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-label)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)]">{title}</h3>
+    <div className="text-[length:var(--font-size-body)] text-[var(--color-text-on-inset)]">{children}</div>
   </aside>
 );
 
@@ -111,9 +107,9 @@ export interface EvidencePanelProps {
 
 /** C-033 EvidencePanel */
 export const EvidencePanel: React.FC<EvidencePanelProps> = ({ title = "Evidence", children }) => (
-  <section className="rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] p-[var(--space-stack-md)]">
-    <h4 className="mb-[var(--space-stack-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)]">{title}</h4>
-    <div className="text-[length:var(--font-size-body)]">{children}</div>
+  <section className="rounded-[var(--radius-xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] p-[var(--space-stack-md)]">
+    <h4 className="mb-[var(--space-stack-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] text-[var(--color-text-primary)]">{title}</h4>
+    <div className="text-[length:var(--font-size-body)] text-[var(--color-text-on-inset)]">{children}</div>
   </section>
 );
 
@@ -164,7 +160,7 @@ export const AttentionItem: React.FC<AttentionItemProps> = ({
       type="button"
       onClick={() => onNavigate(href)}
       className={cn(
-        "flex w-full items-start gap-[var(--space-inline-md)] rounded-[var(--radius-md)] border border-[var(--color-border-default)] border-l-4 bg-[var(--color-surface-card)] p-[var(--space-stack-sm)] text-left transition-colors hover:bg-[var(--color-surface-inset)]",
+        "flex w-full items-start gap-[var(--space-inline-md)] rounded-[var(--radius-xl)] border border-[var(--color-border-default)] border-l-4 bg-[var(--color-surface-card)] p-[var(--space-stack-md)] text-left shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-table-row-hover)] hover:shadow-[var(--shadow-md)]",
         severityBorder[severity],
       )}
     >
@@ -194,7 +190,7 @@ export const AttentionQueue: React.FC<AttentionQueueProps> = ({ items, onNavigat
   if (items.length === 0) {
     return (
       <section aria-labelledby="attention-queue-heading">
-        <h2 id="attention-queue-heading" className="mb-[var(--space-stack-sm)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
+        <h2 id="attention-queue-heading" className="aos-section-title">
           Attention Queue
         </h2>
         <p className="text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">
@@ -207,7 +203,7 @@ export const AttentionQueue: React.FC<AttentionQueueProps> = ({ items, onNavigat
 
   return (
     <section aria-labelledby="attention-queue-heading">
-      <h2 id="attention-queue-heading" className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
+      <h2 id="attention-queue-heading" className="aos-section-title mb-[var(--space-stack-md)]">
         Attention Queue
       </h2>
       <ul role="list" className="flex flex-col gap-[var(--space-stack-sm)]">
@@ -232,8 +228,8 @@ export interface RiskPanelProps {
 
 /** C-024 RiskPanel */
 export const RiskPanel: React.FC<RiskPanelProps> = ({ risks, onNavigate }) => (
-  <section aria-labelledby="risk-panel-heading" className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-card-padding)]">
-    <h2 id="risk-panel-heading" className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
+  <section aria-labelledby="risk-panel-heading" className="rounded-[var(--radius-2xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-card-padding)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]">
+    <h2 id="risk-panel-heading" className="aos-section-title mb-[var(--space-stack-md)]">
       Delivery Risks
     </h2>
     {risks.length === 0 ? (

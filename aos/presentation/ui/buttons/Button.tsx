@@ -32,7 +32,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   primary:
     "bg-[var(--color-interactive-primary)] text-[var(--color-text-inverse)] hover:bg-[var(--color-interactive-primary-hover)] disabled:bg-[var(--color-interactive-primary-disabled)]",
   secondary:
-    "border border-[var(--color-border-default)] bg-[var(--color-interactive-secondary)] text-[var(--color-text-primary)] hover:bg-[var(--color-surface-inset)]",
+    "border border-[var(--color-border-default)] bg-[var(--color-interactive-secondary)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)] hover:bg-[var(--color-interactive-secondary-hover)]",
   ghost:
     "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-inset)] hover:text-[var(--color-text-primary)]",
   danger:
@@ -66,7 +66,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isDisabled}
         aria-busy={loading || undefined}
         className={cn(
-          "inline-flex items-center justify-center gap-[var(--space-inline-sm)] rounded-[var(--radius-md)] font-[var(--font-weight-medium)] leading-[var(--line-height-tight)] transition-colors duration-[var(--duration-fast)]",
+          "inline-flex items-center justify-center gap-[var(--space-inline-sm)] rounded-[var(--radius-lg)] font-[var(--font-weight-medium)] leading-[var(--line-height-tight)] transition-colors duration-[var(--duration-fast)]",
           sizeClasses[size],
           variantClasses[variant],
           focusRing,

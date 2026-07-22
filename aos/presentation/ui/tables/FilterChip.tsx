@@ -20,7 +20,7 @@ export function FilterChip({
   return (
     <span
       className={cn(
-        "inline-flex h-[var(--size-status-chip-height)] max-w-full items-center gap-[var(--space-inline-sm)] rounded-[var(--radius-full)] border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] px-[var(--space-inline-md)] text-[length:var(--font-size-caption)] text-[var(--color-text-primary)]",
+        "inline-flex h-[var(--size-status-chip-height)] max-w-full items-center gap-[var(--space-inline-sm)] rounded-[var(--radius-full)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] px-[var(--space-inline-md)] text-[length:var(--font-size-caption)] font-[var(--font-weight-medium)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]",
         className,
       )}
     >

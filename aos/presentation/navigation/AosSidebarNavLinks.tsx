@@ -7,7 +7,15 @@ import { NotificationBadge } from "../ui";
 
 function badgeCountForRoute(
   routeId: string,
-  counts: { requirements: number; prompts: number; cursor: number; evaluation: number } | undefined,
+  counts:
+    | {
+        requirements: number;
+        prompts: number;
+        cursor: number;
+        evaluation: number;
+        learning: number;
+      }
+    | undefined,
 ): number | undefined {
   if (!counts) return undefined;
   switch (routeId) {
@@ -19,6 +27,8 @@ function badgeCountForRoute(
       return counts.cursor || undefined;
     case AOS_ROUTE_ID.EVALUATION:
       return counts.evaluation || undefined;
+    case AOS_ROUTE_ID.LEARNING:
+      return counts.learning || undefined;
     default:
       return undefined;
   }

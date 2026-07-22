@@ -15,7 +15,7 @@ const variantClasses: Record<ContextBannerVariant, string> = {
   blocked:
     "border-[var(--color-border-danger)] bg-[var(--color-surface-danger-subtle)] text-[var(--color-text-danger)]",
   paused:
-    "border-[var(--color-border-default)] bg-[var(--color-lifecycle-paused-bg)] text-[var(--color-text-warning)]",
+    "border-[var(--color-accent-warning)] bg-[var(--color-lifecycle-paused-bg)] text-[var(--color-lifecycle-paused-text)]",
   "sidecar-info":
     "border-[var(--color-border-subtle)] bg-[var(--color-surface-inset)] text-[var(--color-text-link-sidecar)]",
 };
@@ -32,7 +32,7 @@ const ContextBanner: React.FC<ContextBannerProps> = ({
     <div
       role="status"
       className={cn(
-        "mb-[var(--space-stack-md)] rounded-[var(--radius-md)] border px-[var(--space-card-padding)] py-[var(--space-stack-sm)] text-[length:var(--font-size-body)]",
+        "mb-[var(--space-stack-md)] rounded-[var(--radius-xl)] border px-[var(--space-card-padding)] py-[var(--space-stack-sm)] text-[length:var(--font-size-body)] font-[var(--font-weight-medium)] shadow-[var(--shadow-sm)]",
         variantClasses[variant],
         className,
       )}

@@ -34,3 +34,8 @@ service-account-key.json
 .config/
 scripts
 SESSION_MEMORY.md
+
+# AOS browser E2E artifacts
+.aos-e2e/
+playwright-report/
+test-results/

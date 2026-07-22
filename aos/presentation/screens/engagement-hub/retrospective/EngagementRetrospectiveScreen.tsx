@@ -18,6 +18,9 @@ import {
   WaitingStatePanel,
 } from "../../../ui";
 import { useEngagementWorkflowScreen } from "../useEngagementWorkflowScreen";
+import { useEngagementLearningSummaryQuery } from "../../../../hooks/queries/useLearningReviewQueries";
+import { isLearningEngineEnabled } from "../../../../config/learningEngineConfig";
+import { InAppAlert, LinkButton } from "../../../ui";
 
 const EngagementRetrospectiveScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +28,11 @@ const EngagementRetrospectiveScreen: React.FC = () => {
   const [approveOpen, setApproveOpen] = useState(false);
   const retro = workflow?.retrospective;
   const refs = retro?.traceabilityRefs;
+  const learningSummary = useEngagementLearningSummaryQuery(
+    engagementId,
+    retro?.id,
+    workflow?.gates.retrospectiveComplete ?? false,
+  );
 
   if (isLoading) return <LoadingState message="Loading retrospective…" />;
   if (isError) return <ErrorState title="Could not load workflow" message={error?.message} onRetry={() => void refetch()} />;
@@ -96,6 +104,40 @@ const EngagementRetrospectiveScreen: React.FC = () => {
               <h3 className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">Timeline</h3>
               <Timeline events={workflow.timeline} />
             </section>
+            {isLearningEngineEnabled() && workflow.gates.retrospectiveComplete ? (
+              <section aria-labelledby="learning-extraction-heading">
+                <h3
+                  id="learning-extraction-heading"
+                  className="mb-[var(--space-stack-md)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]"
+                >
+                  Learning extraction
+                </h3>
+                {learningSummary.isLoading ? (
+                  <p className="text-[length:var(--font-size-caption)] text-[var(--color-text-secondary)]">
+                    Checking learning extraction status…
+                  </p>
+                ) : learningSummary.data ? (
+                  <InAppAlert
+                    variant="info"
+                    title={
+                      learningSummary.data.candidateCount > 0
+                        ? `${learningSummary.data.candidateCount} learning candidate${learningSummary.data.candidateCount === 1 ? "" : "s"} generated`
+                        : "Learning extraction scheduled"
+                    }
+                    message={
+                      learningSummary.data.pendingReviewCount > 0
+                        ? `${learningSummary.data.pendingReviewCount} awaiting founder review in the Learning Review queue.`
+                        : "Review promoted organizational learning in the Learning Review queue when candidates appear."
+                    }
+                  />
+                ) : null}
+                <div className="mt-[var(--space-stack-sm)]">
+                  <LinkButton onClick={() => navigate(learningSummary.data?.reviewQueueHref ?? "/aos/learning")}>
+                    Open Learning Review queue
+                  </LinkButton>
+                </div>
+              </section>
+            ) : null}
           </>
         )}
         <StickyFooterBar>

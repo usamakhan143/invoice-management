@@ -58,6 +58,16 @@ export const aosQueryKeys = {
       [...aosQueryKeys.playbook.all(), "detail", entryId] as const,
   },
 
+  learning: {
+    all: () => [...aosQueryKeys.all, "learning"] as const,
+    reviewQueue: (filters: Record<string, unknown>) =>
+      [...aosQueryKeys.learning.all(), "review-queue", filters] as const,
+    candidateDetail: (candidateId: string) =>
+      [...aosQueryKeys.learning.all(), "candidate", candidateId] as const,
+    engagementSummary: (engagementId: string) =>
+      [...aosQueryKeys.learning.all(), "engagement-summary", engagementId] as const,
+  },
+
   versionHistory: {
     all: () => [...aosQueryKeys.all, "version-history"] as const,
     requirements: (engagementId: string, requirementSetId: string) =>

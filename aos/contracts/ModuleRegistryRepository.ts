@@ -1,8 +1,20 @@
+import type { CompanyId } from "../types";
 import type { ModuleRegistryEntry } from "../domain/catalog/entities/moduleRegistry";
-import type { CompanyReadScope } from "./readScope";
+
+export interface PublishModuleFromPromotionCommand {
+  companyId: CompanyId;
+  module: ModuleRegistryEntry;
+  markStaleModuleId?: string;
+}
 
 export interface ModuleRegistryRepository {
-  ensureSeeded(scope: CompanyReadScope): Promise<void>;
-  listAll(scope: CompanyReadScope): Promise<readonly ModuleRegistryEntry[]>;
-  findById(scope: CompanyReadScope, moduleId: string): Promise<ModuleRegistryEntry | null>;
+  ensureSeeded(scope: import("./readScope").CompanyReadScope): Promise<void>;
+  listAll(scope: import("./readScope").CompanyReadScope): Promise<readonly ModuleRegistryEntry[]>;
+  findById(
+    scope: import("./readScope").CompanyReadScope,
+    moduleId: string,
+  ): Promise<ModuleRegistryEntry | null>;
+  publishFromPromotion(
+    command: PublishModuleFromPromotionCommand,
+  ): Promise<ModuleRegistryEntry>;
 }

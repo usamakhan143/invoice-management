@@ -1,9 +1,11 @@
 import { connectAuthEmulator, getAuth, signInWithCustomToken } from "firebase/auth";
 import firebase from "firebase/compat/app";
 import "firebase/compat/firestore";
-import * as admin from "firebase-admin";
+import admin from "firebase-admin";
 import { AOS_COLLECTIONS } from "../firestore/collections";
 import { ERP_READ_COLLECTIONS, BOS_READ_COLLECTIONS } from "../adapters/collections";
+import { createOwnerActorScope } from "../../constants/actorScope";
+import type { AosActorScope } from "../../application/types";
 
 const PROJECT_ID = "aos-integration-test";
 const EMULATOR_FIREBASE_CONFIG = {
@@ -37,6 +39,10 @@ export interface AosEmulatorHarness {
   leadId: string;
   initiativeId: string;
   cleanupApp: () => Promise<void>;
+}
+
+export function integrationActorScope(harness: AosEmulatorHarness): AosActorScope {
+  return createOwnerActorScope(harness.companyId, harness.userId);
 }
 
 export async function createAosEmulatorHarness(): Promise<AosEmulatorHarness> {
@@ -96,6 +102,9 @@ export async function clearAosIntegrationCollections(
     AOS_COLLECTIONS.CURSOR_SESSIONS,
     AOS_COLLECTIONS.CURSOR_REVISIONS,
     AOS_COLLECTIONS.EVALUATIONS,
+    AOS_COLLECTIONS.LEARNING_EXTRACTION_RUNS,
+    AOS_COLLECTIONS.LEARNING_CANDIDATES,
+    AOS_COLLECTIONS.LEARNING_PROMOTIONS,
     ERP_READ_COLLECTIONS.CUSTOMERS,
     ERP_READ_COLLECTIONS.LEADS,
     ERP_READ_COLLECTIONS.USERS,

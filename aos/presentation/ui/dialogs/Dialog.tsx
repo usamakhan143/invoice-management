@@ -68,7 +68,7 @@ export function Dialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         className={cn(
-          "relative z-[calc(var(--z-modal)+1)] flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-elevated)] shadow-[var(--shadow-md)] sm:max-h-[85vh] sm:rounded-[var(--radius-lg)]",
+          "relative z-[calc(var(--z-modal)+1)] flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-elevated)] shadow-[var(--shadow-md)] ring-1 ring-[var(--ring-card)] sm:max-h-[85vh] sm:rounded-[var(--radius-xl)]",
           sizeStyles[size],
           className,
         )}

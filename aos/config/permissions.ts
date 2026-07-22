@@ -122,6 +122,27 @@ export const AOS_PERMISSION_DEFINITIONS: readonly AosPermissionDefinition[] = [
     phase: "4",
   },
   {
+    key: AOS_PERMISSION_KEY.LEARNING_VIEW,
+    label: "View learning review queue",
+    description: "View learning candidates extracted from retrospectives",
+    category: AOS_PERMISSION_CATEGORY.LEARNING,
+    phase: "4",
+  },
+  {
+    key: AOS_PERMISSION_KEY.LEARNING_REVIEW,
+    label: "Review learning candidates",
+    description: "Approve, reject, defer, or supersede learning candidates",
+    category: AOS_PERMISSION_CATEGORY.LEARNING,
+    phase: "4",
+  },
+  {
+    key: AOS_PERMISSION_KEY.LEARNING_PROMOTE,
+    label: "Promote learning candidates",
+    description: "Promote approved candidates into organizational catalogs",
+    category: AOS_PERMISSION_CATEGORY.LEARNING,
+    phase: "4",
+  },
+  {
     key: AOS_PERMISSION_KEY.PLAYBOOK_VIEW,
     label: "View agency playbook",
     description: "View Agency Playbook sections",

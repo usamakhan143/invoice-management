@@ -59,4 +59,43 @@ export class ModuleRegistryFirestoreRepository implements ModuleRegistryReposito
       return module as ModuleRegistryEntry;
     });
   }
+
+  async publishFromPromotion(
+    command: import("../../../contracts/ModuleRegistryRepository").PublishModuleFromPromotionCommand,
+  ): Promise<ModuleRegistryEntry> {
+    return runAosFirestoreOperation("ModuleRegistry.publishFromPromotion", async () => {
+      return this.firestore.runTransaction(async (tx) => {
+        const newRef = this.collection().doc(
+          catalogDocId(command.companyId, command.module.moduleId),
+        );
+        const newSnap = await tx.get(newRef);
+        if (newSnap.exists) {
+          const data = newSnap.data()!;
+          const { companyId: _companyId, ...module } = data;
+          return module as ModuleRegistryEntry;
+        }
+
+        if (command.markStaleModuleId) {
+          const staleRef = this.collection().doc(
+            catalogDocId(command.companyId, command.markStaleModuleId),
+          );
+          const staleSnap = await tx.get(staleRef);
+          if (staleSnap.exists) {
+            const staleData = staleSnap.data() as ModuleRegistryEntry & { companyId: string };
+            tx.set(
+              staleRef,
+              {
+                ...staleData,
+                status: "deprecated",
+              },
+              { merge: true },
+            );
+          }
+        }
+
+        tx.set(newRef, { companyId: command.companyId, ...command.module });
+        return command.module;
+      });
+    });
+  }
 }

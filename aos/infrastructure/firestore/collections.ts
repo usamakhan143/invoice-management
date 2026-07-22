@@ -15,6 +15,9 @@ export const AOS_COLLECTIONS = {
   CURSOR_SESSIONS: "aosCursorSessions",
   CURSOR_REVISIONS: "aosCursorRevisions",
   EVALUATIONS: "aosEvaluations",
+  LEARNING_EXTRACTION_RUNS: "aosLearningExtractionRuns",
+  LEARNING_CANDIDATES: "aosLearningCandidates",
+  LEARNING_PROMOTIONS: "aosLearningPromotions",
 } as const;
 
 export type AosCollectionName = (typeof AOS_COLLECTIONS)[keyof typeof AOS_COLLECTIONS];

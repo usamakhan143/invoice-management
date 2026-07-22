@@ -17,6 +17,7 @@ import { createAosDeliveryReadPorts } from "../wiring/createAosDeliveryReadPorts
 import {
   clearAosIntegrationCollections,
   createAosEmulatorHarness,
+  integrationActorScope,
   isEmulatorConfigured,
   OTHER_COMPANY_ID,
   seedErpBosReadFixtures,
@@ -26,10 +27,7 @@ import {
 const describeIntegration = isEmulatorConfigured() ? describe : describe.skip;
 
 function actorScope(harness: AosEmulatorHarness) {
-  return {
-    companyId: harness.companyId,
-    actorUserId: harness.userId,
-  };
+  return integrationActorScope(harness);
 }
 
 function readScope(harness: AosEmulatorHarness) {
@@ -288,3 +286,4 @@ describeIntegration("AOS Delivery stack (Firestore emulator)", () => {
     expect(fromDoc).toEqual(created);
   });
 });
+

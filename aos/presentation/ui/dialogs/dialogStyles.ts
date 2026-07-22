@@ -1,4 +1,4 @@
-import { cn, disabledStyles, focusRing } from "../utils/cn";
+import { cn, disabledStyles, focusRing, inputFocusRing } from "../utils/cn";
 
 export type DialogButtonVariant = "secondary" | "primary" | "approve" | "danger";
 
@@ -18,7 +18,7 @@ export function dialogButtonClass(
   className?: string,
 ): string {
   return cn(
-    "inline-flex h-[var(--size-button-height-md)] min-w-[5rem] items-center justify-center rounded-[var(--radius-md)] px-[var(--space-inline-md)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] transition-opacity",
+    "inline-flex h-[var(--size-button-height-md)] min-w-[5rem] items-center justify-center rounded-[var(--radius-lg)] px-[var(--space-inline-md)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] transition-opacity",
     variantStyles[variant],
     focusRing,
     disabledStyles,
@@ -27,8 +27,8 @@ export function dialogButtonClass(
 }
 
 export const dialogFieldClass = cn(
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] px-[var(--space-inline-md)] py-[var(--space-stack-sm)] text-[length:var(--font-size-body)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
-  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[var(--color-border-focus)]",
+  "w-full rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] px-[var(--space-inline-md)] py-[var(--space-stack-sm)] text-[length:var(--font-size-body)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] shadow-[var(--shadow-sm)]",
+  inputFocusRing,
 );
 
 export const dialogFieldErrorClass =

@@ -556,3 +556,52 @@ describe("audit event types — LF-15", () => {
     expect(events).toContain("aos_learning_candidate_promoted");
   });
 });
+
+describe("target promotion gates — F3", () => {
+  function approvedKnowledgeCandidate(): LearningCandidate {
+    const created = createCandidate();
+    if (!created.ok) throw new Error("fixture");
+    const approved = approveCandidate({
+      candidate: created.value,
+      expectedVersion: created.value.version,
+      actorId: actorUserId,
+      approvedAt: "2026-07-21T01:00:00.000Z",
+    });
+    if (!approved.ok) throw new Error("approve");
+    return approved.value;
+  }
+
+  it("blocks knowledge promotion without evaluation link — GK-005", async () => {
+    const { assertTargetPromotionGatesPassed } = await import("./rules/promotionGateRules");
+    const candidate = approvedKnowledgeCandidate();
+    const tampered = {
+      ...candidate,
+      provenance: { ...candidate.provenance, evaluationId: "" },
+    };
+    const result = assertTargetPromotionGatesPassed(tampered, {
+      existingKnowledgeTitles: [],
+      existingModuleNames: [],
+      existingPlaybookTitles: [],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("resolves knowledge promotion write plan", async () => {
+    const { resolvePromotionWritePlan } = await import("./rules/promotionTargetDraftRules");
+    const candidate = approvedKnowledgeCandidate();
+    const sourceRef = buildLearningSourceRef(
+      candidate,
+      "2026-07-21T04:00:00.000Z",
+      actorUserId,
+    );
+    const plan = resolvePromotionWritePlan({
+      candidate,
+      learningSource: sourceRef,
+    });
+    expect(plan.ok).toBe(true);
+    if (plan.ok) {
+      expect(plan.value.promotedAssetKind).toBe("knowledge_pattern");
+      expect(plan.value.knowledgePattern?.patternVersion).toBe(1);
+    }
+  });
+});

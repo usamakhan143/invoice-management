@@ -5,6 +5,7 @@ import type { ModuleRegistryApplicationService } from "../application/registry/M
 import type { KnowledgeApplicationService } from "../application/knowledge/KnowledgeApplicationService";
 import type { DashboardApplicationService } from "../application/dashboard/DashboardApplicationService";
 import type { PlaybookApplicationService } from "../application/playbook/PlaybookApplicationService";
+import type { LearningApplicationService } from "../application/learning/LearningApplicationService";
 
 /**
  * UI-facing application service bundle — constructed at composition root only.
@@ -17,4 +18,5 @@ export interface AosPresentationServices {
   knowledge: KnowledgeApplicationService;
   dashboard: DashboardApplicationService;
   playbook: PlaybookApplicationService;
+  learning: LearningApplicationService;
 }

@@ -59,4 +59,43 @@ export class KnowledgeFirestoreRepository implements KnowledgeRepository {
       return pattern as KnowledgePattern;
     });
   }
+
+  async publishFromPromotion(
+    command: import("../../../contracts/KnowledgeRepository").PublishKnowledgeFromPromotionCommand,
+  ): Promise<KnowledgePattern> {
+    return runAosFirestoreOperation("Knowledge.publishFromPromotion", async () => {
+      return this.firestore.runTransaction(async (tx) => {
+        const newRef = this.collection().doc(
+          catalogDocId(command.companyId, command.pattern.patternId),
+        );
+        const newSnap = await tx.get(newRef);
+        if (newSnap.exists) {
+          const data = newSnap.data()!;
+          const { companyId: _companyId, ...pattern } = data;
+          return pattern as KnowledgePattern;
+        }
+
+        if (command.markStalePatternId) {
+          const staleRef = this.collection().doc(
+            catalogDocId(command.companyId, command.markStalePatternId),
+          );
+          const staleSnap = await tx.get(staleRef);
+          if (staleSnap.exists) {
+            const staleData = staleSnap.data() as KnowledgePattern & { companyId: string };
+            tx.set(
+              staleRef,
+              {
+                ...staleData,
+                promotionStatus: "pattern_stale",
+              },
+              { merge: true },
+            );
+          }
+        }
+
+        tx.set(newRef, { companyId: command.companyId, ...command.pattern });
+        return command.pattern;
+      });
+    });
+  }
 }

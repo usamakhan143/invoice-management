@@ -1,5 +1,6 @@
 import type { AgencyType } from "../../../constants/agencyType";
 import type { ModuleType } from "../../../constants/moduleType";
+import type { LearningSourceRef } from "../../learning/valueObjects/learningSourceRef";
 
 export type ModuleRegistryCatalogStatus = "stable" | "experimental" | "deprecated";
 
@@ -34,4 +35,6 @@ export interface ModuleRegistryEntry extends ModuleRegistryListItem {
   origin: string;
   usageHistory: readonly ModuleRegistryUsageRow[];
   knowledgeLinks: readonly ModuleRegistryKnowledgeLink[];
+  learningSource?: LearningSourceRef;
+  supersedesModuleId?: string;
 }

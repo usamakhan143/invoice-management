@@ -73,20 +73,20 @@ export function DataTable<T>({
   return (
     <div
       className={cn(
-        "overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)]",
+        "overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] shadow-[var(--shadow-md)] ring-1 ring-[var(--ring-card)]",
         className,
       )}
     >
-      <table className="w-full border-collapse text-left" aria-label={ariaLabel}>
-        <thead className="sticky top-0 z-[var(--z-sticky)] bg-[var(--color-surface-card)]">
+      <table className="w-full border-collapse text-left text-sm" aria-label={ariaLabel}>
+        <thead className="sticky top-0 z-[var(--z-sticky)] border-b border-[var(--color-border-default)] bg-[var(--color-surface-table-header)]">
           <tr className="border-b border-[var(--color-border-default)]">
             {columns.map((column) => (
               <th
                 key={column.id}
                 scope="col"
                 className={cn(
-                  "px-[var(--space-inline-md)] py-[var(--space-stack-sm)]",
-                  "text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] leading-[var(--line-height-tight)] text-[var(--color-text-secondary)]",
+                  "px-[var(--space-inline-md)] py-[var(--space-stack-sm)] uppercase tracking-wide",
+                  "text-[length:var(--font-size-caption)] font-[var(--font-weight-semibold)] leading-[var(--line-height-tight)] text-[var(--color-text-secondary)]",
                 )}
               >
                 {column.header}
@@ -128,7 +128,7 @@ export function DataTable<T>({
                     rowHeightClass,
                     "border-b border-[var(--color-border-subtle)] text-[length:var(--font-size-body)] text-[var(--color-text-primary)]",
                     clickable &&
-                      "cursor-pointer transition-colors hover:bg-[var(--color-surface-inset)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-border-focus)]",
+                      "cursor-pointer transition-colors hover:bg-[var(--color-surface-table-row-hover)] focus-visible:shadow-[var(--shadow-focus-offset)]",
                   )}
                   onClick={clickable ? () => onRowClick?.(row) : undefined}
                   onKeyDown={

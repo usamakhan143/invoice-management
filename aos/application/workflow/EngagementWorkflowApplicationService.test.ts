@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { createOwnerActorScope } from "../../constants/actorScope";
 import { EngagementWorkflowApplicationService } from "./EngagementWorkflowApplicationService";
 import {
   InMemoryAuditEventRepository,
@@ -6,7 +7,7 @@ import {
 } from "../../infrastructure/testing/inMemoryWorkflowRepositories";
 
 describe("EngagementWorkflowApplicationService", () => {
-  const scope = { companyId: "co1", actorUserId: "user1" };
+  const scope = createOwnerActorScope("co1", "user1");
   const readScope = { companyId: "co1" };
   let workflows: InMemoryEngagementWorkflowRepository;
   let auditEvents: InMemoryAuditEventRepository;

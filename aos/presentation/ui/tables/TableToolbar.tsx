@@ -17,7 +17,7 @@ export function TableToolbar({
   return (
     <div
       className={cn(
-        "flex flex-col gap-[var(--space-stack-sm)] sm:flex-row sm:items-center sm:justify-between",
+        "aos-toolbar mb-[var(--space-stack-md)] flex flex-col gap-[var(--space-stack-sm)] rounded-[var(--radius-xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-stack-md)] shadow-[var(--shadow-md)] ring-1 ring-[var(--ring-card)] sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >

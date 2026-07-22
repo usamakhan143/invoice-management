@@ -21,10 +21,11 @@ import {
   InMemoryPlaybookRepository,
 } from "../infrastructure/testing/inMemoryCatalogRepositories";
 import { vi } from "vitest";
+import { createOwnerActorScope } from "../constants/actorScope";
 
 describe("Founder Journey smoke (application layer, in-memory)", () => {
+  const actorScope = createOwnerActorScope("co-e2e", "founder-1");
   const readScope = { companyId: "co-e2e" };
-  const actorScope = { companyId: "co-e2e", actorUserId: "founder-1" };
 
   function createStack() {
     const workflows = new InMemoryEngagementWorkflowRepository();
@@ -75,6 +76,10 @@ describe("Founder Journey smoke (application layer, in-memory)", () => {
       queues,
       knowledge,
       registry,
+      learning: {
+        listReviewQueue: vi.fn().mockResolvedValue({ items: [], totalCount: 0, pendingReviewCount: 0 }),
+        countPendingReview: vi.fn().mockResolvedValue(0),
+      } as unknown as import("../application/learning/LearningApplicationService").LearningApplicationService,
     });
 
     return { delivery, workflow, queues, registry, knowledge, playbook, dashboard, auditEvents };
@@ -83,7 +88,7 @@ describe("Founder Journey smoke (application layer, in-memory)", () => {
   it("E2E-01: dashboard loads with attention data after workflow activity", async () => {
     const { workflow, dashboard } = createStack();
     await workflow.generateRequirementsDraft(actorScope, "eng-e2e-1");
-    const dashboardDto = await dashboard.getFounderDashboard(readScope);
+    const dashboardDto = await dashboard.getFounderDashboard(actorScope);
     expect(dashboardDto.attentionQueue.length).toBeGreaterThan(0);
   });
 

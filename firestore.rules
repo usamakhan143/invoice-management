@@ -824,6 +824,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /aosLearningExtractionRuns/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.extractionRunId == resource.data.extractionRunId &&
+        request.resource.data.retrospectiveId == resource.data.retrospectiveId &&
+        request.resource.data.idempotencyKey == resource.data.idempotencyKey;
+      allow delete: if false;
+    }
+
+    match /aosLearningCandidates/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update: if aosCompanyReadOk(resource.data) &&
+        aosCompanyWriteOk(request.resource.data) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.candidateId == resource.data.candidateId &&
+        request.resource.data.sourceFingerprint == resource.data.sourceFingerprint &&
+        request.resource.data.provenance == resource.data.provenance;
+      allow delete: if false;
+    }
+
+    match /aosLearningPromotions/{docId} {
+      allow get: if aosCompanyGetOk();
+      allow list: if aosCompanyReadOk(resource.data);
+      allow create: if aosCompanyWriteOk(request.resource.data);
+      allow update, delete: if false;
+    }
+
     // Default deny rule for any other collections
     match /{document=**} {
       allow read, write: if false;

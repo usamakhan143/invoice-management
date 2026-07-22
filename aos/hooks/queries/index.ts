@@ -37,3 +37,9 @@ export {
   type PlaybookListFilters,
 } from "./playbookListFilters";
 export { usePlaybookListQuery, usePlaybookEntryQuery } from "./usePlaybookQueries";
+export {
+  useLearningReviewQueueQuery,
+  useLearningCandidateDetailQuery,
+  useEngagementLearningSummaryQuery,
+  useLearningGovernanceMutations,
+} from "./useLearningReviewQueries";

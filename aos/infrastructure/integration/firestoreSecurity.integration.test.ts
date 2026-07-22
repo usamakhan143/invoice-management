@@ -262,4 +262,79 @@ describeSecurity("AOS Firestore security rules (emulator)", () => {
     );
     await assertFails(db.collection(AOS_COLLECTIONS.EVALUATIONS).doc(evalId).delete());
   });
+
+  it("denies learning promotion updates and cross-company candidate read", async () => {
+    const candidateId = "candidate-1";
+    const promotionId = "promotion-1";
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection(AOS_COLLECTIONS.LEARNING_CANDIDATES).doc(candidateId).set({
+        companyId: TEST_COMPANY_ID,
+        candidateId,
+        engagementId: "eng-1",
+        retrospectiveId: "retro-1",
+        extractionRunId: "run-1",
+        candidateType: "knowledge_pattern",
+        title: "T",
+        summary: "S",
+        proposedContent: { patternName: "P", category: "c", description: "d", applicabilityTags: [], generalizationNotes: "g" },
+        status: "pending_review",
+        confidence: { evidenceConfidence: "single_engagement", organizationalConfidence: "proposed", promotionEligible: true },
+        promotionTarget: { targetKind: "knowledge_pattern", expectedVersionStrategy: "new_version" },
+        provenance: {
+          requirementVersionId: "rv1",
+          promptVersionId: "pv1",
+          cursorSessionId: "cs1",
+          evaluationId: "ev1",
+          retrospectiveId: "retro-1",
+          sourceAuditEventIds: ["a1"],
+        },
+        gateResult: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        createdBy: "system",
+        sourceFingerprint: "fp1",
+        version: 1,
+      });
+      await context.firestore().collection(AOS_COLLECTIONS.LEARNING_PROMOTIONS).doc(promotionId).set({
+        companyId: TEST_COMPANY_ID,
+        promotionId,
+        candidateId,
+        extractionRunId: "run-1",
+        promotedAssetKind: "knowledge_pattern",
+        promotedAssetId: "pat-1",
+        promotedVersion: "1",
+        promotedAt: "2026-01-01T00:00:00.000Z",
+        promotedBy: TEST_COMPANY_ID,
+        sourceProvenance: {
+          requirementVersionId: "rv1",
+          promptVersionId: "pv1",
+          cursorSessionId: "cs1",
+          evaluationId: "ev1",
+          retrospectiveId: "retro-1",
+          sourceAuditEventIds: ["a1"],
+        },
+        learningSourceRef: {
+          candidateId,
+          extractionRunId: "run-1",
+          engagementId: "eng-1",
+          retrospectiveId: "retro-1",
+          requirementVersionId: "rv1",
+          promptVersionId: "pv1",
+          cursorSessionId: "cs1",
+          evaluationId: "ev1",
+          promotedAt: "2026-01-01T00:00:00.000Z",
+          promotedBy: TEST_COMPANY_ID,
+        },
+        createdAt: new Date(),
+      });
+    });
+
+    const ownerDb = testEnv.authenticatedContext(TEST_COMPANY_ID).firestore();
+    await assertFails(
+      ownerDb.collection(AOS_COLLECTIONS.LEARNING_PROMOTIONS).doc(promotionId).update({ promotedVersion: "2" }),
+    );
+    await assertFails(ownerDb.collection(AOS_COLLECTIONS.LEARNING_CANDIDATES).doc(candidateId).delete());
+
+    const foreignDb = testEnv.authenticatedContext(OTHER_COMPANY_ID).firestore();
+    await assertFails(foreignDb.collection(AOS_COLLECTIONS.LEARNING_CANDIDATES).doc(candidateId).get());
+  });
 });

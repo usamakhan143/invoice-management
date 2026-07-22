@@ -1,5 +1,6 @@
 import type { AgencyType } from "../../../constants/agencyType";
 import type { DeliveryState } from "../../../constants/deliveryState";
+import type { LearningSourceRef } from "../../learning/valueObjects/learningSourceRef";
 
 export type PlaybookEntryType =
   | "agency_playbook"
@@ -38,4 +39,6 @@ export interface PlaybookEntry extends PlaybookEntryListItem {
   checklist: readonly string[];
   knowledgeReferences: readonly PlaybookKnowledgeRef[];
   relatedTemplates: readonly PlaybookRelatedEntry[];
+  learningSource?: LearningSourceRef;
+  supersedesEntryId?: string;
 }

@@ -1,52 +1,67 @@
 /**
- * AOS semantic design tokens — Sprint 1 value mapping.
- * @see docs/aos-design-system/02_DESIGN_TOKENS.md
+ * AOS semantic design tokens — mapped to global ERP visual system.
+ * Dark tokens follow OS prefers-color-scheme (same as Tailwind dark: in this app).
  */
 :root {
   /* Text */
   --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-tertiary: #9ca3af;
+  --color-text-secondary: #4b5563;
+  --color-text-tertiary: #6b7280;
   --color-text-inverse: #ffffff;
   --color-text-link: #2563eb;
-  --color-text-link-sidecar: #4b5563;
+  --color-text-link-hover: #1d4ed8;
+  --color-text-link-sidecar: #374151;
   --color-text-danger: #b91c1c;
-  --color-text-success: #15803d;
-  --color-text-warning: #b45309;
-  --color-text-ai: #7c3aed;
-  --color-text-approved: #166534;
+  --color-text-success: #047857;
+  --color-text-warning: #92400e;
+  --color-text-ai: #6d28d9;
+  --color-text-approved: #14532d;
+  --color-text-on-inset: #374151;
+
+  /* Accent borders (AttentionQueue severity rails) */
+  --color-accent-warning: #f59e0b;
+  --color-accent-danger: #ef4444;
+  --color-accent-success: #10b981;
 
   /* Surface */
-  --color-surface-page: #f9fafb;
+  --color-surface-page: transparent;
   --color-surface-card: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-inset: #f3f4f6;
-  --color-surface-ai-draft: #faf5ff;
-  --color-surface-approved: #f0fdf4;
+  --color-surface-muted: #f9fafb;
+  --color-surface-ai-draft: #f5f3ff;
+  --color-surface-approved: #ecfdf5;
   --color-surface-danger-subtle: #fef2f2;
   --color-surface-warning-subtle: #fffbeb;
+  --color-surface-table-header: #f9fafb;
+  --color-surface-table-row-hover: #f3f4f6;
 
-  /* Border */
-  --color-border-default: #e5e7eb;
-  --color-border-subtle: #f3f4f6;
+  /* Border — visible separation on all surfaces */
+  --color-border-default: #d1d5db;
+  --color-border-subtle: #e5e7eb;
+  --color-border-strong: #9ca3af;
   --color-border-focus: #2563eb;
-  --color-border-ai: #c4b5fd;
-  --color-border-approved: #86efac;
-  --color-border-danger: #fca5a5;
+  --color-border-ai: #a78bfa;
+  --color-border-approved: #34d399;
+  --color-border-danger: #f87171;
 
   /* Interactive */
   --color-interactive-primary: #2563eb;
   --color-interactive-primary-hover: #1d4ed8;
   --color-interactive-primary-disabled: #93c5fd;
   --color-interactive-secondary: #ffffff;
+  --color-interactive-secondary-hover: #f9fafb;
   --color-interactive-danger: #dc2626;
+  --color-interactive-danger-hover: #b91c1c;
 
   /* Lifecycle */
-  --color-lifecycle-neutral-bg: #f3f4f6;
-  --color-lifecycle-neutral-text: #374151;
+  --color-lifecycle-neutral-bg: #e5e7eb;
+  --color-lifecycle-neutral-text: #1f2937;
   --color-lifecycle-paused-bg: #fef3c7;
-  --color-lifecycle-cancelled-bg: #f3f4f6;
-  --color-lifecycle-terminal-bg: #e5e7eb;
+  --color-lifecycle-paused-text: #92400e;
+  --color-lifecycle-cancelled-bg: #e5e7eb;
+  --color-lifecycle-terminal-bg: #d1d5db;
+  --color-lifecycle-terminal-text: #374151;
 
   /* Spacing */
   --space-stack-xs: 0.25rem;
@@ -56,36 +71,44 @@
   --space-stack-xl: 2rem;
   --space-inline-sm: 0.375rem;
   --space-inline-md: 0.75rem;
-  --space-page-x: 1.5rem;
-  --space-page-y: 1.5rem;
-  --space-card-padding: 1rem;
+  --space-page-x: 0;
+  --space-page-y: 0;
+  --space-card-padding: 1.25rem;
+  --space-section-gap: 1.5rem;
 
   /* Typography */
-  --font-family-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-family-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-size-display: 1.875rem;
+  --font-size-page-title: 1.5rem;
   --font-size-heading: 1.125rem;
-  --font-size-body: 0.875rem;
+  --font-size-body: 0.9375rem;
   --font-size-label: 0.8125rem;
   --font-size-caption: 0.75rem;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --line-height-body: 1.5;
-  --line-height-tight: 1.25;
+  --font-weight-bold: 700;
+  --line-height-body: 1.6;
+  --line-height-tight: 1.3;
 
   /* Radius */
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
   --radius-full: 9999px;
 
-  /* Shadow */
+  /* Elevation */
   --shadow-none: none;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08);
-  --shadow-focus: 0 0 0 2px var(--color-border-focus);
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.06);
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.08), 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-focus: 0 0 0 2px #2563eb;
+  --shadow-focus-offset: 0 0 0 2px #ffffff, 0 0 0 4px rgb(37 99 235 / 0.35);
+  --ring-card: rgb(15 23 42 / 0.06);
 
   /* Z-index */
   --z-base: 1;
@@ -106,9 +129,9 @@
   --size-touch-min: 2.75rem;
   --size-button-height-md: 2.5rem;
   --size-button-height-sm: 2rem;
-  --size-input-height: 2.5rem;
+  --size-input-height: 2.75rem;
   --size-sidebar-panel-width: 28rem;
-  --size-content-max-width: 72rem;
+  --size-content-max-width: none;
   --size-table-row-height-comfortable: 3rem;
   --size-table-row-height-compact: 2.25rem;
 
@@ -117,4 +140,108 @@
   --size-next-best-action-min-height: 8rem;
   --size-lifecycle-badge-height: 1.5rem;
   --size-status-chip-height: 1.375rem;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --font-size-page-title: 1.875rem;
+    --font-size-body: 1rem;
+  }
+}
+
+/* Match ERP Tailwind dark: — driven by OS color scheme, not .dark class only */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text-primary: #f9fafb;
+    --color-text-secondary: #d1d5db;
+    --color-text-tertiary: #9ca3af;
+    --color-text-link: #60a5fa;
+    --color-text-link-hover: #93c5fd;
+    --color-text-link-sidecar: #d1d5db;
+    --color-text-danger: #fca5a5;
+    --color-text-success: #6ee7b7;
+    --color-text-warning: #fcd34d;
+    --color-text-ai: #c4b5fd;
+    --color-text-approved: #86efac;
+    --color-text-on-inset: #e5e7eb;
+
+    --color-surface-card: #1f2937;
+    --color-surface-elevated: #1f2937;
+    --color-surface-inset: #374151;
+    --color-surface-muted: #111827;
+    --color-surface-ai-draft: rgb(76 29 149 / 0.22);
+    --color-surface-approved: rgb(6 78 59 / 0.35);
+    --color-surface-danger-subtle: rgb(127 29 29 / 0.28);
+    --color-surface-warning-subtle: rgb(120 53 15 / 0.28);
+    --color-surface-table-header: #374151;
+    --color-surface-table-row-hover: #4b5563;
+
+    --color-border-default: #4b5563;
+    --color-border-subtle: #374151;
+    --color-border-strong: #6b7280;
+    --color-border-focus: #60a5fa;
+    --color-border-ai: #8b5cf6;
+    --color-border-approved: #34d399;
+    --color-border-danger: #f87171;
+
+    --color-interactive-primary: #3b82f6;
+    --color-interactive-primary-hover: #60a5fa;
+    --color-interactive-primary-disabled: #1e3a8a;
+    --color-interactive-secondary: #1f2937;
+    --color-interactive-secondary-hover: #374151;
+
+    --color-lifecycle-neutral-bg: #374151;
+    --color-lifecycle-neutral-text: #f3f4f6;
+    --color-lifecycle-paused-bg: rgb(120 53 15 / 0.45);
+    --color-lifecycle-paused-text: #fcd34d;
+    --color-lifecycle-cancelled-bg: #374151;
+    --color-lifecycle-terminal-bg: #4b5563;
+    --color-lifecycle-terminal-text: #e5e7eb;
+
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.35);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.45);
+    --ring-card: rgb(255 255 255 / 0.06);
+    --shadow-focus-offset: 0 0 0 2px #1f2937, 0 0 0 4px rgb(96 165 250 / 0.45);
+  }
+}
+
+/* Explicit .dark class support (if host adds it later) */
+.dark {
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #d1d5db;
+  --color-text-tertiary: #9ca3af;
+  --color-text-link: #60a5fa;
+  --color-text-link-hover: #93c5fd;
+  --color-text-link-sidecar: #d1d5db;
+  --color-text-danger: #fca5a5;
+  --color-text-success: #6ee7b7;
+  --color-text-warning: #fcd34d;
+  --color-text-ai: #c4b5fd;
+  --color-text-approved: #86efac;
+  --color-text-on-inset: #e5e7eb;
+  --color-surface-card: #1f2937;
+  --color-surface-elevated: #1f2937;
+  --color-surface-inset: #374151;
+  --color-surface-muted: #111827;
+  --color-surface-ai-draft: rgb(76 29 149 / 0.22);
+  --color-surface-approved: rgb(6 78 59 / 0.35);
+  --color-surface-danger-subtle: rgb(127 29 29 / 0.28);
+  --color-surface-warning-subtle: rgb(120 53 15 / 0.28);
+  --color-surface-table-header: #374151;
+  --color-surface-table-row-hover: #4b5563;
+  --color-border-default: #4b5563;
+  --color-border-subtle: #374151;
+  --color-border-strong: #6b7280;
+  --color-border-focus: #60a5fa;
+  --color-interactive-primary: #3b82f6;
+  --color-interactive-primary-hover: #60a5fa;
+  --color-interactive-secondary: #1f2937;
+  --color-interactive-secondary-hover: #374151;
+  --color-lifecycle-neutral-bg: #374151;
+  --color-lifecycle-neutral-text: #f3f4f6;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.35);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4);
+  --ring-card: rgb(255 255 255 / 0.06);
+  --shadow-focus-offset: 0 0 0 2px #1f2937, 0 0 0 4px rgb(96 165 250 / 0.45);
 }

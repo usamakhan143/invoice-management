@@ -11,15 +11,14 @@ import { createAosWorkflowRepositories } from "../firestore/wiring/createAosWork
 import {
   clearAosIntegrationCollections,
   createAosEmulatorHarness,
+  integrationActorScope,
   isEmulatorConfigured,
   type AosEmulatorHarness,
 } from "../testing/emulatorHarness";
 
 const describeIntegration = isEmulatorConfigured() ? describe : describe.skip;
 
-function actorScope(harness: AosEmulatorHarness) {
-  return { companyId: harness.companyId, actorUserId: harness.userId };
-}
+function actorScope(harness: AosEmulatorHarness) { return integrationActorScope(harness); }
 
 function readScope(harness: AosEmulatorHarness) {
   return { companyId: harness.companyId };
@@ -394,3 +393,4 @@ describeIntegration("AOS version chain (Firestore emulator)", () => {
     expect(reqDetail?.title).toBeTruthy();
   });
 });
+

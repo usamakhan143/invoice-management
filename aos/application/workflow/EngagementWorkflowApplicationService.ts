@@ -58,6 +58,12 @@ export interface EngagementWorkflowApplicationServiceDeps {
       | "complete_qa"
       | "submit_retrospective",
   ) => Promise<void>;
+  /** Post-commit hook after retrospective transitions to approved (LF-04). */
+  onRetrospectiveApproved?: (
+    scope: AosActorScope,
+    engagementId: DeliveryEngagementId,
+    retrospectiveId: string,
+  ) => void;
 }
 
 /**
@@ -76,6 +82,7 @@ export class EngagementWorkflowApplicationService {
   private readonly promptMigration?: LegacyPromptMigrationService;
   private readonly versionChainsEnabled: boolean;
   private readonly advanceEngagementLifecycle?: EngagementWorkflowApplicationServiceDeps["advanceEngagementLifecycle"];
+  private readonly onRetrospectiveApproved?: EngagementWorkflowApplicationServiceDeps["onRetrospectiveApproved"];
 
   constructor(deps: EngagementWorkflowApplicationServiceDeps) {
     this.workflows = deps.workflows;
@@ -87,6 +94,7 @@ export class EngagementWorkflowApplicationService {
     this.evaluations = deps.evaluations;
     this.versionChainsEnabled = deps.versionChainsEnabled ?? isVersionChainsEnabled();
     this.advanceEngagementLifecycle = deps.advanceEngagementLifecycle;
+    this.onRetrospectiveApproved = deps.onRetrospectiveApproved;
 
     if (this.versionChainsEnabled && deps.firestore && deps.requirementVersions && deps.promptVersions) {
       this.orchestrator = new WorkflowVersionOrchestrator({ firestore: deps.firestore });
@@ -562,10 +570,25 @@ export class EngagementWorkflowApplicationService {
     note: string,
   ): Promise<EngagementWorkflowDto> {
     const workflow = await this.loadWorkflow(scope, engagementId);
+    const wasAlreadyApproved = workflow.retrospective?.status === "approved";
     const outcome = assertWorkflowOk(
       WorkflowAggregate.approveRetrospective(workflow, note, scope.actorUserId, Date.now()),
     );
-    return this.persistCommand(scope, engagementId, outcome, "approveRetrospective");
+    const dto = await this.persistCommand(scope, engagementId, outcome, "approveRetrospective");
+
+    if (
+      !wasAlreadyApproved &&
+      outcome.workflow.retrospective?.status === "approved" &&
+      this.onRetrospectiveApproved
+    ) {
+      this.onRetrospectiveApproved(
+        scope,
+        engagementId,
+        outcome.workflow.retrospective.id,
+      );
+    }
+
+    return dto;
   }
 
   isVersionChainsEnabled(): boolean {

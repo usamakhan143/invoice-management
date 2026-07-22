@@ -18,6 +18,7 @@ export const AOS_ROUTE_PATH = {
   CURSOR: "/aos/cursor",
   EVALUATION: "/aos/evaluation",
   KNOWLEDGE: "/aos/knowledge",
+  LEARNING: "/aos/learning",
   PLAYBOOK: "/aos/playbook",
 } as const;
 
@@ -32,6 +33,7 @@ export const AOS_ROUTE_ID = {
   CURSOR: "aos-cursor",
   EVALUATION: "aos-evaluation",
   KNOWLEDGE: "aos-knowledge",
+  LEARNING: "aos-learning",
   PLAYBOOK: "aos-playbook",
 } as const;
 
@@ -110,6 +112,14 @@ export const AOS_ROUTES: readonly AosRouteDefinition[] = [
     requiredPermissions: [AOS_PERMISSION_KEY.KNOWLEDGE_VIEW, AOS_PERMISSION_KEY.ADMIN],
     featureFlag: AOS_FEATURE_FLAG.KNOWLEDGE,
     phase: "1a",
+  },
+  {
+    id: AOS_ROUTE_ID.LEARNING,
+    path: AOS_ROUTE_PATH.LEARNING,
+    label: "Learning Review",
+    requiredPermissions: [AOS_PERMISSION_KEY.LEARNING_VIEW, AOS_PERMISSION_KEY.ADMIN],
+    featureFlag: AOS_FEATURE_FLAG.LEARNING_ENGINE,
+    phase: "1b",
   },
   {
     id: AOS_ROUTE_ID.PLAYBOOK,

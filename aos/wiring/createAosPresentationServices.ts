@@ -9,6 +9,10 @@ import { db } from "../../services/firebase";
 import { createAosDeliveryReadPorts } from "../infrastructure/wiring/createAosDeliveryReadPorts";
 import { createAosDeliveryRepositories } from "../infrastructure/firestore/wiring/createAosDeliveryRepositories";
 import { createAosWorkflowRepositories } from "../infrastructure/firestore/wiring/createAosWorkflowRepositories";
+import { createAosLearningRepositories } from "../infrastructure/firestore/wiring/createAosLearningRepositories";
+import { createLearningExtractionApplicationService } from "../application/learning/createLearningExtractionApplicationService";
+import { createLearningApplicationService } from "../application/learning/createLearningApplicationService";
+import { isLearningEngineEnabled } from "../config/learningEngineConfig";
 import type { AosPresentationServices } from "./types";
 
 export interface CreateAosPresentationServicesOptions {
@@ -19,6 +23,7 @@ export interface CreateAosPresentationServicesOptions {
   knowledge?: KnowledgeApplicationService;
   dashboard?: DashboardApplicationService;
   playbook?: PlaybookApplicationService;
+  learning?: LearningApplicationService;
 }
 
 let defaultPresentationServices: AosPresentationServices | null = null;
@@ -37,7 +42,8 @@ export function createAosPresentationServices(
     options.registry &&
     options.knowledge &&
     options.dashboard &&
-    options.playbook
+    options.playbook &&
+    options.learning
   ) {
     return {
       delivery: options.delivery,
@@ -47,6 +53,7 @@ export function createAosPresentationServices(
       knowledge: options.knowledge,
       dashboard: options.dashboard,
       playbook: options.playbook,
+      learning: options.learning,
     };
   }
 
@@ -57,7 +64,8 @@ export function createAosPresentationServices(
       options.registry ||
       options.knowledge ||
       options.dashboard ||
-      options.playbook,
+      options.playbook ||
+      options.learning,
   );
   if (!hasCustomDeps && defaultPresentationServices) {
     return defaultPresentationServices;
@@ -65,6 +73,7 @@ export function createAosPresentationServices(
 
   const deliveryRepos = createAosDeliveryRepositories({ firestore: db });
   const workflowRepos = createAosWorkflowRepositories({ firestore: db });
+  const learningRepos = createAosLearningRepositories({ firestore: db });
   const readPorts = createAosDeliveryReadPorts({ firestore: db });
   const delivery =
     options.delivery ??
@@ -72,6 +81,11 @@ export function createAosPresentationServices(
       engagements: deliveryRepos.engagements,
       readPorts,
     });
+
+  const learningExtraction = createLearningExtractionApplicationService({
+    learningRepos,
+    workflowRepos,
+  });
 
   const workflow =
     options.workflow ??
@@ -91,6 +105,23 @@ export function createAosPresentationServices(
           },
         });
       },
+      onRetrospectiveApproved: isLearningEngineEnabled()
+        ? (scope, engagementId, retrospectiveId) => {
+            learningExtraction.scheduleExtraction({
+              companyId: scope.companyId,
+              engagementId,
+              retrospectiveId,
+            });
+          }
+        : undefined,
+    });
+
+  const learning =
+    options.learning ??
+    createLearningApplicationService({
+      learningRepos,
+      workflowRepos,
+      delivery,
     });
 
   const queues =
@@ -98,19 +129,27 @@ export function createAosPresentationServices(
     new QueueProjectionApplicationService({
       delivery,
       workflow,
+      learning,
     });
 
   const registry =
     options.registry ?? new ModuleRegistryApplicationService({ repository: workflowRepos.registry });
   const knowledge =
     options.knowledge ?? new KnowledgeApplicationService({ repository: workflowRepos.knowledge });
-  const dashboard =
-    options.dashboard ??
-    new DashboardApplicationService({ delivery, queues, knowledge, registry });
   const playbook =
     options.playbook ?? new PlaybookApplicationService({ repository: workflowRepos.playbook });
 
-  const services = { delivery, workflow, queues, registry, knowledge, dashboard, playbook };
+  const dashboard =
+    options.dashboard ??
+    new DashboardApplicationService({
+      delivery,
+      queues,
+      knowledge,
+      registry,
+      learning,
+    });
+
+  const services = { delivery, workflow, queues, registry, knowledge, dashboard, playbook, learning };
   if (!hasCustomDeps) {
     defaultPresentationServices = services;
   }

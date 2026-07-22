@@ -44,6 +44,7 @@ export interface QueueBadgeCountsDto {
   prompts: number;
   cursor: number;
   evaluation: number;
+  learning: number;
 }
 
 export interface ListQueueQuery {

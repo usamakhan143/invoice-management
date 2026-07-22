@@ -1,4 +1,5 @@
 import type { AgencyType } from "../../../constants/agencyType";
+import type { LearningSourceRef } from "../../learning/valueObjects/learningSourceRef";
 
 export type KnowledgeConfidenceLevel =
   | "hypothesis"
@@ -72,4 +73,8 @@ export interface KnowledgePattern extends KnowledgeListItem {
   relatedPrompts: readonly KnowledgeRelatedPrompt[];
   relatedPatterns: readonly KnowledgeRelatedPattern[];
   aiSuggestedPatterns: readonly KnowledgeRelatedPattern[];
+  /** Backward trace when promoted from Learning Engine — LF-13. */
+  learningSource?: LearningSourceRef;
+  /** Non-destructive supersession link — LF-08. */
+  supersedesPatternId?: string;
 }

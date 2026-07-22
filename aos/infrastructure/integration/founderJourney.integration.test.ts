@@ -14,11 +14,12 @@ import {
   seedErpBosReadFixtures,
   type AosEmulatorHarness,
 } from "../testing/emulatorHarness";
+import { createOwnerActorScope } from "../../constants/actorScope";
 
 const describeIntegration = isEmulatorConfigured() ? describe : describe.skip;
 
 function actorScope(harness: AosEmulatorHarness) {
-  return { companyId: harness.companyId, actorUserId: harness.userId };
+  return createOwnerActorScope(harness.companyId, harness.userId);
 }
 
 function readScope(harness: AosEmulatorHarness) {
@@ -155,3 +156,4 @@ describeIntegration("Founder journey integration (Firestore emulator)", () => {
     expect(reloaded.timeline.some((event) => event.type === "retro.approved")).toBe(true);
   });
 });
+

@@ -73,15 +73,25 @@ export const StatusChip: React.FC<{
   variant?: "neutral" | "success" | "warning" | "error" | "ai" | "approved";
 }> = ({ label, variant = "neutral" }) => {
   const styles = {
-    neutral: "bg-[var(--color-surface-inset)] text-[var(--color-text-secondary)]",
-    success: "bg-[var(--color-surface-approved)] text-[var(--color-text-success)]",
-    warning: "bg-[var(--color-surface-warning-subtle)] text-[var(--color-text-warning)]",
-    error: "bg-[var(--color-surface-danger-subtle)] text-[var(--color-text-danger)]",
-    ai: "bg-[var(--color-surface-ai-draft)] text-[var(--color-text-ai)]",
-    approved: "bg-[var(--color-surface-approved)] text-[var(--color-text-approved)]",
+    neutral:
+      "border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] text-[var(--color-text-on-inset)]",
+    success:
+      "border border-[var(--color-border-approved)] bg-[var(--color-surface-approved)] text-[var(--color-text-success)]",
+    warning:
+      "border border-[var(--color-accent-warning)] bg-[var(--color-surface-warning-subtle)] text-[var(--color-text-warning)]",
+    error:
+      "border border-[var(--color-border-danger)] bg-[var(--color-surface-danger-subtle)] text-[var(--color-text-danger)]",
+    ai: "border border-[var(--color-border-ai)] bg-[var(--color-surface-ai-draft)] text-[var(--color-text-ai)]",
+    approved:
+      "border border-[var(--color-border-approved)] bg-[var(--color-surface-approved)] text-[var(--color-text-approved)]",
   }[variant];
   return (
-    <span className={cn("inline-flex rounded-[var(--radius-full)] px-[var(--space-inline-md)] py-0.5 text-[length:var(--font-size-caption)] font-[var(--font-weight-medium)]", styles)}>
+    <span
+      className={cn(
+        "inline-flex rounded-[var(--radius-full)] px-[var(--space-inline-md)] py-0.5 text-[length:var(--font-size-caption)] font-[var(--font-weight-semibold)]",
+        styles,
+      )}
+    >
       {label}
     </span>
   );
@@ -109,9 +119,16 @@ export const GateChip: React.FC<{ label: string; satisfied: boolean; onClick?: (
 
 /** C-023 WaitingStatePanel */
 export const WaitingStatePanel: React.FC<{ title: string; message: React.ReactNode }> = ({ title, message }) => (
-  <div role="status" className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-inset)] p-[var(--space-card-padding)]">
-    <h3 className="text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">{title}</h3>
-    <p className="mt-[var(--space-stack-sm)] text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">{message}</p>
+  <div
+    role="status"
+    className="rounded-[var(--radius-2xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-card-padding)] shadow-[var(--shadow-card)] ring-1 ring-[var(--ring-card)]"
+  >
+    <h3 className="text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)]">
+      {title}
+    </h3>
+    <p className="mt-[var(--space-stack-sm)] text-[length:var(--font-size-body)] text-[var(--color-text-secondary)]">
+      {message}
+    </p>
   </div>
 );
 
@@ -183,7 +200,9 @@ export const EvaluationCard: React.FC<{
       meta={<StatusChip label={passed ? "Passed" : "Failed"} variant={passed ? "success" : "error"} />}
     />
     <Card.Body>
-      <p className="text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">{passed ? "Pass" : "Fail"}</p>
+      <p className="text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)]">
+        {passed ? "Pass" : "Fail"}
+      </p>
       <p className="text-[length:var(--font-size-caption)] text-[var(--color-text-secondary)]">Score {scorePercent}% · {statusLabel(status)}</p>
     </Card.Body>
   </Card>
@@ -343,8 +362,10 @@ export const RegistryCard: React.FC<{
 export const Timeline: React.FC<{ events: Array<{ id: string; title: string; actorLabel: string; timestamp: number }> }> = ({ events }) => (
   <ol className="flex flex-col gap-[var(--space-stack-md)]" aria-label="Engagement timeline">
     {events.map((event) => (
-      <li key={event.id} className="border-l-2 border-[var(--color-border-default)] pl-[var(--space-inline-md)]">
-        <p className="text-[length:var(--font-size-body)] font-[var(--font-weight-medium)]">{event.title}</p>
+      <li key={event.id} className="border-l-2 border-[var(--color-border-strong)] pl-[var(--space-inline-md)]">
+        <p className="text-[length:var(--font-size-body)] font-[var(--font-weight-medium)] text-[var(--color-text-primary)]">
+          {event.title}
+        </p>
         <p className="text-[length:var(--font-size-caption)] text-[var(--color-text-secondary)]">
           {event.actorLabel} · {new Date(event.timestamp).toLocaleString()}
         </p>
@@ -355,8 +376,10 @@ export const Timeline: React.FC<{ events: Array<{ id: string; title: string; act
 
 /** Handoff strip pattern (M8/M9) */
 export const HandoffStrip: React.FC<{ promptTitle: string; onCopy?: () => void }> = ({ promptTitle, onCopy }) => (
-  <div className="flex flex-wrap items-center justify-between gap-[var(--space-inline-md)] rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-stack-md)]">
-    <span className="text-[length:var(--font-size-body)]">Handoff: {promptTitle}</span>
+  <div className="flex flex-wrap items-center justify-between gap-[var(--space-inline-md)] rounded-[var(--radius-xl)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] p-[var(--space-stack-md)] shadow-[var(--shadow-sm)]">
+    <span className="text-[length:var(--font-size-body)] font-[var(--font-weight-medium)] text-[var(--color-text-primary)]">
+      Handoff: {promptTitle}
+    </span>
     {onCopy ? (
       <button type="button" className="text-[length:var(--font-size-label)] text-[var(--color-text-link)]" onClick={onCopy}>
         Copy prompt

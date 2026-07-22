@@ -36,6 +36,11 @@ export const AOS_PERMISSION_KEY = {
   KNOWLEDGE_VIEW: "aos_knowledge_view",
   KNOWLEDGE_MANAGE: "aos_knowledge_manage",
 
+  // Learning Engine governance
+  LEARNING_VIEW: "aos_learning_view",
+  LEARNING_REVIEW: "aos_learning_review",
+  LEARNING_PROMOTE: "aos_learning_promote",
+
   // Playbook & templates
   PLAYBOOK_VIEW: "aos_playbook_view",
   PLAYBOOK_MANAGE: "aos_playbook_manage",
@@ -62,6 +67,7 @@ export const AOS_PERMISSION_CATEGORY = {
   CURSOR: "aos-cursor",
   EVALUATION: "aos-evaluation",
   KNOWLEDGE: "aos-knowledge",
+  LEARNING: "aos-learning",
   PLAYBOOK: "aos-playbook",
   ADMIN: "aos-admin",
 } as const;

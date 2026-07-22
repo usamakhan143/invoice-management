@@ -7,6 +7,10 @@ import type { CompanyId, UserId } from "../types";
 export interface AosActorScope {
   companyId: CompanyId;
   actorUserId: UserId;
+  /** Resolved ERP granular permissions for defense-in-depth application authorization. */
+  permissions: readonly string[];
+  /** Company owners bypass granular permission checks (matches ERP usePermissions). */
+  isOwner?: boolean;
 }
 
 export interface AosReadScope {

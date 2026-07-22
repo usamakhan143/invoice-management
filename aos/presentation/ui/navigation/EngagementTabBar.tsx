@@ -90,8 +90,8 @@ export const EngagementTabBar: React.FC<EngagementTabBarProps> = ({
             className={cn(
               "relative inline-flex shrink-0 items-center gap-[var(--space-inline-sm)] border-b-2 px-[var(--space-inline-md)] py-[var(--space-stack-sm)] text-[length:var(--font-size-label)] font-[var(--font-weight-medium)] transition-colors duration-[var(--duration-fast)]",
               isActive
-                ? "border-[var(--color-interactive-primary)] text-[var(--color-text-primary)]"
-                : "border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border-default)] hover:text-[var(--color-text-primary)]",
+                ? "border-[var(--color-interactive-primary)] bg-[var(--color-surface-muted)] text-[var(--color-text-primary)]"
+                : "border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border-default)] hover:bg-[var(--color-surface-table-row-hover)] hover:text-[var(--color-text-primary)]",
               tab.disabled && "cursor-not-allowed opacity-50",
               focusRing,
             )}

@@ -2,6 +2,52 @@
 @import "tailwindcss";
 @import "./aos/theme/tokens.css";
 
+/* AOS inherits ERP shell canvas; premium section rhythm + guaranteed readable text */
+.aos-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-section-gap);
+  min-height: 0;
+  color: var(--color-text-primary);
+}
+
+.aos-page > * {
+  min-width: 0;
+}
+
+.aos-page h1,
+.aos-page h2,
+.aos-page h3,
+.aos-page h4,
+.aos-page h5,
+.aos-page h6 {
+  color: var(--color-text-primary);
+}
+
+.aos-page p,
+.aos-page li,
+.aos-page dd,
+.aos-page dt {
+  color: inherit;
+}
+
+.aos-page .aos-section-title {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.aos-page .aos-muted {
+  color: var(--color-text-secondary);
+}
+
+.aos-toolbar {
+  backdrop-filter: blur(8px);
+}
+
 @theme {
   --color-primary-50: #eff6ff;
   --color-primary-100: #dbeafe;

@@ -43,23 +43,55 @@ try {
 export const auth = app.auth()
 export const db = app.firestore()
 
-// Configure Firestore settings optimized for development environment
+const useFirebaseEmulator = import.meta.env.VITE_FIREBASE_USE_EMULATOR === "true";
+
+if (useFirebaseEmulator) {
+  const host = import.meta.env.VITE_FIREBASE_EMULATOR_HOST ?? "127.0.0.1";
+  const firestorePort = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT ?? 8080);
+  const authPort = Number(import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_PORT ?? 9099);
+  auth.useEmulator(`http://${host}:${authPort}`);
+  db.useEmulator(host, firestorePort);
+}
+
+// E2E bootstrap — only when emulator mode is explicitly enabled.
+if (useFirebaseEmulator && typeof window !== "undefined") {
+  const e2eToken = window.sessionStorage.getItem("aos-e2e-token");
+  if (e2eToken && !auth.currentUser) {
+    void auth
+      .signInWithCustomToken(e2eToken)
+      .then(() => {
+        (window as unknown as { __AOS_E2E_AUTH_READY__?: boolean }).__AOS_E2E_AUTH_READY__ = true;
+      })
+      .catch(() => undefined);
+  } else if (auth.currentUser) {
+    (window as unknown as { __AOS_E2E_AUTH_READY__?: boolean }).__AOS_E2E_AUTH_READY__ = true;
+  }
+}
+
+// Configure Firestore settings optimized for development environment.
+// Skip production host overrides when the emulator is active — they break emulator routing.
 const isDevelopment = import.meta.env.DEV;
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-
-try {
+if (!useFirebaseEmulator) {
+  try {
     db.settings({
-        // Use long polling in development to avoid websocket issues
-        experimentalForceLongPolling: isDevelopment,
-        merge: true,
-        ssl: window.location.protocol === 'https:',
-        host: 'firestore.googleapis.com',
-        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-        // Ignore undefined properties to avoid errors
-        ignoreUndefinedProperties: true,
+      experimentalForceLongPolling: isDevelopment,
+      merge: true,
+      ssl: window.location.protocol === 'https:',
+      host: 'firestore.googleapis.com',
+      cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+      ignoreUndefinedProperties: true,
     });
-} catch (settingsError) {
+  } catch (settingsError) {
+  }
+} else {
+  try {
+    db.settings({
+      merge: true,
+      ignoreUndefinedProperties: true,
+    });
+  } catch (settingsError) {
+  }
 }
 
 // Check if we should force offline mode for development

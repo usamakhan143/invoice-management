@@ -46,7 +46,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
         aria-modal="true"
         aria-labelledby="aos-side-panel-title"
         className={cn(
-          "relative flex h-full w-full flex-col border-l border-[var(--color-border-default)] bg-[var(--color-surface-elevated)] shadow-[var(--shadow-md)]",
+          "relative flex h-full w-full flex-col border-l border-[var(--color-border-default)] bg-[var(--color-surface-elevated)] shadow-[var(--shadow-lg)]",
           "sm:max-w-[var(--size-sidebar-panel-width)]",
           className,
         )}

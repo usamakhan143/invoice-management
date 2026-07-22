@@ -13,9 +13,13 @@ import type {
   RequirementsQueueRowDto,
 } from "./dto/QueueProjectionDto";
 
+import type { LearningApplicationService } from "../learning/LearningApplicationService";
+import { isLearningEngineEnabled } from "../../config/learningEngineConfig";
+
 export interface QueueProjectionApplicationServiceDeps {
   delivery: DeliveryApplicationService;
   workflow: EngagementWorkflowApplicationService;
+  learning?: LearningApplicationService;
 }
 
 function matchesSearch(
@@ -79,10 +83,12 @@ function isPendingEvaluation(workflow: EngagementWorkflowDto): boolean {
 export class QueueProjectionApplicationService {
   private readonly delivery: DeliveryApplicationService;
   private readonly workflow: EngagementWorkflowApplicationService;
+  private readonly learning?: LearningApplicationService;
 
   constructor(deps: QueueProjectionApplicationServiceDeps) {
     this.delivery = deps.delivery;
     this.workflow = deps.workflow;
+    this.learning = deps.learning;
   }
 
   private async loadContext(scope: AosReadScope) {
@@ -226,11 +232,14 @@ export class QueueProjectionApplicationService {
   }
 
   async getBadgeCounts(scope: AosReadScope): Promise<QueueBadgeCountsDto> {
-    const [requirements, prompts, cursor, evaluation] = await Promise.all([
+    const [requirements, prompts, cursor, evaluation, learningCount] = await Promise.all([
       this.listRequirementsQueue(scope, {}),
       this.listPromptsQueue(scope, {}),
       this.listCursorQueue(scope, {}),
       this.listEvaluationQueue(scope, {}),
+      isLearningEngineEnabled() && this.learning
+        ? this.learning.countPendingReview(scope)
+        : Promise.resolve(0),
     ]);
 
     return {
@@ -238,6 +247,7 @@ export class QueueProjectionApplicationService {
       prompts: prompts.totalCount,
       cursor: cursor.totalCount,
       evaluation: evaluation.totalCount,
+      learning: learningCount ?? 0,
     };
   }
 }

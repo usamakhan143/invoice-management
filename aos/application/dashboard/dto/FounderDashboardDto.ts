@@ -12,7 +12,8 @@ export type AttentionType =
   | "RUN_REUSE_SCAN"
   | "QA_BLOCKED"
   | "RETROSPECTIVE_DUE"
-  | "RISK_STALE";
+  | "RISK_STALE"
+  | "REVIEW_LEARNING";
 
 export interface AttentionItemDto {
   id: string;
@@ -57,6 +58,7 @@ export interface PendingReviewsDto {
   prompts: number;
   evaluations: number;
   cursor: number;
+  learning: number;
 }
 
 export interface DashboardInsightDto {

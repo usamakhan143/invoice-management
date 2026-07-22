@@ -20,6 +20,12 @@ export interface UpdateLearningCandidateStatusCommand {
   updatedAt: string;
 }
 
+export interface SaveLearningCandidateCommand {
+  companyId: CompanyId;
+  candidate: LearningCandidate;
+  expectedVersion: number;
+}
+
 export interface LearningCandidateRepository {
   getById(companyId: CompanyId, candidateId: string): Promise<LearningCandidate | null>;
   listByEngagement(
@@ -36,6 +42,7 @@ export interface LearningCandidateRepository {
   ): Promise<readonly LearningCandidate[]>;
   upsert(command: UpsertLearningCandidateCommand): Promise<LearningCandidate>;
   updateStatus(command: UpdateLearningCandidateStatusCommand): Promise<LearningCandidate>;
+  saveCandidate(command: SaveLearningCandidateCommand): Promise<LearningCandidate>;
 }
 
 export const LEARNING_CANDIDATE_REPOSITORY = Symbol("LearningCandidateRepository");

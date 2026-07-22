@@ -1,5 +1,13 @@
 import React from "react";
-import { cn, disabledStyles, focusRing } from "../utils/cn";
+import { cn, disabledStyles, inputFocusRing } from "../utils/cn";
+
+export const selectBaseClasses = cn(
+  "w-full appearance-none rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] px-[var(--space-inline-md)] text-[length:var(--font-size-body)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]",
+  "h-[var(--size-input-height)] leading-[var(--line-height-body)]",
+  "transition-[border-color,box-shadow] duration-[var(--duration-fast)]",
+  inputFocusRing,
+  disabledStyles,
+);
 
 export interface SelectOption {
   value: string;
@@ -22,12 +30,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         disabled={disabled}
         aria-invalid={hasError || undefined}
         className={cn(
-          "w-full appearance-none rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-surface-card)] px-[var(--space-inline-md)] text-[length:var(--font-size-body)] text-[var(--color-text-primary)]",
-          "h-[var(--size-input-height)] leading-[var(--line-height-body)]",
-          "transition-colors duration-[var(--duration-fast)]",
-          focusRing,
-          disabledStyles,
-          "aria-[invalid=true]:border-[var(--color-border-danger)]",
+          selectBaseClasses,
+          "aria-[invalid=true]:border-[var(--color-border-danger)] aria-[invalid=true]:ring-red-500/20",
           className,
         )}
         {...props}

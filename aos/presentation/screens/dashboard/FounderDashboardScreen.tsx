@@ -19,6 +19,7 @@ import {
   RegistryCard,
   RiskPanel,
 } from "../../ui";
+import { QuickActionsPanel } from "./QuickActionsPanel";
 
 function DashboardWidgetError({
   title,
@@ -123,6 +124,13 @@ const FounderDashboardScreen: React.FC = () => {
                           Evaluations ({data.pendingReviews.evaluations})
                         </LinkButton>
                       </li>
+                      {data.pendingReviews.learning > 0 ? (
+                        <li>
+                          <LinkButton onClick={() => navigate("/aos/learning")}>
+                            Learning ({data.pendingReviews.learning})
+                          </LinkButton>
+                        </li>
+                      ) : null}
                     </ul>
                   </Card.Body>
                 </Card>
@@ -273,18 +281,7 @@ const FounderDashboardScreen: React.FC = () => {
                 ))}
               </div>
             </section>
-            <section aria-labelledby="quick-actions-heading">
-              <h2 id="quick-actions-heading" className="mb-[var(--space-stack-sm)] text-[length:var(--font-size-heading)] font-[var(--font-weight-semibold)]">
-                Quick Actions
-              </h2>
-              <div className="flex flex-wrap gap-[var(--space-inline-md)]">
-                {data.quickActions.map((action) => (
-                  <LinkButton key={action.id} onClick={() => navigate(action.href)}>
-                    {action.label}
-                  </LinkButton>
-                ))}
-              </div>
-            </section>
+            <QuickActionsPanel actions={data.quickActions} onNavigate={(href) => navigate(href)} />
           </div>
         ) : null}
       </PageShell>
